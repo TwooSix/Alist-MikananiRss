@@ -1,4 +1,4 @@
-domain = 'YourDomain'
+domain = 'www.example.com'
 
 token = 'YourToken'
 

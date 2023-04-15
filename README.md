@@ -18,15 +18,13 @@ cd Alist-MikananiRss && pip install -r requirements.txt
 	 - 在`domain`字段填写你的alist部署域名，示例`www.example.com`
 	 - 在`token`字段填写你的管理员token
 	 - 在`downloadPath`字段填写你的下载文件夹，示例`AliyunPan/Anime`
-1. 修改`main.py`文件
-		修改`rssList`，改为你自己的RSS订阅
-	- RSS(url, filter, subfolder=None)
+	 - 在`rss`字段填写你的RSS订阅
 		- url：你从蜜柑计划获取的RSS链接
 		- filter：通过正则表达式过滤结果，目前我只个人内置了'简体'，'繁体'，'1080'，'非合集'四种，写的也比较粗糙
 		- subfoler：子文件夹名，决定是否单独存放到子文件夹，**应该需要提前在路径下创建好文件夹**，不填则默认下载到`downloadPath`，填写则下载到`downloadPath/subfoler`
-		具体填写示例查看main.py文件即可
-4. 运行代码`python main.py`
-5. Enjoy
+		填写示例见`ConfigExample.py`
+1. 运行代码`python main.py`
+2. Enjoy
 ## 自定义正则表达式
 方法1：
 在`main.py`文件里修改，示例：
@@ -44,8 +42,9 @@ Filter.addFilter('720', r'(720[pP])')
 添加完成后，就可以在创建`RSS`类时的`filter`字段列表里，加入你自定义规则的`name`来使用你自己的正则表达式了。
 如刚才例子中添加了720p的规则，则可以如此直接使用：
 ```python
-rssList = [
-    RSS('https://xxx', ['720']),
-]
+{
+	'url': 'https://xxx',
+	'filter': ['720'],
+}
 ```
 当然，你也可以用同名的方法，覆盖掉我随便写的正则表达式
