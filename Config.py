@@ -1,0 +1,3 @@
+domain = 'YourDomain'
+
+token = 'YourToken'
