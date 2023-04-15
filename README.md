@@ -27,3 +27,25 @@ cd Alist-MikananiRss && pip install -r requirements.txt
 		具体填写示例查看main.py文件即可
 4. 运行代码`python main.py`
 5. Enjoy
+## 自定义正则表达式
+方法1：
+在`main.py`文件里修改，示例：
+```python
+import Filter
+Filter.addFilter('720', r'(720[pP])')
+```
+`addFilter(name, regex)`
+- name: 你的规则名字
+- regex：你的正则表达式
+
+方法2：
+直接到`Filter.py`文件里修改`Filter`字典
+
+添加完成后，就可以在创建`RSS`类时的`filter`字段列表里，加入你自定义规则的`name`来使用你自己的正则表达式了。
+如刚才例子中添加了720p的规则，则可以如此直接使用：
+```python
+rssList = [
+    RSS('https://xxx', ['720']),
+]
+```
+当然，你也可以用同名的方法，覆盖掉我随便写的正则表达式
