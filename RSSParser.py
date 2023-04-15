@@ -1,5 +1,5 @@
 """
-Only for mikanani.me
+Only Test in mikanani.me
 """
 import feedparser
 import pandas

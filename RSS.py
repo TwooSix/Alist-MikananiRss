@@ -1,14 +1,17 @@
 """
-Only for mikanani.me
+Only Test in mikanani.me
 """
 import Filter
 import RSSParser
 import pandas as pd
 import Api
+import os
 
 class RSS():
-    def __init__(self, url:str, filter:list[str]=[]):
+    def __init__(self, url:str, filter:list[str]=[], subFolder:str=None):
         self.url = url
+        self.subFolder = subFolder
+        self.name = subFolder if subFolder else url
         self.setFilter(filter)
 
     def setFilter(self, filterNames:list[str]) -> None:
@@ -19,14 +22,20 @@ class RSS():
         self.filter = filter
         return
     
+    def getName(self) -> str:
+        return self.name
+
     def getUrl(self) -> str:
         return self.url
+
+    def getSubFolder(self) -> str:
+        return self.subFolder
 
     def parse(self) -> pd.DataFrame:
         return RSSParser.parse(self.url, self.filter)
     
     def __str__(self) -> str:
-        return self.url
+        return self.name
 
 class RSSManager():
     def __init__(self, rssList:list[RSS], downloadPath:str) -> None:
@@ -40,6 +49,11 @@ class RSSManager():
         except Exception as e:
             raise Exception('Unkonwn Error when reading save.csv: {e}')
 
+    def __download(self, urls:str, subFolder:str = None) -> None:
+        """Download torrent file from url"""
+        downloadPath = os.path.join(self.downloadPath, subFolder) if subFolder else self.downloadPath
+        Api.add_aria2(downloadPath, urls)
+
     def checkUpdate(self):
         """Check if there is new torrent in rss feed, if so, add it to aria2 task queue"""
 
@@ -47,13 +61,17 @@ class RSSManager():
         downloadUrls = []
         for rss in self.subscriptions:
             print(f'Checking {rss}...')
-            rssDataFrame = rss.parse()
+            try:
+                rssDataFrame = rss.parse()
+            except Exception as e:
+                print(f'Error when parsing {rss}: {e}')
+                continue
             try:
                 latestDate = self.save.at[rss.getUrl(), 'latestDate']
             except KeyError:
                 # 第一次订阅，保存数据但不下载
                 self.save.at[rss.getUrl(), 'latestDate'] = pd.to_datetime(rssDataFrame['pubDate'].max())
-                print(f'New Subscription {rss} found, initial latestDate')
+                print(f'New Subscription {rss} found, initial data')
                 continue
             # 检查是否有更新
             newDataFrame = rssDataFrame[rssDataFrame['pubDate'] > latestDate]
@@ -64,14 +82,14 @@ class RSSManager():
                 for idx in newDataFrame.index:
                     title = newDataFrame.iat[idx, 0]
                     link = newDataFrame.iat[idx, 1]
+                    self.__download([link], rss.getSubFolder())
                     downloadUrls.append(link)
-                    print(f'New torrent found: {title}')
+                    print(f'Start to download: {title}')
+
         # 添加aria2任务到Alist
-        if len(downloadUrls) > 0:
-            Api.add_aria2(self.downloadPath, downloadUrls)
-            print(f'{len(downloadUrls)} new torrent(s) added to aria2 task queue')
-        else:
+        if len(downloadUrls) == 0:
             print('No new torrent found')
+
         # 更新save文件
         self.save.to_csv('save.csv', index=True)
         print('Check finished')
