@@ -22,5 +22,5 @@ def parse(rss_url:str, filter:list[re.Pattern] = []) -> pandas.DataFrame:
             data['link'].append(__parseLink(each))
             data['pubDate'].append(each.published)
     df = pandas.DataFrame(data)
-    df['pubDate'] = pandas.to_datetime(df['pubDate'], format='ISO8601')
+    df['pubDate'] = pandas.to_datetime(df['pubDate'], format='mixed', utc=True)
     return df

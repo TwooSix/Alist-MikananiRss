@@ -71,7 +71,7 @@ class RSSManager():
                 latestDate = self.save.at[rss.getUrl(), 'latestDate']
             except KeyError:
                 # 第一次订阅，保存数据但不下载
-                self.save.at[rss.getUrl(), 'latestDate'] = pd.to_datetime(rssDataFrame['pubDate'].max(), format='iso8601')
+                self.save.at[rss.getUrl(), 'latestDate'] = pd.to_datetime(rssDataFrame['pubDate'].max(), format='mixed', utc=True)
                 print(f'New Subscription {rss} found, initial data')
                 continue
             # 检查是否有更新
