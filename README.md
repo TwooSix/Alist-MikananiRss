@@ -8,7 +8,7 @@ git clone https://github.com/TwooSix/Alist-MikananiRss.git
 ```shell
 cd Alist-MikananiRss && pip install -r requirements.txt
 ```
-3. 在`Config.py`文件编写配置文件
+3. 在目录下新建一个`Config.py`配置文件，并填写配置文件，具体填写示例见`ConfigExample.py`
 	 - 在`domain`字段填写你的alist部署域名，示例`www.example.com`
 	 - 在`username`, `password`字段填写你的Alist账户密码
 	 - 在`downloadPath`字段填写你的下载文件夹，示例`AliyunPan/Anime`
@@ -16,7 +16,7 @@ cd Alist-MikananiRss && pip install -r requirements.txt
 		- `url`：你从蜜柑计划获取的RSS链接
 		- `filter`：通过正则表达式过滤结果，目前我只个人内置了'简体'，'繁体'，'1080'，'非合集'四种，写的也比较粗糙
 		- `subfolder`：子文件夹名，决定是否单独存放到子文件夹，不填则默认下载到`downloadPath`，填写则下载到`downloadPath/subfoler`  
-填写示例见`ConfigExample.py`
+
 1. 运行代码`python main.py`
 2. Enjoy
 ## 自定义正则表达式
