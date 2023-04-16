@@ -1,6 +1,8 @@
 domain = 'www.example.com'
 
-token = 'YourToken'
+username = 'username'
+
+password = 'password'
 
 downloadPath = 'AliYun/Anime'
 

@@ -38,9 +38,10 @@ class RSS():
         return self.name
 
 class RSSManager():
-    def __init__(self, rssList:list[RSS], downloadPath:str) -> None:
+    def __init__(self, rssList:list[RSS], downloadPath:str, handler:Api.ApiHandler) -> None:
         self.subscriptions = rssList
         self.downloadPath = downloadPath
+        self.handler = handler
         try:
             self.save = pd.read_csv('save.csv', index_col='subscriptions')
         except FileNotFoundError:
@@ -52,7 +53,7 @@ class RSSManager():
     def __download(self, urls:str, subFolder:str = None) -> None:
         """Download torrent file from url"""
         downloadPath = os.path.join(self.downloadPath, subFolder) if subFolder else self.downloadPath
-        Api.add_aria2(downloadPath, urls)
+        self.handler.add_aria2(downloadPath, urls)
 
     def checkUpdate(self):
         """Check if there is new torrent in rss feed, if so, add it to aria2 task queue"""
@@ -70,7 +71,7 @@ class RSSManager():
                 latestDate = self.save.at[rss.getUrl(), 'latestDate']
             except KeyError:
                 # 第一次订阅，保存数据但不下载
-                self.save.at[rss.getUrl(), 'latestDate'] = pd.to_datetime(rssDataFrame['pubDate'].max())
+                self.save.at[rss.getUrl(), 'latestDate'] = pd.to_datetime(rssDataFrame['pubDate'].max(), format='iso8601')
                 print(f'New Subscription {rss} found, initial data')
                 continue
             # 检查是否有更新
