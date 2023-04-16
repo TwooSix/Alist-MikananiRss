@@ -24,12 +24,11 @@ class ApiHandler():
             "username": username,
             "password": password
         }
-        # 连接失败时返回None
+
         try:
             response = requests.request("POST", api_url, headers=self.headers, json=body)
-        except requests.HTTPError as e:
-            print('Connection Error:{e}')
-            return None
+        except Exception as e:
+            raise Exception(f'Failed to connect {self.domain}:\n{e}')
         
         jsonData = response.json()
         if response.status_code != 200:
