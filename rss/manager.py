@@ -54,30 +54,35 @@ class Manager:
 
         print("Start Update Checking...")
         download_urls = []
-        for rss_url in self.subscriptions:
-            print(f"Checking {rss_url}...")
-            rss_dataframe = rss_url.parse()
+        for each_rss in self.subscriptions:
+            print(f"Checking {each_rss}...")
             try:
-                latest_date = self.save.at[rss_url.get_url(), "latestDate"]
+                rss_dataframe = each_rss.parse()
+            except Exception as e:
+                print(f"Error when parsing {each_rss}: {e}")
+                continue
+
+            try:
+                latest_date = self.save.at[each_rss.getUrl(), "latestDate"]
             except KeyError:
                 # First time to subscribe, add to save dataframe and not download
-                self.save.at[rss_url.get_url(), "latestDate"] = pd.to_datetime(
+                self.save.at[each_rss.getUrl(), "latestDate"] = pd.to_datetime(
                     rss_dataframe["pubDate"].max(), format="mixed", utc=True
                 )
-                print(f"New Subscription {rss_url} found, initial data")
+                print(f"New Subscription {each_rss} found, initial data")
                 continue
             # Check if there is an update in feed
             new_dataframe = rss_dataframe[rss_dataframe["pubDate"] > latest_date]
             if new_dataframe.shape[0] > 0:
                 # Update latestDate
-                self.save.at[rss_url.get_url(), "latestDate"] = new_dataframe[
+                self.save.at[each_rss.getUrl(), "latestDate"] = new_dataframe[
                     "pubDate"
                 ].max()
                 # Download the torrent of new feed
                 for idx in new_dataframe.index:
                     title = new_dataframe.iat[idx, 0]
                     link = new_dataframe.iat[idx, 1]
-                    self.__download([link], rss_url.get_subfolder())
+                    self.__download([link], each_rss.getSubFolder())
                     download_urls.append(link)
                     print(f"Start to download: {title}")
 

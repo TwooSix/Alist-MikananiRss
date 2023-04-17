@@ -1,10 +1,10 @@
-domain = 'www.example.com'
+domain = "www.example.com"
 
-username = 'username'
+username = "username"
 
-password = 'password'
+password = "password"
 
-downloadPath = 'AliYun/Anime'
+downloadPath = "AliYun/Anime"
 
 rssFilter = {
     "简体": r"(简体)|(简中)|(简日)|(CHS)",
@@ -15,18 +15,18 @@ rssFilter = {
 
 rss = [
     {
-        'url': 'https://mikanani.me/RSS/Bangumi?bangumiId=2970&subgroupid=357',
-        'filter': ['简体', '1080', '非合集'],
-        # 不填写SubFolder则默认下载至downloadPath
+        "url": "https://mikanani.me/RSS/Bangumi?bangumiId=2970&subgroupid=357",
+        "filter": ["简体", "1080", "非合集"],
+        "subFolder": "地狱乐",  # 下载至 {downloadPath}/地狱乐
     },
     {
-        'url': 'https://mikanani.me/RSS/Bangumi?bangumiId=2996&subgroupid=382',
-        'filter': ['简体', '1080', '非合集'],
-        'subFolder': '地狱乐'
+        "url": "https://mikanani.me/RSS/Bangumi?bangumiId=2996&subgroupid=382",
+        "filter": ["简体", "1080", "非合集"],
+        # 不填写，则下载至 {downloadPath}
     },
     {
-        'url': 'https://mikanani.me/RSS/Bangumi?bangumiId=3005&subgroupid=583',
-        'filter': ['繁体', '1080', '非合集'],
-        'subFolder': '公爵的契约未婚妻'
+        "url": "https://mikanani.me/RSS/Bangumi?bangumiId=3005&subgroupid=583",
+        "filter": ["繁体", "1080", "非合集"],
+        "subFolder": "__AUTO__",  # 程序会自动获取番剧名字，并下载至 {downloadPath}}/{番剧名}
     },
 ]

@@ -1,3 +1,4 @@
+import feedparser
 import pandas as pd
 
 import rss
@@ -16,33 +17,48 @@ class Rss:
             sub_folder (str, optional): Name of subfolder. Defaults to None.
         """
         self.url = url
-        self.sub_folder = sub_folder
-        self.name = sub_folder if sub_folder else url
-        self.set_filter(rss_filter_name)
+        if sub_folder == '__AUTO__':
+            auto_name = self.__autoName()
+            self.sub_folder = auto_name
+        else:
+            self.sub_folder = sub_folder
+        self.name = self.sub_folder if self.sub_folder else url
+        self.feed = None
+        self.setFilter(rss_filter_name)
 
-    def set_filter(self, filter_names: list[str]) -> None:
+    def setFilter(self, filter_names: list[str]) -> None:
         """Set regex filter for rss feed"""
         rss_filter = []
         for name in filter_names:
             rss_filter.append(rss.Filter.getFilter(name))
         self.filter = rss_filter
         return
+    
+    def __autoName(self) -> str:
+        """Auto get name from rss feed"""
+        try:
+            feed = feedparser.parse(self.url)
+            name = rss.Parser.parseAnimeName(feed)
+        except Exception:
+            return None
+        return name
 
-    def get_name(self) -> str:
+    def getName(self) -> str:
         """get name of rss feed, subfolder name or url"""
         return self.name
 
-    def get_url(self) -> str:
+    def getUrl(self) -> str:
         """get url of rss feed"""
         return self.url
 
-    def get_subfolder(self) -> str:
+    def getSubFolder(self) -> str:
         """get subfolder name of rss feed"""
         return self.sub_folder
 
     def parse(self) -> pd.DataFrame:
         """Parse rss feed and return a pandas DataFrame"""
-        return rss.Parser.parse(self.url, self.filter)
+        self.feed = feedparser.parse(self.url)
+        return rss.Parser.parseDataFrame(self.feed, self.filter)
 
     def __str__(self) -> str:
         return self.name
