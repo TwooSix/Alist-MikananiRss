@@ -1,18 +1,14 @@
-from RSS import RSS, RSSManager
-import Config
-import Api
+import api
+import config
+import rss
 
-rssList = []
+rss_list = []
 
-for each in Config.rss:
-    subFolder = each['subFolder'] if 'subFolder' in each else None
-    rssList.append(RSS(each['url'], each['filter'], subFolder))
+for each in config.rss:
+    sub_folder = each["subFolder"] if "subFolder" in each else None
+    rss_list.append(rss.Rss(each["url"], each["filter"], sub_folder))
 
-handler = Api.createApiHandler(Config.domain)
-try:
-    resp = handler.login(Config.username, Config.password)
-except Exception as e:
-    print(f'Login Failed: {e}')
-    exit(1)
-manager = RSSManager(rssList, downloadPath=Config.downloadPath, handler=handler)
+alist = api.Alist(config.domain)
+resp = alist.login(config.username, config.password)
+manager = rss.Manager(rss_list, download_path=config.downloadPath, alist=alist)
 manager.checkUpdate()
