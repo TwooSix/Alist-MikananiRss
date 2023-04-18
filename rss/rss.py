@@ -8,14 +8,6 @@ class Rss:
     def __init__(
         self, url: str, rss_filter_name: list[str] = None, sub_folder: str = None
     ):
-        """Class of rss feed
-
-        Args:
-            url (str): Rss feed's url
-            rss_filter_name (list[str], optional): The list of filter's name,
-                which will auto change to regex. Defaults to None.
-            sub_folder (str, optional): Name of subfolder. Defaults to None.
-        """
         self.url = url
         if sub_folder == '__AUTO__':
             auto_name = self.__autoName()

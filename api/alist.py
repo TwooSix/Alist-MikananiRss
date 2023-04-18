@@ -1,6 +1,5 @@
 import requests
 
-
 class Alist:
     headers = {
         "User-Agent": (
@@ -15,8 +14,18 @@ class Alist:
         self.domain = domain
 
     def login(self, username: str, password: str) -> dict:
-        """登录Alist并获取token"""
+        """Login to Alist and get authorization token
 
+        Args:
+            username (str): username
+            password (str): password
+
+        Raises:
+            ConnectionError: Error if response status code is not 200
+
+        Returns:
+            dict: response json data
+        """        
         api_url = f"https://{self.domain}/api/auth/login"
         body = {"username": username, "password": password}
 
@@ -36,10 +45,19 @@ class Alist:
         self.isLogin = True
         return jsonData
 
-    def add_aria2(self, savePath: str, urls: list[str]) -> dict:
+    def add_aria2(self, save_path: str, urls: list[str]) -> dict:
+        """Add download task to aria2 queue
+
+        Args:
+            save_path (str): save path start from /
+            urls (list[str]): download urls
+
+        Returns:
+            dict: response json data
+        """  
         assert self.isLogin, "Please login first"
         api_url = f"https://{self.domain}/api/fs/add_aria2"
-        body = {"path": savePath, "urls": urls}
+        body = {"path": save_path, "urls": urls}
         try:
             response = requests.request(
                 "POST", api_url, headers=self.headers, json=body
