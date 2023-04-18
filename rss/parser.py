@@ -69,3 +69,18 @@ class Parser:
         df = pandas.DataFrame(data)
         df["pubDate"] = pandas.to_datetime(df["pubDate"], format="mixed", utc=True)
         return df
+
+if __name__ == '__main__':
+    rssFilter = {
+        "简体": r"(简体)|(简中)|(简日)|(CHS)",
+        "繁体": r"(繁体)|(繁中)|(繁日)|(CHT)",
+        "1080": r"(1080[pP])",
+        "非合集": r"^((?!合集).)*$",
+    }
+
+    rss_url = "https://mikanani.me/RSS/Bangumi?bangumiId=2817"
+    feed = feedparser.parse(rss_url)
+    myfilter = [rssFilter['简体'], rssFilter['1080']]
+    df = Parser.parseDataFrame(feed, myfilter)
+    print(df['title'])
+    print(Parser.parseAnimeName(feed))
