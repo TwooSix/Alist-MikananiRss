@@ -10,7 +10,11 @@ class Manager:
     """rss feed manager"""
 
     def __init__(
-        self, rss_list: list[rss.Rss], download_path: str, alist: alist.Alist
+        self,
+        rss_list: list[rss.Rss],
+        download_path: str,
+        alist: alist.Alist,
+        notification_bot=None,
     ) -> None:
         """init the rss feed manager
 
@@ -22,7 +26,8 @@ class Manager:
 
         self.subscriptions = rss_list
         self.download_path = download_path
-        self.handler = alist
+        self.alist_handler = alist
+        self.notification_bot = notification_bot
         try:
             self.save = pd.read_csv("save.csv", index_col="subscriptions")
         except FileNotFoundError:
@@ -45,15 +50,25 @@ class Manager:
             if subFolder
             else self.download_path
         )
-        self.handler.add_aria2(download_path, urls)
+        self.alist_handler.add_aria2(download_path, urls)
 
-    def checkUpdate(self):
+    def notify(self, message: str) -> None:
+        """Send notification to user
+
+        Args:
+            message (str): message to send
+        """
+
+        if self.notification_bot:
+            self.notification_bot.send_message(message)
+
+    def check_update(self):
         """Check if there is new torrent in rss feed,
         if so, add it to aria2 task queue
         """
 
         print("Start Update Checking...")
-        download_urls = []
+        status = False
         for each_rss in self.subscriptions:
             print(f"Checking {each_rss}...")
             try:
@@ -83,10 +98,11 @@ class Manager:
                     title = new_dataframe.iat[idx, 0]
                     link = new_dataframe.iat[idx, 1]
                     self.__download([link], each_rss.getSubFolder())
-                    download_urls.append(link)
+                    self.notify(f"你订阅的番剧 [{each_rss}] 有更新啦:\n{title}")
+                    status = True
                     print(f"Start to download: {title}")
 
-        if len(download_urls) == 0:
+        if not status:
             print("No new torrent found")
 
         self.save.to_csv("save.csv", index=True)

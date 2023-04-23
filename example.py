@@ -1,19 +1,19 @@
-domain = "www.example.com"
+DOMAIN = "www.example.com"
 
-username = "username"
+USER_NAME = "username"
 
-password = "password"
+PASSWORD = "password"
 
-downloadPath = "AliYun/Anime"
+DOWNLOAD_PATH = "AliYun/Anime"
 
-rssFilter = {
+RSS_FILTER = {
     "简体": r"(简体)|(简中)|(简日)|(CHS)",
     "繁体": r"(繁体)|(繁中)|(繁日)|(CHT)",
     "1080": r"(1080[pP])",
     "非合集": r"^((?!合集).)*$",
 }
 
-rss = [
+RSS = [
     {
         "url": "https://mikanani.me/RSS/Bangumi?bangumiId=2970&subgroupid=357",
         "filter": ["简体", "1080", "非合集"],
@@ -30,3 +30,8 @@ rss = [
         "subFolder": "__AUTO__",  # 程序会自动获取番剧名字，并下载至 {downloadPath}}/{番剧名}
     },
 ]
+
+# ==================== Telegram Bot ====================
+TELEGRAM_NOTIFICATION = False  # 是否开启 Telegram 通知, True 开启, False 关闭
+BOT_TOKEN = ""  # 你的 Telegram Bot Token
+USER_ID = ""  # 你的 Telegram 用户 ID

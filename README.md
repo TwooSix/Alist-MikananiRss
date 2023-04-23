@@ -20,10 +20,13 @@ git clone https://github.com/TwooSix/Alist-MikananiRss.git && cd Alist-MikananiR
 pip install -r requirements.txt
 ```
 3. 在目录下新建一个`config.py`配置文件，并填写配置文件，具体填写示例见`example.py`
-	 - `domain`：字符串，你的alist部署域名，如`www.example.com`
-	 - `username`, `password`：字符串，你的Alist账户密码
-	 - `downloadPath`：字符串，你的下载文件夹，从登陆用户的根目录开始，如`AliyunPan/Anime`
-	 - `rssFilter`：字典，你的正则表达式规则，填写方式为`{name: regex}`（当然也可以复制用我写的），如`{"1080": r"(1080[pP])}"`
+	 - `DOMAIN`：字符串，你的alist部署域名，如`www.example.com`
+	 - `USER_NAME`, `PASSWORD`：字符串，你的Alist账户密码
+	 - `DOWNLOAD_PATH`：字符串，你的下载文件夹，从登陆用户的根目录开始，如`AliyunPan/Anime`
+	 - `RSS_FILTER`：字典，你的正则表达式规则，填写方式为`{name: regex}`（当然也可以复制用我写的），如`{"1080": r"(1080[pP])}"`
+	 - `TELEGRAM_NOTIFICATION`: 是否开启 Telegram 更新通知
+		- `BOT_TOKEN`: 若开启通知，在此处填写你的 BOT_TOKEN
+		- `USER_ID`: 若开启通知，在此处填写你的 USER_ID
 	 - 在`rss`字段填写番剧的RSS订阅（非个人账户的总订阅）
 		- `url`：字符串，从[蜜柑计划](https://mikanani.me/)获取的RSS订阅链接
 		- `filter`：字符串列表，用于当前rss订阅源的正则表达式过滤规则，填写规则名字即可，如`["1080"]`

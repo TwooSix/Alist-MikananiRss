@@ -2,7 +2,7 @@ import config
 
 
 class Filter:
-    __filter = config.rssFilter
+    __filter = config.RSS_FILTER
 
     def __init__(self) -> None:
         pass
