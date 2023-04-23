@@ -27,7 +27,7 @@ pip install -r requirements.txt
 	 - `TELEGRAM_NOTIFICATION`: 是否开启 Telegram 更新通知
 		- `BOT_TOKEN`: 若开启通知，在此处填写你的 BOT_TOKEN
 		- `USER_ID`: 若开启通知，在此处填写你的 USER_ID
-	 - 在`rss`字段填写番剧的RSS订阅（非个人账户的总订阅）
+	 - 在`RSS`字段填写番剧的RSS订阅（非个人账户的总订阅）
 		- `url`：字符串，从[蜜柑计划](https://mikanani.me/)获取的RSS订阅链接
 		- `filter`：字符串列表，用于当前rss订阅源的正则表达式过滤规则，填写规则名字即可，如`["1080"]`
 		- `subfolder`：字符串，下载的子文件夹名，决定是否单独存放到子文件夹
