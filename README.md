@@ -24,9 +24,6 @@ pip install -r requirements.txt
 	 - `USER_NAME`, `PASSWORD`：字符串，你的Alist账户密码
 	 - `DOWNLOAD_PATH`：字符串，你的下载文件夹，从登陆用户的根目录开始，如`AliyunPan/Anime`
 	 - `RSS_FILTER`：字典，你的正则表达式规则，填写方式为`{name: regex}`（当然也可以复制用我写的），如`{"1080": r"(1080[pP])}"`
-	 - `TELEGRAM_NOTIFICATION`: 是否开启 Telegram 更新通知
-		- `BOT_TOKEN`: 若开启通知，在此处填写你的 BOT_TOKEN
-		- `USER_ID`: 若开启通知，在此处填写你的 USER_ID
 	 - 在`RSS`字段填写番剧的RSS订阅（非个人账户的总订阅）
 		- `url`：字符串，从[蜜柑计划](https://mikanani.me/)获取的RSS订阅链接
 		- `filter`：字符串列表，用于当前rss订阅源的正则表达式过滤规则，填写规则名字即可，如`["1080"]`
@@ -37,3 +34,13 @@ pip install -r requirements.txt
 
 4. 运行代码`python main.py`
 5. Enjoy
+
+## 开启订阅更新通知（可选）
+### Telegram 通知
+在`config.py`中加入以下配置
+```python
+TELEGRAM_NOTIFICATION = True # 开启Telegram通知，为 False 则关闭
+BOT_TOKEN = "你的 BOT_TOKEN"
+USER_ID = "你的 USER_ID"
+```
+
