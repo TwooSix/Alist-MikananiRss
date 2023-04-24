@@ -9,7 +9,7 @@ class Rss:
         self, url: str, rss_filter_name: list[str] = None, sub_folder: str = None
     ):
         self.url = url
-        if sub_folder == '__AUTO__':
+        if sub_folder == "__AUTO__":
             auto_name = self.__autoName()
             self.sub_folder = auto_name
         else:
@@ -25,7 +25,7 @@ class Rss:
             rss_filter.append(rss.Filter.getFilter(name))
         self.filter = rss_filter
         return
-    
+
     def __autoName(self) -> str:
         """Auto get name from rss feed"""
         try:
@@ -50,6 +50,8 @@ class Rss:
     def parse(self) -> pd.DataFrame:
         """Parse rss feed and return a pandas DataFrame"""
         self.feed = feedparser.parse(self.url)
+        if self.feed.bozo:
+            raise ConnectionError(f"{self.feed.bozo_exception}")
         return rss.Parser.parseDataFrame(self.feed, self.filter)
 
     def __str__(self) -> str:

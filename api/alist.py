@@ -1,5 +1,6 @@
 import requests
 
+
 class Alist:
     headers = {
         "User-Agent": (
@@ -25,7 +26,7 @@ class Alist:
 
         Returns:
             dict: response json data
-        """        
+        """
         api_url = f"https://{self.domain}/api/auth/login"
         body = {"username": username, "password": password}
 
@@ -35,7 +36,7 @@ class Alist:
                 "Error when login to {}: {}".format(self.domain, response.status_code)
             )
         jsonData = response.json()
-        if jsonData['code'] != 200:
+        if jsonData["code"] != 200:
             raise ConnectionError(
                 "Error when login to {}: {}".format(self.domain, jsonData["message"])
             )
@@ -54,14 +55,9 @@ class Alist:
 
         Returns:
             dict: response json data
-        """  
+        """
         assert self.isLogin, "Please login first"
         api_url = f"https://{self.domain}/api/fs/add_aria2"
         body = {"path": save_path, "urls": urls}
-        try:
-            response = requests.request(
-                "POST", api_url, headers=self.headers, json=body
-            )
-        except requests.HTTPError as e:
-            print(f"Connect server error:\n{e}")
+        response = requests.request("POST", api_url, headers=self.headers, json=body)
         return response.json()

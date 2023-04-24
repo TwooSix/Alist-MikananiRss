@@ -89,19 +89,22 @@ class Manager:
             # Check if there is an update in feed
             new_dataframe = rss_dataframe[rss_dataframe["pubDate"] > latest_date]
             if new_dataframe.shape[0] > 0:
-                # Update latestDate
-                self.save.at[each_rss.getUrl(), "latestDate"] = new_dataframe[
-                    "pubDate"
-                ].max()
                 # Download the torrent of new feed
                 for idx in new_dataframe.index:
                     title = new_dataframe.iat[idx, 0]
                     link = new_dataframe.iat[idx, 1]
-                    self.__download([link], each_rss.getSubFolder())
+                    try:
+                        self.__download([link], each_rss.getSubFolder())
+                    except Exception as e:
+                        print(f"Error when downloading {title}: {e}")
+                        continue
                     self.notify(f"你订阅的番剧 [{each_rss}] 有更新啦:\n{title}")
                     status = True
                     print(f"Start to download: {title}")
-
+                    # Update latestDate
+                    self.save.at[each_rss.getUrl(), "latestDate"] = new_dataframe.iat[
+                        idx, 2
+                    ]
         if not status:
             print("No new torrent found")
 
