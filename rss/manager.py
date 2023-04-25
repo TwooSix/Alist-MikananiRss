@@ -4,6 +4,9 @@ import pandas as pd
 
 import api.alist as alist
 import rss
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class Manager:
@@ -34,7 +37,7 @@ class Manager:
             self.save = pd.DataFrame(columns=["subscriptions", "latestDate"])
             self.save.set_index("subscriptions", inplace=True)
         except Exception as e:
-            print(f"Unkonwn Error when reading save.csv: {e}")
+            logger.error(f"Unkonwn Error when reading save.csv: {e}")
             exit(1)
 
     def __download(self, urls: str, subFolder: str = None) -> None:
@@ -66,15 +69,14 @@ class Manager:
         """Check if there is new torrent in rss feed,
         if so, add it to aria2 task queue
         """
-
-        print("Start Update Checking...")
+        logger.info("Start Update Checking...")
         status = False
         for each_rss in self.subscriptions:
-            print(f"Checking {each_rss}...")
+            logger.info(f"Checking {each_rss}...")
             try:
                 rss_dataframe = each_rss.parse()
             except Exception as e:
-                print(f"Error when parsing {each_rss}: {e}")
+                logger.error(f"Error when parsing {each_rss}: {e}")
                 continue
 
             try:
@@ -84,7 +86,7 @@ class Manager:
                 self.save.at[each_rss.getUrl(), "latestDate"] = pd.to_datetime(
                     rss_dataframe["pubDate"].max(), format="mixed", utc=True
                 )
-                print(f"New Subscription {each_rss} found, initial data")
+                logger.info(f"New Subscription {each_rss} found, initial data")
                 continue
             # Check if there is an update in feed
             new_dataframe = rss_dataframe[rss_dataframe["pubDate"] > latest_date]
@@ -96,17 +98,17 @@ class Manager:
                     try:
                         self.__download([link], each_rss.getSubFolder())
                     except Exception as e:
-                        print(f"Error when downloading {title}: {e}")
+                        logger.error(f"Error when downloading {title}: {e}")
                         continue
                     self.notify(f"你订阅的番剧 [{each_rss}] 有更新啦:\n{title}")
                     status = True
-                    print(f"Start to download: {title}")
+                    logger.info(f"Start to download: {title}")
                     # Update latestDate
                     self.save.at[each_rss.getUrl(), "latestDate"] = new_dataframe.iat[
                         idx, 2
                     ]
         if not status:
-            print("No new torrent found")
+            logger.info("No new torrent found")
 
         self.save.to_csv("save.csv", index=True)
-        print("Check finished")
+        logger.info("Check finished")
