@@ -1,6 +1,7 @@
 import requests
 import os
 import mimetypes
+import urllib.parse
 
 
 class Alist:
@@ -68,8 +69,8 @@ class Alist:
         """Upload file to Alist
 
         Args:
-            save_path (str): save path start from /
-            file (str): file's path
+            save_path (str): Server file save path
+            file_path (str): Local file's path
 
         Returns:
             dict: response json data
@@ -81,8 +82,10 @@ class Alist:
         headers = self.headers.copy()
         mime_type = mimetypes.guess_type(file_name)[0]
         headers["Content-Type"] = mime_type
-        headers["Content-Length"] = str(os.path.getsize("save.csv"))
-        headers["file-path"] = f"{save_path}/{file_name}"
+        headers["Content-Length"] = str(os.path.getsize(file_path))
+        # use quote to avoid special characters
+        upload_path = urllib.parse.quote(f"{save_path}/{file_name}")
+        headers["file-path"] = upload_path
         with open(file_path, "rb") as f:
             response = requests.put(api_url, headers=headers, data=f)
-            return response.json()
+        return response.json()

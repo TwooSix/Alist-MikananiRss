@@ -5,6 +5,9 @@ import re
 
 import feedparser
 import pandas
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class Parser:
@@ -39,7 +42,7 @@ class Parser:
         try:
             anime_name = feed["feed"]["title"].split(" - ")[1]
         except KeyError as e:
-            print(f"Error when parsing anime name:{e}")
+            logger.error(f"Error when parsing anime name:{e}")
             return None
         return anime_name
 
@@ -70,7 +73,8 @@ class Parser:
         df["pubDate"] = pandas.to_datetime(df["pubDate"], format="mixed", utc=True)
         return df
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     rssFilter = {
         "简体": r"(简体)|(简中)|(简日)|(CHS)",
         "繁体": r"(繁体)|(繁中)|(繁日)|(CHT)",
@@ -80,7 +84,7 @@ if __name__ == '__main__':
 
     rss_url = "https://mikanani.me/RSS/Bangumi?bangumiId=2817"
     feed = feedparser.parse(rss_url)
-    myfilter = [rssFilter['简体'], rssFilter['1080']]
+    myfilter = [rssFilter["简体"], rssFilter["1080"]]
     df = Parser.parseDataFrame(feed, myfilter)
-    print(df['title'])
+    print(df["title"])
     print(Parser.parseAnimeName(feed))

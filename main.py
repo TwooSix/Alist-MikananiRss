@@ -1,6 +1,17 @@
 import api
 import config
 import rss
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    encoding="utf-8",
+    handlers=[
+        logging.FileHandler("log.log", encoding="utf-8"),
+        logging.StreamHandler(),
+    ],
+)
 
 rss_list = []
 
