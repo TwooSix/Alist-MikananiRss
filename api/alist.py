@@ -70,7 +70,7 @@ class Alist:
 
         Args:
             save_path (str): Server file save path
-            file (str): Local file's path
+            file_path (str): Local file's path
 
         Returns:
             dict: response json data
