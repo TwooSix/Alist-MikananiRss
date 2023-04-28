@@ -26,7 +26,8 @@ pip install -r requirements.txt
 	 - `SUBSCRIBE_URL`: 字符串，你的RSS订阅链接
 	 - `FILTERS`: 列表，使用的正则表达式规则，填写名字即可如`[1080]`
 	 - `INTERVAL_TIME`: 整数，执行的间隔时间
-4. 运行代码`python main.py`
+4. 运行代码：`python main.py`  
+  (后台执行则为：`nohup python main.py > /dev/null 2>&1 &`)
 5. Enjoy
 
 ## 开启订阅更新通知（可选）
