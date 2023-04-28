@@ -3,3 +3,4 @@ __pycache__/
 *.csv
 *.log
 config.py
+checkpoint_time.txt

@@ -1,7 +1,8 @@
 import api
 import config
-import rss
+import core
 import logging
+import time
 
 logging.basicConfig(
     level=logging.INFO,
@@ -13,21 +14,29 @@ logging.basicConfig(
     ],
 )
 
-rss_list = []
-
-for each in config.RSS:
-    sub_folder = each["subFolder"] if "subFolder" in each else None
-    rss_list.append(rss.Rss(each["url"], each["filter"], sub_folder))
 
 alist = api.Alist(config.DOMAIN)
 resp = alist.login(config.USER_NAME, config.PASSWORD)
+
 notification_bot = None
 if config.TELEGRAM_NOTIFICATION:
     notification_bot = api.TelegramBot(config.BOT_TOKEN, config.USER_ID)
-manager = rss.Manager(
-    rss_list,
+
+filters = []
+for filter in config.FILTERS:
+    filters.append(config.REGEX_PATTERN[filter])
+
+manager = core.Manager(
+    config.SUBSCRIBE_URL,
     download_path=config.DOWNLOAD_PATH,
+    filter=filters,
     alist=alist,
     notification_bot=notification_bot,
 )
-manager.check_update()
+
+while config.INTERVAL_TIME:
+    try:
+        manager.check_update()
+    except Exception as e:
+        logging.error(e)
+    time.sleep(config.INTERVAL_TIME)
