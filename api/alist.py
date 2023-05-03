@@ -1,7 +1,8 @@
-import requests
-import os
 import mimetypes
+import os
 import urllib.parse
+
+import requests
 
 
 class Alist:
@@ -67,10 +68,12 @@ class Alist:
         json_data = response.json()
         if json_data["code"] != 200:
             raise ConnectionError(
-                "Error when add aria2 tasks to {}: {}".format(self.domain, json_data["message"])
+                "Error when add aria2 tasks to {}: {}".format(
+                    self.domain, json_data["message"]
+                )
             )
 
-        return json_data.json()
+        return json_data
 
     def upload(self, save_path: str, file_path: str) -> dict:
         """Upload file to Alist
