@@ -79,13 +79,19 @@ class Alist:
         api_url = f"https://{self.domain}/api/fs/put"
         file_path = os.path.abspath(file_path)
         file_name = os.path.basename(file_path)
+        # use utf-8 encoding to avoid UnicodeEncodeError
+        file_path = file_path.encode("utf-8")
+
+        # add headers
         headers = self.headers.copy()
         mime_type = mimetypes.guess_type(file_name)[0]
         headers["Content-Type"] = mime_type
-        headers["Content-Length"] = str(os.path.getsize(file_path))
-        # use quote to avoid special characters
+        file_stat = os.stat(file_path)
+        headers["Content-Length"] = str(file_stat.st_size)
+        # use URL encoding
         upload_path = urllib.parse.quote(f"{save_path}/{file_name}")
         headers["file-path"] = upload_path
+
         with open(file_path, "rb") as f:
             response = requests.put(api_url, headers=headers, data=f)
         return response.json()
