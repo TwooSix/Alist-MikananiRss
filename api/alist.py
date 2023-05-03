@@ -63,7 +63,14 @@ class Alist:
         api_url = f"https://{self.domain}/api/fs/add_aria2"
         body = {"path": save_path, "urls": urls}
         response = requests.request("POST", api_url, headers=self.headers, json=body)
-        return response.json()
+
+        json_data = response.json()
+        if json_data["code"] != 200:
+            raise ConnectionError(
+                "Error when add aria2 tasks to {}: {}".format(self.domain, json_data["message"])
+            )
+
+        return json_data.json()
 
     def upload(self, save_path: str, file_path: str) -> dict:
         """Upload file to Alist
@@ -94,4 +101,11 @@ class Alist:
 
         with open(file_path, "rb") as f:
             response = requests.put(api_url, headers=headers, data=f)
-        return response.json()
+
+        json_data = response.json()
+        if json_data["code"] != 200:
+            raise ConnectionError(
+                "Error when upload to {}: {}".format(self.domain, json_data["message"])
+            )
+
+        return json_data
