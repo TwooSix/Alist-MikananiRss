@@ -14,7 +14,7 @@
 ```shell
 git clone https://github.com/TwooSix/Alist-MikananiRss.git && cd Alist-MikananiRss
 ```
-2. 安装依赖
+2. 安装依赖(Python>=3.9)
 ```shell
 pip install -r requirements.txt
 ```
@@ -24,7 +24,7 @@ pip install -r requirements.txt
 	 - `DOWNLOAD_PATH`：字符串，你的下载文件夹，从登陆用户的根目录开始，如`AliyunPan/Anime`
 	 - `REGEX_PATTERN`：字典，你的正则表达式规则，填写方式为`{name: regex}`（当然也可以复制用我写的），如`{"1080": r"(1080[pP])}"`
 	 - `SUBSCRIBE_URL`: 字符串，你的RSS订阅链接
-	 - `FILTERS`: 列表，使用的正则表达式规则，填写名字即可如`[1080]`
+	 - `FILTERS`: 列表，使用的正则表达式规则，填写名字即可，如`["1080"]`
 	 - `INTERVAL_TIME`: 整数，执行的间隔时间
 4. 运行代码：`python main.py`  
   (后台执行则为：`nohup python main.py > /dev/null 2>&1 &`)
