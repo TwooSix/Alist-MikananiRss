@@ -16,7 +16,6 @@ logging.basicConfig(
 
 
 alist = api.Alist(config.DOMAIN)
-resp = alist.login(config.USER_NAME, config.PASSWORD)
 
 notification_bot = None
 if config.TELEGRAM_NOTIFICATION:
@@ -36,6 +35,7 @@ manager = core.Manager(
 
 while config.INTERVAL_TIME:
     try:
+        resp = alist.login(config.USER_NAME, config.PASSWORD)
         manager.check_update()
     except Exception as e:
         logging.error(e)
