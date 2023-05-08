@@ -1,8 +1,9 @@
-import api
 import config
 import core
 import logging
 import time
+
+from core import api
 
 logging.basicConfig(
     level=logging.INFO,

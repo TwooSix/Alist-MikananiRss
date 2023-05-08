@@ -2,7 +2,7 @@ import os
 
 import pandas as pd
 
-import api.alist as alist
+import core.api.alist as alist
 import logging
 import feedparser
 from .parser import Parser
