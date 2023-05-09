@@ -1,11 +1,11 @@
+import logging
 import os
 
+import feedparser
 import pandas as pd
 
 import core.api.alist as alist
-import logging
-import feedparser
-from .rssparser import RssParser
+from core.rssparser import RssParser
 
 logger = logging.getLogger(__name__)
 

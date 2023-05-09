@@ -1,7 +1,7 @@
-import config
 import logging
 import time
 
+import config
 from core import api
 from core.rssmanager import RssManager
 

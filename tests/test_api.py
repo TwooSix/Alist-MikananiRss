@@ -1,7 +1,6 @@
 import pytest
 
-from core.api import Alist
-from core.api import TelegramBot
+from core.api import Alist, TelegramBot
 
 
 class TestAlistApi:
