@@ -17,6 +17,20 @@ class Alist:
 
     def __init__(self, domain: str) -> None:
         self.domain = domain
+        self.protocol = self._init_protocol(domain)
+        self.prefix = self._init_prefix(self.protocol, domain)
+
+    def _init_protocol(self, domain: str) -> str:
+        if domain.startswith("localhost") or domain.startswith("127.0.0.1"):
+            protocol = "http"
+            return protocol
+        else:
+            protocol = "https"
+            return protocol
+
+    def _init_prefix(self, protocol: str, domain: str) -> str:
+        prefix = f"{protocol}://{domain}/"
+        return prefix
 
     def login(self, username: str, password: str) -> dict:
         """Login to Alist and get authorization token
@@ -31,7 +45,8 @@ class Alist:
         Returns:
             dict: response json data
         """
-        api_url = f"https://{self.domain}/api/auth/login"
+        api = "api/auth/login"
+        api_url = urllib.parse.urljoin(self.prefix, api)
         body = {"username": username, "password": password}
 
         response = requests.request("POST", api_url, headers=self.headers, json=body)
@@ -61,7 +76,8 @@ class Alist:
             dict: response json data
         """
         assert self.isLogin, "Please login first"
-        api_url = f"https://{self.domain}/api/fs/add_aria2"
+        api = "api/fs/add_aria2"
+        api_url = urllib.parse.urljoin(self.prefix, api)
         body = {"path": save_path, "urls": urls}
         response = requests.request("POST", api_url, headers=self.headers, json=body)
 
@@ -86,7 +102,8 @@ class Alist:
             dict: response json data
         """
         assert self.isLogin, "Please login first"
-        api_url = f"https://{self.domain}/api/fs/put"
+        api = "api/fs/put"
+        api_url = urllib.parse.urljoin(self.prefix, api)
         file_path = os.path.abspath(file_path)
         file_name = os.path.basename(file_path)
         # use utf-8 encoding to avoid UnicodeEncodeError

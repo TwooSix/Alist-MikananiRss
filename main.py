@@ -1,9 +1,9 @@
 import config
-import core
 import logging
 import time
 
 from core import api
+from core.rssmanager import RssManager
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,7 +26,7 @@ filters = []
 for filter in config.FILTERS:
     filters.append(config.REGEX_PATTERN[filter])
 
-manager = core.Manager(
+manager = RssManager(
     config.SUBSCRIBE_URL,
     download_path=config.DOWNLOAD_PATH,
     filter=filters,

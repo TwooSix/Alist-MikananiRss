@@ -5,12 +5,12 @@ import pandas as pd
 import core.api.alist as alist
 import logging
 import feedparser
-from .parser import Parser
+from .rssparser import RssParser
 
 logger = logging.getLogger(__name__)
 
 
-class Manager:
+class RssManager:
     """rss feed manager"""
 
     def __init__(
@@ -80,7 +80,7 @@ class Manager:
             )
             raise ConnectionError(feed.bozo_exception)
 
-        subscribe_info = Parser.parseDataFrame(feed, self.filter)
+        subscribe_info = RssParser.parse_data_frame(feed, self.filter)
         return subscribe_info
 
     def get_new_anime_info(self, subscribe_info):

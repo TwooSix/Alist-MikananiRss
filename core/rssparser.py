@@ -13,12 +13,12 @@ import gc
 logger = logging.getLogger(__name__)
 
 
-class Parser:
+class RssParser:
     def __init__(self) -> None:
         pass
 
     @staticmethod
-    def parseTorrentLink(entry: dict) -> str:
+    def parse_torrent_link(entry: dict) -> str:
         """Get torrent link from rss feed entry
 
         Args:
@@ -32,8 +32,9 @@ class Parser:
                 return link["href"]
 
     @staticmethod
-    def parseAnimeName(home_page_url) -> str:
+    def parse_anime_name(entry: dict) -> str:
         try:
+            home_page_url = entry.link
             resp = requests.get(home_page_url)
             soup = bs4.BeautifulSoup(resp.text, "html.parser")
             anime_name = soup.find("p", class_="bangumi-title").text.strip()
@@ -48,7 +49,7 @@ class Parser:
         return anime_name
 
     @staticmethod
-    def parseDataFrame(
+    def parse_data_frame(
         feed: feedparser.FeedParserDict, filters: list[re.Pattern] = []
     ) -> pandas.DataFrame:
         """Parse rss feed from rss feed url to pandas.DataFrame
@@ -68,25 +69,9 @@ class Parser:
                 match_result = match_result and re.search(pattern, entry.title)
             if match_result:
                 data["title"].append(entry.title)
-                data["link"].append(Parser.parseTorrentLink(entry))
+                data["link"].append(RssParser.parse_torrent_link(entry))
                 data["pubDate"].append(entry.published)
-                data["animeName"].append(Parser.parseAnimeName(entry.link))
+                data["animeName"].append(RssParser.parse_anime_name(entry))
         df = pandas.DataFrame(data)
         df["pubDate"] = pandas.to_datetime(df["pubDate"], format="mixed", utc=True)
         return df
-
-
-if __name__ == "__main__":
-    rssFilter = {
-        "简体": r"(简体)|(简中)|(简日)|(CHS)",
-        "繁体": r"(繁体)|(繁中)|(繁日)|(CHT)",
-        "1080": r"(1080[pP])",
-        "非合集": r"^((?!合集).)*$",
-    }
-
-    rss_url = "https://mikanani.me/RSS/Bangumi?bangumiId=2817"
-    feed = feedparser.parse(rss_url)
-    myfilter = [rssFilter["简体"], rssFilter["1080"]]
-    df = Parser.parseDataFrame(feed, myfilter)
-    print(df["title"])
-    print(Parser.parseAnimeName(feed))
