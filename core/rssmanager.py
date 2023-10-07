@@ -1,13 +1,11 @@
-import logging
 import os
 
 import feedparser
 import pandas as pd
 
 import core.api.alist as alist
+from core.logger import Log
 from core.rssparser import RssParser
-
-logger = logging.getLogger(__name__)
 
 
 class RssManager:
@@ -44,7 +42,7 @@ class RssManager:
                 "1970-01-01 00:00:00", format="mixed", utc=True
             )
         except Exception as e:
-            logger.error(f"Unkonwn Error when load checkpoint_time: {e}")
+            Log.error(f"Unkonwn Error when load checkpoint_time:\n {e}")
             exit(1)
 
     def download(self, urls: str, subFolder: str = None) -> None:
@@ -75,8 +73,8 @@ class RssManager:
     def parse_subscribe(self):
         feed = feedparser.parse(self.subscribe_url)
         if feed.bozo:
-            logger.error(
-                f"Error when connect to {self.subscribe_url}: {feed.bozo_exception}"
+            Log.error(
+                f"Error when connect to {self.subscribe_url}:\n {feed.bozo_exception}"
             )
             raise ConnectionError(feed.bozo_exception)
 
@@ -97,7 +95,7 @@ class RssManager:
         """Check if there is new torrent in rss feed,
         if so, add it to aria2 task queue
         """
-        logger.info("Start Update Checking...")
+        Log.debug("Start Update Checking...")
         subscribe_info = self.parse_subscribe()
         new_anime_info = self.get_new_anime_info(subscribe_info)
         if new_anime_info.shape[0] > 0:
@@ -108,14 +106,14 @@ class RssManager:
                     links = group["link"].tolist()
                     self.download(links, name)
                 except Exception as e:
-                    logger.error(f"Error when downloading {name}: {e}")
+                    Log.error(f"Error when downloading {name}:\n {e}")
                     continue
                 self.notify(
                     "你订阅的番剧 [{}] 有更新啦:\n{}".format(
                         name, "\n".join(group["title"].tolist())
                     )
                 )
-                logger.info(f"Start to download: {name}")
+                Log.info(f"Start to download: {name}")
                 latest_time = group["pubDate"].max()
                 self.checkpoint_time = (
                     latest_time
@@ -123,5 +121,5 @@ class RssManager:
                     else self.checkpoint_time
                 )
         else:
-            logger.info("No new anime found")
+            Log.debug("No new anime found")
         self.save_checkpoint()

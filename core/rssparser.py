@@ -2,7 +2,6 @@
 Only Test in mikanani.me
 """
 import gc
-import logging
 import re
 
 import bs4
@@ -10,7 +9,7 @@ import feedparser
 import pandas
 import requests
 
-logger = logging.getLogger(__name__)
+from core.logger import Log
 
 
 class RssParser:
@@ -44,7 +43,7 @@ class RssParser:
             soup = None
             gc.collect()
         except Exception as e:
-            logger.error(f"Error when parsing anime name:{e}")
+            Log.error(f"Error when parsing anime name:\n{e}")
             return None
         return anime_name
 

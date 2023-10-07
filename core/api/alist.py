@@ -15,22 +15,8 @@ class Alist:
     }
     isLogin = False
 
-    def __init__(self, domain: str) -> None:
-        self.domain = domain
-        self.protocol = self._init_protocol(domain)
-        self.prefix = self._init_prefix(self.protocol, domain)
-
-    def _init_protocol(self, domain: str) -> str:
-        if domain.startswith("localhost") or domain.startswith("127.0.0.1"):
-            protocol = "http"
-            return protocol
-        else:
-            protocol = "https"
-            return protocol
-
-    def _init_prefix(self, protocol: str, domain: str) -> str:
-        prefix = f"{protocol}://{domain}/"
-        return prefix
+    def __init__(self, base_url: str) -> None:
+        self.base_url = base_url
 
     def login(self, username: str, password: str) -> dict:
         """Login to Alist and get authorization token
@@ -43,21 +29,21 @@ class Alist:
             ConnectionError: Error if response status code is not 200
 
         Returns:
-            dict: response json data
+            jsonData (dict): response json data
         """
         api = "api/auth/login"
-        api_url = urllib.parse.urljoin(self.prefix, api)
+        api_url = urllib.parse.urljoin(self.base_url, api)
         body = {"username": username, "password": password}
 
         response = requests.request("POST", api_url, headers=self.headers, json=body)
         if response.status_code != 200:
             raise ConnectionError(
-                "Error when login to {}: {}".format(self.domain, response.status_code)
+                "Error when login to {}: {}".format(self.base_url, response.status_code)
             )
         jsonData = response.json()
         if jsonData["code"] != 200:
             raise ConnectionError(
-                "Error when login to {}: {}".format(self.domain, jsonData["message"])
+                "Error when login to {}: {}".format(self.base_url, jsonData["message"])
             )
 
         self.token = jsonData["data"]["token"]
@@ -77,7 +63,7 @@ class Alist:
         """
         assert self.isLogin, "Please login first"
         api = "api/fs/add_aria2"
-        api_url = urllib.parse.urljoin(self.prefix, api)
+        api_url = urllib.parse.urljoin(self.base_url, api)
         body = {"path": save_path, "urls": urls}
         response = requests.request("POST", api_url, headers=self.headers, json=body)
 
@@ -85,7 +71,7 @@ class Alist:
         if json_data["code"] != 200:
             raise ConnectionError(
                 "Error when add aria2 tasks to {}: {}".format(
-                    self.domain, json_data["message"]
+                    self.base_url, json_data["message"]
                 )
             )
 
@@ -103,7 +89,7 @@ class Alist:
         """
         assert self.isLogin, "Please login first"
         api = "api/fs/put"
-        api_url = urllib.parse.urljoin(self.prefix, api)
+        api_url = urllib.parse.urljoin(self.base_url, api)
         file_path = os.path.abspath(file_path)
         file_name = os.path.basename(file_path)
         # use utf-8 encoding to avoid UnicodeEncodeError
@@ -125,7 +111,9 @@ class Alist:
         json_data = response.json()
         if json_data["code"] != 200:
             raise ConnectionError(
-                "Error when upload to {}: {}".format(self.domain, json_data["message"])
+                "Error when upload to {}: {}".format(
+                    self.base_url, json_data["message"]
+                )
             )
 
         return json_data
