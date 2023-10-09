@@ -4,6 +4,7 @@ import feedparser
 import pandas as pd
 
 import core.api.alist as alist
+from core.database import SubscribeDatabase
 from core.logger import Log
 from core.rssparser import RssParser
 
@@ -32,18 +33,7 @@ class RssManager:
         self.alist_handler = alist
         self.filter = filter
         self.notification_bot = notification_bot
-        try:
-            with open("checkpoint_time.txt", "r") as f:
-                self.checkpoint_time = pd.to_datetime(
-                    f.read(), format="mixed", utc=True
-                )
-        except FileNotFoundError:
-            self.checkpoint_time = pd.to_datetime(
-                "1970-01-01 00:00:00", format="mixed", utc=True
-            )
-        except Exception as e:
-            Log.error(f"Unkonwn Error when load checkpoint_time:\n {e}")
-            exit(1)
+        self.db = SubscribeDatabase()
 
     def download(self, urls: str, subFolder: str = None) -> None:
         """Download torrent file to subfolder via alist's aria2
@@ -81,15 +71,13 @@ class RssManager:
         subscribe_info = RssParser.parse_data_frame(feed, self.filter)
         return subscribe_info
 
-    def get_new_anime_info(self, subscribe_info):
-        new_anime_info = subscribe_info[
-            subscribe_info["pubDate"] > self.checkpoint_time
-        ]
+    def get_new_anime_info(self, subscribe_info: pd.DataFrame):
+        new_anime_info = subscribe_info[~subscribe_info["id"].apply(self.db.is_exist)]
         return new_anime_info
 
-    def save_checkpoint(self):
-        with open("checkpoint_time.txt", "w") as f:
-            f.write(str(self.checkpoint_time))
+    # def save_checkpoint(self):
+    #     with open("checkpoint_time.txt", "w") as f:
+    #         f.write(str(self.checkpoint_time))
 
     def check_update(self):
         """Check if there is new torrent in rss feed,
@@ -114,12 +102,13 @@ class RssManager:
                     )
                 )
                 Log.info(f"Start to download: {name}")
-                latest_time = group["pubDate"].max()
-                self.checkpoint_time = (
-                    latest_time
-                    if latest_time > self.checkpoint_time
-                    else self.checkpoint_time
-                )
+                for _, row in group.iterrows():
+                    self.db.add_data(
+                        row["id"],
+                        row["title"],
+                        row["link"],
+                        str(row["pubDate"]),
+                        name,
+                    )
         else:
             Log.debug("No new anime found")
-        self.save_checkpoint()

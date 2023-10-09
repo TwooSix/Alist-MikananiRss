@@ -61,12 +61,13 @@ class RssParser:
         Returns:
             pandas.DataFrame: With rss feed's title, link, publish date
         """
-        data = {"title": [], "link": [], "pubDate": [], "animeName": []}
+        data = {"id":[],"title": [], "link": [], "pubDate": [], "animeName": []}
         for entry in feed.entries:
             match_result = True
             for pattern in filters:
                 match_result = match_result and re.search(pattern, entry.title)
             if match_result:
+                data["id"].append(entry.link.split("/")[-1])
                 data["title"].append(entry.title)
                 data["link"].append(RssParser.parse_torrent_link(entry))
                 data["pubDate"].append(entry.published)
