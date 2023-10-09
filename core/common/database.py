@@ -33,8 +33,8 @@ class SubscribeDatabase:
                 id TEXT PRIMARY KEY,
                 title TEXT,
                 link TEXT,
-                pubDate TEXT,
-                animeName TEXT
+                published_date TEXT,
+                anime_name TEXT
             )
         """
         )
