@@ -1,7 +1,7 @@
 import os
 import sqlite3
 
-from core.logger import Log
+from core.common.logger import Log
 
 db_path = "data"
 os.makedirs(db_path, exist_ok=True)

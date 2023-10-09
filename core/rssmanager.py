@@ -1,12 +1,12 @@
 import os
+import re
 
 import feedparser
-import pandas as pd
 
 import core.api.alist as alist
-from core.database import SubscribeDatabase
-from core.logger import Log
-from core.rssparser import RssParser
+from core.common.database import SubscribeDatabase
+from core.common.logger import Log
+from core.mikan import MikanAnimeResource
 
 
 class RssManager:
@@ -35,7 +35,7 @@ class RssManager:
         self.notification_bot = notification_bot
         self.db = SubscribeDatabase()
 
-    def download(self, urls: str, subFolder: str = None) -> None:
+    def download(self, urls: list[str], subFolder: str = None) -> None:
         """Download torrent file to subfolder via alist's aria2
 
         Args:
@@ -48,6 +48,8 @@ class RssManager:
             if subFolder
             else self.download_path
         )
+        if isinstance(urls, str):
+            urls = [urls]
         self.alist_handler.add_aria2(download_path, urls)
 
     def notify(self, message: str) -> None:
@@ -60,20 +62,38 @@ class RssManager:
         if self.notification_bot:
             self.notification_bot.send_message(message)
 
+    def filt_entries(self, feed: feedparser.FeedParserDict) -> bool:
+        """Filter feed entries using regex"""
+        match_result = True
+        for entry in feed.entries:
+            for pattern in self.filter:
+                match_result = match_result and re.search(pattern, entry.title)
+            if match_result:
+                yield entry
+
     def parse_subscribe(self):
+        """Get anime resource from rss feed"""
         feed = feedparser.parse(self.subscribe_url)
         if feed.bozo:
             Log.error(
                 f"Error when connect to {self.subscribe_url}:\n {feed.bozo_exception}"
             )
             raise ConnectionError(feed.bozo_exception)
+        resources = []
+        for entry in self.filt_entries(feed):
+            try:
+                resource = MikanAnimeResource(entry)
+                resources.append(resource)
+            except Exception as e:
+                Log.error(f"Error when parse rss feed:\n {e}")
+                continue
+        return resources
 
-        subscribe_info = RssParser.parse_data_frame(feed, self.filter)
-        return subscribe_info
-
-    def get_new_anime_info(self, subscribe_info: pd.DataFrame):
-        new_anime_info = subscribe_info[~subscribe_info["id"].apply(self.db.is_exist)]
-        return new_anime_info
+    def new_resource(self, resources: list[MikanAnimeResource]):
+        """Filter out the new resources from the resource list"""
+        for resource in resources:
+            if not self.db.is_exist(resource.resource_id):
+                yield resource
 
     # def save_checkpoint(self):
     #     with open("checkpoint_time.txt", "w") as f:
@@ -84,31 +104,37 @@ class RssManager:
         if so, add it to aria2 task queue
         """
         Log.debug("Start Update Checking...")
-        subscribe_info = self.parse_subscribe()
-        new_anime_info = self.get_new_anime_info(subscribe_info)
-        if new_anime_info.shape[0] > 0:
+        resources = self.parse_subscribe()
+        update_info = []
+        resource_group = {}
+        # group resource by anime name
+        for resource in self.new_resource(resources):
+            if resource.anime_name not in resource_group:
+                resource_group[resource.anime_name] = []
+            resource_group[resource.anime_name].append(resource)
+
+        for name, resources in resource_group.items():
             # Download the torrent of new feed
-            groups = new_anime_info.groupby("animeName")
-            for name, group in groups:
-                try:
-                    links = group["link"].tolist()
-                    self.download(links, name)
-                except Exception as e:
-                    Log.error(f"Error when downloading {name}:\n {e}")
-                    continue
-                self.notify(
-                    "你订阅的番剧 [{}] 有更新啦:\n{}".format(
-                        name, "\n".join(group["title"].tolist())
-                    )
+            try:
+                name = resource.anime_name
+                links = [resource.torrent_link for resource in resources]  # noqa
+                titles = [resource.resource_title for resource in resources]
+                # self.download(links, name)
+            except Exception as e:
+                Log.error(f"Error when downloading {name}:\n {e}")
+                continue
+            update_info = update_info + titles
+            Log.info("Start to download: \n{}".format("\n".join(titles)))
+            # add downloaded resource to database
+            for resource in resources:
+                self.db.add_data(
+                    resource.resource_id,
+                    resource.resource_title,
+                    resource.torrent_link,
+                    str(resource.published_date),
+                    resource.anime_name,
                 )
-                Log.info(f"Start to download: {name}")
-                for _, row in group.iterrows():
-                    self.db.add_data(
-                        row["id"],
-                        row["title"],
-                        row["link"],
-                        str(row["pubDate"]),
-                        name,
-                    )
+        if len(update_info):
+            self.notify("你订阅的番剧有更新啦:\n{}".format("\n".join(update_info)))
         else:
             Log.debug("No new anime found")

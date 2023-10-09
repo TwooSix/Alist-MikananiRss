@@ -2,7 +2,7 @@ import time
 
 import config
 from core import api
-from core.logger import Log
+from core.common.logger import Log
 from core.rssmanager import RssManager
 
 Log.init()
