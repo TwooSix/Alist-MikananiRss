@@ -117,9 +117,9 @@ class RssManager:
             # Download the torrent of new feed
             try:
                 name = resource.anime_name
-                links = [resource.torrent_link for resource in resources]  # noqa
+                links = [resource.torrent_link for resource in resources]
                 titles = [resource.resource_title for resource in resources]
-                # self.download(links, name)
+                self.download(links, name)
             except Exception as e:
                 Log.error(f"Error when downloading {name}:\n {e}")
                 continue
@@ -127,7 +127,7 @@ class RssManager:
             Log.info("Start to download: \n{}".format("\n".join(titles)))
             # add downloaded resource to database
             for resource in resources:
-                self.db.add_data(
+                self.db.insert(
                     resource.resource_id,
                     resource.resource_title,
                     resource.torrent_link,

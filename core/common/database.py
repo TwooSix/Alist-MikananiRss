@@ -29,7 +29,7 @@ class SubscribeDatabase:
         self.cursor = self.conn.cursor()
         self.cursor.execute(
             """
-            CREATE TABLE IF NOT EXISTS anime_data (
+            CREATE TABLE IF NOT EXISTS resource_data (
                 id TEXT PRIMARY KEY,
                 title TEXT,
                 link TEXT,
@@ -41,30 +41,37 @@ class SubscribeDatabase:
         self.conn.commit()
         self.conn.close()
 
-    def add_data(self, id, title, link, pubDate, animeName):
+    def insert(self, id, title, link, published_date, anime_name):
         self.connect()
         try:
             self.cursor.execute(
                 (
-                    "INSERT INTO anime_data (id, title, link, pubDate, animeName)"
-                    " VALUES (?, ?, ?, ?, ?)"
+                    "INSERT INTO resource_data (id, title, link, published_date,"
+                    " anime_name) VALUES (?, ?, ?, ?, ?)"
                 ),
-                (id, title, link, pubDate, animeName),
+                (id, title, link, published_date, anime_name),
             )
             self.conn.commit()
             Log.debug(
-                f"Insert new subscribe data: {id, title, link, pubDate, animeName}"
+                "Insert new resource data:"
+                f" {id, title, link, published_date, anime_name}"
             )
         except sqlite3.IntegrityError:
             Log.debug(
-                f"Subscribe data already exists: {id, title, link, pubDate, animeName}"
+                "resource data already exists:"
+                f" {id, title, link, published_date, anime_name}"
             )
+        except Exception as e:
+            Log.error(f"Error when insert resource data:\n {e}")
         finally:
             self.close()
 
     def is_exist(self, id):
         self.connect()
-        self.cursor.execute("SELECT * FROM anime_data WHERE id=?", (id,))
+        try:
+            self.cursor.execute("SELECT * FROM resource_data WHERE id=?", (id,))
+        except Exception as e:
+            Log.error(e)
         data = self.cursor.fetchone()
         self.close()
         if data is not None:
@@ -85,7 +92,7 @@ if __name__ == "__main__":
     db = SubscribeDatabase()
 
     # 添加示例数据
-    db.add_data(sample_id, sample_title, sample_link, sample_pubDate, sample_animeName)
+    db.insert(sample_id, sample_title, sample_link, sample_pubDate, sample_animeName)
 
     # 查询是否存在相同id的数据
     db.is_exist(sample_id)
