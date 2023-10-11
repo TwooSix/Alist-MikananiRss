@@ -1,13 +1,12 @@
-import logging
 import os
+import re
 
 import feedparser
-import pandas as pd
 
 import core.api.alist as alist
-from core.rssparser import RssParser
-
-logger = logging.getLogger(__name__)
+from core.common.database import SubscribeDatabase
+from core.common.logger import Log
+from core.mikan import MikanAnimeResource
 
 
 class RssManager:
@@ -34,20 +33,9 @@ class RssManager:
         self.alist_handler = alist
         self.filter = filter
         self.notification_bot = notification_bot
-        try:
-            with open("checkpoint_time.txt", "r") as f:
-                self.checkpoint_time = pd.to_datetime(
-                    f.read(), format="mixed", utc=True
-                )
-        except FileNotFoundError:
-            self.checkpoint_time = pd.to_datetime(
-                "1970-01-01 00:00:00", format="mixed", utc=True
-            )
-        except Exception as e:
-            logger.error(f"Unkonwn Error when load checkpoint_time: {e}")
-            exit(1)
+        self.db = SubscribeDatabase()
 
-    def download(self, urls: str, subFolder: str = None) -> None:
+    def download(self, urls: list[str], subFolder: str = None) -> None:
         """Download torrent file to subfolder via alist's aria2
 
         Args:
@@ -60,6 +48,8 @@ class RssManager:
             if subFolder
             else self.download_path
         )
+        if isinstance(urls, str):
+            urls = [urls]
         self.alist_handler.add_aria2(download_path, urls)
 
     def notify(self, message: str) -> None:
@@ -72,56 +62,79 @@ class RssManager:
         if self.notification_bot:
             self.notification_bot.send_message(message)
 
+    def filt_entries(self, feed: feedparser.FeedParserDict) -> bool:
+        """Filter feed entries using regex"""
+        match_result = True
+        for entry in feed.entries:
+            for pattern in self.filter:
+                match_result = match_result and re.search(pattern, entry.title)
+            if match_result:
+                yield entry
+
     def parse_subscribe(self):
+        """Get anime resource from rss feed"""
         feed = feedparser.parse(self.subscribe_url)
         if feed.bozo:
-            logger.error(
-                f"Error when connect to {self.subscribe_url}: {feed.bozo_exception}"
+            Log.error(
+                f"Error when connect to {self.subscribe_url}:\n {feed.bozo_exception}"
             )
             raise ConnectionError(feed.bozo_exception)
+        resources = []
+        for entry in self.filt_entries(feed):
+            try:
+                resource = MikanAnimeResource(entry)
+                resources.append(resource)
+            except Exception as e:
+                Log.error(f"Error when parse rss feed:\n {e}")
+                continue
+        return resources
 
-        subscribe_info = RssParser.parse_data_frame(feed, self.filter)
-        return subscribe_info
+    def new_resource(self, resources: list[MikanAnimeResource]):
+        """Filter out the new resources from the resource list"""
+        for resource in resources:
+            if not self.db.is_exist(resource.resource_id):
+                yield resource
 
-    def get_new_anime_info(self, subscribe_info):
-        new_anime_info = subscribe_info[
-            subscribe_info["pubDate"] > self.checkpoint_time
-        ]
-        return new_anime_info
-
-    def save_checkpoint(self):
-        with open("checkpoint_time.txt", "w") as f:
-            f.write(str(self.checkpoint_time))
+    # def save_checkpoint(self):
+    #     with open("checkpoint_time.txt", "w") as f:
+    #         f.write(str(self.checkpoint_time))
 
     def check_update(self):
         """Check if there is new torrent in rss feed,
         if so, add it to aria2 task queue
         """
-        logger.info("Start Update Checking...")
-        subscribe_info = self.parse_subscribe()
-        new_anime_info = self.get_new_anime_info(subscribe_info)
-        if new_anime_info.shape[0] > 0:
+        Log.debug("Start Update Checking...")
+        resources = self.parse_subscribe()
+        update_info = []
+        resource_group = {}
+        # group resource by anime name
+        for resource in self.new_resource(resources):
+            if resource.anime_name not in resource_group:
+                resource_group[resource.anime_name] = []
+            resource_group[resource.anime_name].append(resource)
+
+        for name, resources in resource_group.items():
             # Download the torrent of new feed
-            groups = new_anime_info.groupby("animeName")
-            for name, group in groups:
-                try:
-                    links = group["link"].tolist()
-                    self.download(links, name)
-                except Exception as e:
-                    logger.error(f"Error when downloading {name}: {e}")
-                    continue
-                self.notify(
-                    "你订阅的番剧 [{}] 有更新啦:\n{}".format(
-                        name, "\n".join(group["title"].tolist())
-                    )
+            try:
+                name = resource.anime_name
+                links = [resource.torrent_link for resource in resources]
+                titles = [resource.resource_title for resource in resources]
+                self.download(links, name)
+            except Exception as e:
+                Log.error(f"Error when downloading {name}:\n {e}")
+                continue
+            update_info = update_info + titles
+            Log.info("Start to download: \n{}".format("\n".join(titles)))
+            # add downloaded resource to database
+            for resource in resources:
+                self.db.insert(
+                    resource.resource_id,
+                    resource.resource_title,
+                    resource.torrent_link,
+                    str(resource.published_date),
+                    resource.anime_name,
                 )
-                logger.info(f"Start to download: {name}")
-                latest_time = group["pubDate"].max()
-                self.checkpoint_time = (
-                    latest_time
-                    if latest_time > self.checkpoint_time
-                    else self.checkpoint_time
-                )
+        if len(update_info):
+            self.notify("你订阅的番剧有更新啦:\n{}".format("\n".join(update_info)))
         else:
-            logger.info("No new anime found")
-        self.save_checkpoint()
+            Log.debug("No new anime found")
