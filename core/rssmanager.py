@@ -116,7 +116,7 @@ class RssManager:
         for name, resources in resource_group.items():
             # Download the torrent of new feed
             try:
-                name = resource.anime_name
+                # name = resource.anime_name
                 links = [resource.torrent_link for resource in resources]
                 titles = [resource.resource_title for resource in resources]
                 self.download(links, name)
