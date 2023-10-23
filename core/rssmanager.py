@@ -65,9 +65,9 @@ class RssManager:
         msg = f"你订阅的番剧 {anime_name_str} 更新啦\n"
         for bot in self.notification_bots:
             for name, titles in update_info.items():
-                msg += f"{name}:\n"
+                msg += f"[{name}]:\n"
                 msg += "\n".join(titles)
-                msg += "\n"
+                msg += "\n\n"
             bot.send_message(msg)
 
     def filt_entries(self, feed: feedparser.FeedParserDict) -> bool:
