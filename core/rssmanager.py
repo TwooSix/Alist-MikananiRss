@@ -18,7 +18,7 @@ class RssManager:
         download_path: str,
         filter,
         alist: alist.Alist,
-        notification_bot=None,
+        notification_bots=None,
     ) -> None:
         """init the rss feed manager
 
@@ -32,7 +32,7 @@ class RssManager:
         self.download_path = download_path
         self.alist_handler = alist
         self.filter = filter
-        self.notification_bot = notification_bot
+        self.notification_bots = notification_bots
         self.db = SubscribeDatabase()
 
     def download(self, urls: list[str], subFolder: str = None) -> None:
@@ -52,15 +52,23 @@ class RssManager:
             urls = [urls]
         self.alist_handler.add_aria2(download_path, urls)
 
-    def notify(self, message: str) -> None:
+    def notify(self, update_info: dict) -> None:
         """Send notification to user
 
         Args:
-            message (str): message to send
+            update_info (dict): {anime_name: [resource title]}
         """
-
-        if self.notification_bot:
-            self.notification_bot.send_message(message)
+        update_anime_list = []
+        for name in update_info.keys():
+            update_anime_list.append(f"[{name}]")
+        anime_name_str = ", ".join(update_anime_list)
+        msg = f"你订阅的番剧 {anime_name_str} 更新啦\n"
+        for bot in self.notification_bots:
+            for name, titles in update_info.items():
+                msg += f"{name}:\n"
+                msg += "\n".join(titles)
+                msg += "\n"
+            bot.send_message(msg)
 
     def filt_entries(self, feed: feedparser.FeedParserDict) -> bool:
         """Filter feed entries using regex"""
@@ -105,7 +113,7 @@ class RssManager:
         """
         Log.debug("Start Update Checking...")
         resources = self.parse_subscribe()
-        update_info = []
+        update_info = {}
         resource_group = {}
         # group resource by anime name
         for resource in self.new_resource(resources):
@@ -123,7 +131,7 @@ class RssManager:
             except Exception as e:
                 Log.error(f"Error when downloading {name}:\n {e}")
                 continue
-            update_info = update_info + titles
+            update_info[name] = titles
             Log.info("Start to download: \n{}".format("\n".join(titles)))
             # add downloaded resource to database
             for resource in resources:
@@ -134,7 +142,7 @@ class RssManager:
                     str(resource.published_date),
                     resource.anime_name,
                 )
-        if len(update_info):
-            self.notify("你订阅的番剧有更新啦:\n{}".format("\n".join(update_info)))
+        if update_info:
+            self.notify(update_info)
         else:
             Log.debug("No new anime found")
