@@ -6,7 +6,7 @@ from core.mikan import MikanAnimeResource
 
 class TestRssParser:
     @pytest.fixture
-    def feed(self):
+    def resource(self):
         base_url = "mikanani.me"
         # base_url = "mikanime.tv"
         feed_url = f"https://{base_url}/RSS/Bangumi?bangumiId=3039&subgroupid=611"

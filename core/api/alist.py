@@ -19,61 +19,53 @@ class Alist:
         self.base_url = base_url
 
     def login(self, username: str, password: str) -> dict:
-        """Login to Alist and get authorization token
-
-        Args:
-            username (str): username
-            password (str): password
-
-        Raises:
-            ConnectionError: Error if response status code is not 200
-
-        Returns:
-            jsonData (dict): response json data
-        """
-        api = "api/auth/login"
-        api_url = urllib.parse.urljoin(self.base_url, api)
+        """Login to Alist and get authorization token"""
+        api_url = urllib.parse.urljoin(self.base_url, "api/auth/login")
         body = {"username": username, "password": password}
 
-        response = requests.request("POST", api_url, headers=self.headers, json=body)
-        if response.status_code != 200:
-            raise ConnectionError(
-                "Error when login to {}: {}".format(self.base_url, response.status_code)
-            )
+        response = requests.post(api_url, headers=self.headers, json=body)
+
+        response.raise_for_status()
+
         jsonData = response.json()
+
         if jsonData["code"] != 200:
-            raise ConnectionError(
-                "Error when login to {}: {}".format(self.base_url, jsonData["message"])
+            error_message = jsonData.get(
+                "message", f"Unknonw error when login to {self.base_url} "
             )
+            raise ConnectionError(error_message)
 
         self.token = jsonData["data"]["token"]
-        self.headers["Authorization"] = f"{self.token}"
+        self.headers["Authorization"] = self.token
         self.isLogin = True
+
         return jsonData
 
     def add_aria2(self, save_path: str, urls: list[str]) -> dict:
         """Add download task to aria2 queue
 
         Args:
-            save_path (str): save path start from /
-            urls (list[str]): download urls
+            save_path (str): save path starting from /
+            urls (list[str]): download URLs
 
         Returns:
-            dict: response json data
+            dict: response JSON data
         """
         assert self.isLogin, "Please login first"
-        api = "api/fs/add_aria2"
-        api_url = urllib.parse.urljoin(self.base_url, api)
+
+        api_url = urllib.parse.urljoin(self.base_url, "api/fs/add_aria2")
         body = {"path": save_path, "urls": urls}
-        response = requests.request("POST", api_url, headers=self.headers, json=body)
+
+        response = requests.post(api_url, headers=self.headers, json=body)
+        response.raise_for_status()
 
         json_data = response.json()
+
         if json_data["code"] != 200:
-            raise ConnectionError(
-                "Error when add aria2 tasks to {}: {}".format(
-                    self.base_url, json_data["message"]
-                )
+            error_message = json_data.get(
+                "message", f"Unknonw error when adding aria2 tasks to {self.base_url}"
             )
+            raise ConnectionError(error_message)
 
         return json_data
 
@@ -85,35 +77,37 @@ class Alist:
             file_path (str): Local file's path
 
         Returns:
-            dict: response json data
+            dict: response JSON data
         """
         assert self.isLogin, "Please login first"
-        api = "api/fs/put"
-        api_url = urllib.parse.urljoin(self.base_url, api)
+
+        api_url = urllib.parse.urljoin(self.base_url, "api/fs/put")
         file_path = os.path.abspath(file_path)
         file_name = os.path.basename(file_path)
-        # use utf-8 encoding to avoid UnicodeEncodeError
-        file_path = file_path.encode("utf-8")
 
-        # add headers
+        # Use utf-8 encoding to avoid UnicodeEncodeError
+        file_path_encoded = file_path.encode("utf-8")
+
+        # Create headers
         headers = self.headers.copy()
         mime_type = mimetypes.guess_type(file_name)[0]
         headers["Content-Type"] = mime_type
         file_stat = os.stat(file_path)
         headers["Content-Length"] = str(file_stat.st_size)
-        # use URL encoding
+
+        # Use URL encoding
         upload_path = urllib.parse.quote(f"{save_path}/{file_name}")
         headers["file-path"] = upload_path
 
-        with open(file_path, "rb") as f:
+        with open(file_path_encoded, "rb") as f:
             response = requests.put(api_url, headers=headers, data=f)
 
         json_data = response.json()
+
         if json_data["code"] != 200:
-            raise ConnectionError(
-                "Error when upload to {}: {}".format(
-                    self.base_url, json_data["message"]
-                )
+            error_message = json_data.get(
+                "message", f"Unknonw error when uploading to {self.base_url}"
             )
+            raise ConnectionError(error_message)
 
         return json_data
