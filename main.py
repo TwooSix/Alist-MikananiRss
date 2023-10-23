@@ -1,14 +1,16 @@
 import time
 
+from loguru import logger
+
 import config
 from core import api
 from core.bot import TelegramBot
-from core.common.logger import Log
 from core.rssmanager import RssManager
 
 if __name__ == "__main__":
-    Log.init()
-    Log.update_level("INFO")
+    logger.add(
+        "log/log_{time}.log", rotation="1 day", retention="14 days", level="INFO"
+    )
 
     alist = api.Alist(config.BASE_URL)
 
@@ -37,7 +39,7 @@ if __name__ == "__main__":
             resp = alist.login(config.USER_NAME, config.PASSWORD)
             manager.check_update()
         except Exception as e:
-            Log.error(e)
+            logger.error(e)
         time.sleep(config.INTERVAL_TIME)
 
     if config.INTERVAL_TIME == 0:
@@ -45,4 +47,4 @@ if __name__ == "__main__":
             resp = alist.login(config.USER_NAME, config.PASSWORD)
             manager.check_update()
         except Exception as e:
-            Log.error(e)
+            logger.error(e)

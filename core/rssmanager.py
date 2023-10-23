@@ -2,10 +2,10 @@ import os
 import re
 
 import feedparser
+from loguru import logger
 
 import core.api.alist as alist
 from core.common.database import SubscribeDatabase
-from core.common.logger import Log
 from core.mikan import MikanAnimeResource
 
 
@@ -83,7 +83,7 @@ class RssManager:
         """Get anime resource from rss feed"""
         feed = feedparser.parse(self.subscribe_url)
         if feed.bozo:
-            Log.error(
+            logger.error(
                 f"Error when connect to {self.subscribe_url}:\n {feed.bozo_exception}"
             )
             raise ConnectionError(feed.bozo_exception)
@@ -93,7 +93,7 @@ class RssManager:
                 resource = MikanAnimeResource(entry)
                 resources.append(resource)
             except Exception as e:
-                Log.error(f"Error when parse rss feed:\n {e}")
+                logger.error(f"Error when parse rss feed:\n {e}")
                 continue
         return resources
 
@@ -107,11 +107,12 @@ class RssManager:
     #     with open("checkpoint_time.txt", "w") as f:
     #         f.write(str(self.checkpoint_time))
 
+    @logger.catch
     def check_update(self):
         """Check if there is new torrent in rss feed,
         if so, add it to aria2 task queue
         """
-        Log.debug("Start Update Checking...")
+        logger.debug("Start Update Checking...")
         resources = self.parse_subscribe()
         update_info = {}
         resource_group = {}
@@ -129,10 +130,10 @@ class RssManager:
                 titles = [resource.resource_title for resource in resources]
                 self.download(links, name)
             except Exception as e:
-                Log.error(f"Error when downloading {name}:\n {e}")
+                logger.error(f"Error when downloading {name}:\n {e}")
                 continue
             update_info[name] = titles
-            Log.info("Start to download: \n{}".format("\n".join(titles)))
+            logger.info("Start to download: \n{}".format("\n".join(titles)))
             # add downloaded resource to database
             for resource in resources:
                 self.db.insert(
@@ -145,4 +146,4 @@ class RssManager:
         if update_info:
             self.notify(update_info)
         else:
-            Log.debug("No new anime found")
+            logger.debug("No new anime found")
