@@ -4,7 +4,7 @@ from loguru import logger
 
 import config
 from core import api
-from core.bot import TelegramBot
+from core.bot import NotificationBot, TelegramBot
 from core.rssmanager import RssManager
 
 if __name__ == "__main__":
@@ -17,7 +17,8 @@ if __name__ == "__main__":
     # init notification bot
     notification_bots = []
     if config.TELEGRAM_NOTIFICATION:
-        notification_bots.append(TelegramBot(config.BOT_TOKEN, config.USER_ID))
+        bot = TelegramBot(config.BOT_TOKEN, config.USER_ID)
+        notification_bots.append(NotificationBot(bot))
 
     # init resource filters
     filters = []

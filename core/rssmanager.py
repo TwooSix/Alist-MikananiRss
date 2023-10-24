@@ -5,6 +5,7 @@ import feedparser
 from loguru import logger
 
 import core.api.alist as alist
+from core.bot import NotificationBot, NotificationMsg
 from core.common.database import SubscribeDatabase
 from core.mikan import MikanAnimeResource
 
@@ -18,7 +19,7 @@ class RssManager:
         download_path: str,
         filter,
         alist: alist.Alist,
-        notification_bots=None,
+        notification_bots: list[NotificationBot] = None,
     ) -> None:
         """init the rss feed manager
 
@@ -52,22 +53,9 @@ class RssManager:
             urls = [urls]
         self.alist_handler.add_aria2(download_path, urls)
 
-    def notify(self, update_info: dict) -> None:
-        """Send notification to user
-
-        Args:
-            update_info (dict): {anime_name: [resource title]}
-        """
-        update_anime_list = []
-        for name in update_info.keys():
-            update_anime_list.append(f"\[{name}]")
-        anime_name_str = ", ".join(update_anime_list)
-        msg = f"你订阅的番剧 {anime_name_str} 更新啦\n"
+    def notify(self, msg: NotificationMsg) -> None:
+        """Send notification to user"""
         for bot in self.notification_bots:
-            for name, titles in update_info.items():
-                msg += f"*[{name}]*:\n"
-                msg += "\n".join(titles)
-                msg += "\n\n"
             bot.send_message(msg)
 
     def filt_entries(self, feed: feedparser.FeedParserDict) -> bool:
@@ -114,14 +102,13 @@ class RssManager:
         """
         logger.debug("Start Update Checking...")
         resources = self.parse_subscribe()
-        update_info = {}
         resource_group = {}
         # group resource by anime name
         for resource in self.new_resource(resources):
             if resource.anime_name not in resource_group:
                 resource_group[resource.anime_name] = []
             resource_group[resource.anime_name].append(resource)
-
+        notify_msg = NotificationMsg()
         for name, resources in resource_group.items():
             # Download the torrent of new feed
             try:
@@ -132,7 +119,7 @@ class RssManager:
             except Exception as e:
                 logger.error(f"Error when downloading {name}:\n {e}")
                 continue
-            update_info[name] = titles
+            notify_msg.update(name, titles)
             logger.info("Start to download: \n{}".format("\n".join(titles)))
             # add downloaded resource to database
             for resource in resources:
@@ -143,7 +130,7 @@ class RssManager:
                     str(resource.published_date),
                     resource.anime_name,
                 )
-        if update_info:
-            self.notify(update_info)
+        if notify_msg:
+            self.notify(notify_msg)
         else:
             logger.debug("No new anime found")
