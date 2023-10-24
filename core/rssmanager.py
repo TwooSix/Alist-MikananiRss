@@ -60,12 +60,12 @@ class RssManager:
         """
         update_anime_list = []
         for name in update_info.keys():
-            update_anime_list.append(f"[{name}]")
+            update_anime_list.append(f"\[{name}]")
         anime_name_str = ", ".join(update_anime_list)
         msg = f"你订阅的番剧 {anime_name_str} 更新啦\n"
         for bot in self.notification_bots:
             for name, titles in update_info.items():
-                msg += f"[{name}]:\n"
+                msg += f"*[{name}]*:\n"
                 msg += "\n".join(titles)
                 msg += "\n\n"
             bot.send_message(msg)

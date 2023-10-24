@@ -22,7 +22,11 @@ class TelegramBot(Bot):
     def send_message(self, message: str) -> bool:
         """Send message via Telegram"""
         api_url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
-        body = {"chat_id": self.user_id, "text": message}
+        body = {
+            "chat_id": self.user_id,
+            "text": message,
+            "parse_mode": "Markdown",
+        }
         response = requests.request("POST", api_url, json=body)
         response.raise_for_status()
         return response.json()
