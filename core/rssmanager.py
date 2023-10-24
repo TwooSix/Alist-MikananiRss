@@ -56,7 +56,10 @@ class RssManager:
     def notify(self, msg: NotificationMsg) -> None:
         """Send notification to user"""
         for bot in self.notification_bots:
-            bot.send_message(msg)
+            try:
+                bot.send_message(msg)
+            except Exception as e:
+                logger.error(f"Error when send notification:\n {e}")
 
     def filt_entries(self, feed: feedparser.FeedParserDict) -> bool:
         """Filter feed entries using regex"""
