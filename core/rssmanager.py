@@ -63,8 +63,8 @@ class RssManager:
 
     def filt_entries(self, feed: feedparser.FeedParserDict) -> bool:
         """Filter feed entries using regex"""
-        match_result = True
         for entry in feed.entries:
+            match_result = True
             for pattern in self.filter:
                 match_result = match_result and re.search(pattern, entry.title)
             if match_result:
