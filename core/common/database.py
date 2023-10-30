@@ -1,7 +1,7 @@
 import os
 import sqlite3
 
-from core.common.logger import Log
+from loguru import logger
 
 db_path = "data"
 os.makedirs(db_path, exist_ok=True)
@@ -52,17 +52,17 @@ class SubscribeDatabase:
                 (id, title, link, published_date, anime_name),
             )
             self.conn.commit()
-            Log.debug(
+            logger.debug(
                 "Insert new resource data:"
                 f" {id, title, link, published_date, anime_name}"
             )
         except sqlite3.IntegrityError:
-            Log.debug(
+            logger.debug(
                 "resource data already exists:"
                 f" {id, title, link, published_date, anime_name}"
             )
         except Exception as e:
-            Log.error(f"Error when insert resource data:\n {e}")
+            logger.error(f"Error when insert resource data:\n {e}")
         finally:
             self.close()
 
@@ -71,7 +71,7 @@ class SubscribeDatabase:
         try:
             self.cursor.execute("SELECT * FROM resource_data WHERE id=?", (id,))
         except Exception as e:
-            Log.error(e)
+            logger.error(e)
         data = self.cursor.fetchone()
         self.close()
         if data is not None:

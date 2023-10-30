@@ -2,8 +2,7 @@ import gc
 
 import bs4
 import requests
-
-from core.common.logger import Log
+from loguru import logger
 
 
 class MikanAnimeResource:
@@ -32,6 +31,6 @@ class MikanAnimeResource:
             soup = None
             gc.collect()
         except Exception as e:
-            Log.error(f"Error when get anime name:\n{e}")
+            logger.error(f"Error when get anime name:\n{e}")
             return None
         return anime_name
