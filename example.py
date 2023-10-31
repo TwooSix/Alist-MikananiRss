@@ -26,6 +26,7 @@ FILTERS = ["1080"]
 
 INTERVAL_TIME = 0  # 定时执行的间隔时间，单位为秒，0 为只运行一次
 
+# ==================== 代理配置 ====================
 USE_PROXY = False  # 是否使用代理
 if USE_PROXY:
     PROXIES = {
