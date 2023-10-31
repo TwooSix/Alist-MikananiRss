@@ -1,4 +1,5 @@
 import gc
+import time
 
 import bs4
 import requests
@@ -25,6 +26,7 @@ class MikanAnimeResource:
             home_page_url = feed_entry.link
             # craw the anime name from homepage
             resp = requests.get(home_page_url, proxies=config.PROXIES)
+            time.sleep(1)
             soup = bs4.BeautifulSoup(resp.text, "html.parser")
             anime_name = soup.find("p", class_="bangumi-title").text.strip()
             # try to fix memory leak caused by BeautifulSoup
