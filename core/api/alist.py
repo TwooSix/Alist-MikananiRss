@@ -4,6 +4,8 @@ import urllib.parse
 
 import requests
 
+import config
+
 
 class Alist:
     headers = {
@@ -23,7 +25,9 @@ class Alist:
         api_url = urllib.parse.urljoin(self.base_url, "api/auth/login")
         body = {"username": username, "password": password}
 
-        response = requests.post(api_url, headers=self.headers, json=body)
+        response = requests.post(
+            api_url, headers=self.headers, json=body, proxies=config.PROXIES
+        )
 
         response.raise_for_status()
 
@@ -56,7 +60,9 @@ class Alist:
         api_url = urllib.parse.urljoin(self.base_url, "api/fs/add_aria2")
         body = {"path": save_path, "urls": urls}
 
-        response = requests.post(api_url, headers=self.headers, json=body)
+        response = requests.post(
+            api_url, headers=self.headers, json=body, proxies=config.PROXIES
+        )
         response.raise_for_status()
 
         json_data = response.json()
@@ -100,7 +106,9 @@ class Alist:
         headers["file-path"] = upload_path
 
         with open(file_path_encoded, "rb") as f:
-            response = requests.put(api_url, headers=headers, data=f)
+            response = requests.put(
+                api_url, headers=headers, data=f, proxies=config.PROXIES
+            )
 
         json_data = response.json()
 

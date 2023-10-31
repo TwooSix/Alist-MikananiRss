@@ -1,9 +1,11 @@
 import os
 import re
+from urllib.request import ProxyHandler
 
 import feedparser
 from loguru import logger
 
+import config
 import core.api.alist as alist
 from core.bot import NotificationBot, NotificationMsg
 from core.common.database import SubscribeDatabase
@@ -72,7 +74,8 @@ class RssManager:
 
     def parse_subscribe(self):
         """Get anime resource from rss feed"""
-        feed = feedparser.parse(self.subscribe_url)
+        proxy_handler = ProxyHandler(config.PROXIES)
+        feed = feedparser.parse(self.subscribe_url, handlers=[proxy_handler])
         if feed.bozo:
             logger.error(
                 f"Error when connect to {self.subscribe_url}:\n {feed.bozo_exception}"

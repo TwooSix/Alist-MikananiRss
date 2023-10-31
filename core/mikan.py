@@ -4,6 +4,8 @@ import bs4
 import requests
 from loguru import logger
 
+import config
+
 
 class MikanAnimeResource:
     def __init__(self, feed_entry) -> None:
@@ -22,7 +24,7 @@ class MikanAnimeResource:
         try:
             home_page_url = feed_entry.link
             # craw the anime name from homepage
-            resp = requests.get(home_page_url)
+            resp = requests.get(home_page_url, proxies=config.PROXIES)
             soup = bs4.BeautifulSoup(resp.text, "html.parser")
             anime_name = soup.find("p", class_="bangumi-title").text.strip()
             # try to fix memory leak caused by BeautifulSoup

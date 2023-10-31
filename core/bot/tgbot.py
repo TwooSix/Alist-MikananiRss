@@ -1,5 +1,7 @@
 import requests
 
+import config
+
 from . import BotBase, MsgType
 
 
@@ -21,6 +23,6 @@ class TelegramBot(BotBase):
             body["parse_mode"] = "Markdown"
         elif self.message_type == MsgType.HTML:
             body["parse_mode"] = "HTML"
-        response = requests.request("POST", api_url, json=body)
+        response = requests.request("POST", api_url, json=body, proxies=config.PROXIES)
         response.raise_for_status()
         return response.json()
