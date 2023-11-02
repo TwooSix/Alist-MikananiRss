@@ -16,6 +16,7 @@ class Alist:
         "Content-Type": "application/json",
     }
     isLogin = False
+    proxies = getattr(config, "PROXIES", None)
 
     def __init__(self, base_url: str) -> None:
         self.base_url = base_url
@@ -26,7 +27,7 @@ class Alist:
         body = {"username": username, "password": password}
 
         response = requests.post(
-            api_url, headers=self.headers, json=body, proxies=config.PROXIES
+            api_url, headers=self.headers, json=body, proxies=self.proxies
         )
 
         response.raise_for_status()
@@ -61,7 +62,7 @@ class Alist:
         body = {"path": save_path, "urls": urls}
 
         response = requests.post(
-            api_url, headers=self.headers, json=body, proxies=config.PROXIES
+            api_url, headers=self.headers, json=body, proxies=self.proxies
         )
         response.raise_for_status()
 
@@ -107,7 +108,7 @@ class Alist:
 
         with open(file_path_encoded, "rb") as f:
             response = requests.put(
-                api_url, headers=headers, data=f, proxies=config.PROXIES
+                api_url, headers=headers, data=f, proxies=self.proxies
             )
 
         json_data = response.json()

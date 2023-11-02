@@ -15,6 +15,8 @@ from core.mikan import MikanAnimeResource
 class RssManager:
     """rss feed manager"""
 
+    proxies = getattr(config, "PROXIES", None)
+
     def __init__(
         self,
         subscribe_url: str,
@@ -74,7 +76,7 @@ class RssManager:
 
     def parse_subscribe(self):
         """Get anime resource from rss feed"""
-        proxy_handler = ProxyHandler(config.PROXIES)
+        proxy_handler = ProxyHandler(self.proxies)
         feed = feedparser.parse(self.subscribe_url, handlers=[proxy_handler])
         if feed.bozo:
             logger.error(
