@@ -1,5 +1,4 @@
 import os
-import re
 from urllib.request import ProxyHandler
 
 import feedparser
@@ -9,6 +8,7 @@ import config
 import core.api.alist as alist
 from core.bot import NotificationBot, NotificationMsg
 from core.common.database import SubscribeDatabase
+from core.common.filters import RegexFilter
 from core.mikan import MikanAnimeResource
 
 
@@ -21,7 +21,7 @@ class RssManager:
         self,
         subscribe_url: str,
         download_path: str,
-        filter,
+        filter: RegexFilter,
         alist: alist.Alist,
         notification_bots: list[NotificationBot] = None,
     ) -> None:
@@ -65,13 +65,11 @@ class RssManager:
             except Exception as e:
                 logger.error(f"Error when send notification:\n {e}")
 
-    def filt_entries(self, feed: feedparser.FeedParserDict) -> bool:
+    def filt_entries(self, feed):
         """Filter feed entries using regex"""
         for entry in feed.entries:
-            match_result = True
-            for pattern in self.filter:
-                match_result = match_result and re.search(pattern, entry.title)
-            if match_result:
+            filt_result = self.filter.filt_single(entry.title)
+            if filt_result:
                 yield entry
 
     def parse_subscribe(self):

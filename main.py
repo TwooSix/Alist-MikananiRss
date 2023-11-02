@@ -5,6 +5,7 @@ from loguru import logger
 import config
 from core import api
 from core.bot import NotificationBot, TelegramBot
+from core.common.filters import RegexFilter
 from core.rssmanager import RssManager
 
 if __name__ == "__main__":
@@ -32,11 +33,11 @@ if __name__ == "__main__":
         notification_bots.append(NotificationBot(bot))
 
     # init resource filters
-    filters = []
+    regex_filter = RegexFilter()
     cfg_filters = getattr(config, "FILTERS", [])
     regex_pattern = getattr(config, "REGEX_PATTERN", {})
     for filter in cfg_filters:
-        filters.append(regex_pattern[filter])
+        regex_filter.add_pattern(regex_pattern[filter])
 
     # init rss manager
     subscribe_url = getattr(config, "SUBSCRIBE_URL", None)
@@ -46,7 +47,7 @@ if __name__ == "__main__":
     manager = RssManager(
         subscribe_url,
         download_path=download_path,
-        filter=filters,
+        filter=regex_filter,
         alist=alist,
         notification_bots=notification_bots,
     )
