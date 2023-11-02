@@ -37,7 +37,7 @@ class MikanAnimeResource:
             soup = None
             gc.collect()
         except Exception as e:
-            logger.error(f"Error when get anime name:\n{e}")
+            logger.error(f"Error when get anime name in {home_page_url}:\n{e}")
             return None
         return anime_name
 
