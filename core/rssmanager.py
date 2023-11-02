@@ -113,6 +113,9 @@ class RssManager:
         resource_group = {}
         # group resource by anime name
         for resource in self.new_resource(resources):
+            if not resource.anime_name:
+                logger.info(f"Pass {resource} because of no anime name")
+                continue
             if resource.anime_name not in resource_group:
                 resource_group[resource.anime_name] = []
             resource_group[resource.anime_name].append(resource)
