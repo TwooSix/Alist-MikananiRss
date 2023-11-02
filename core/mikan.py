@@ -40,3 +40,11 @@ class MikanAnimeResource:
             logger.error(f"Error when get anime name:\n{e}")
             return None
         return anime_name
+
+    def __repr__(self):
+        return (
+            f"MikanAnimeResource(title={self.anime_name},"
+            f" resource_title={self.resource_title},"
+            f" published_date={self.published_date}, resource_id={self.resource_id},"
+            f" torrent_link={self.torrent_link})"
+        )

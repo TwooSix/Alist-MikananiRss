@@ -40,3 +40,6 @@ else:
 TELEGRAM_NOTIFICATION = False  # 是否开启 Telegram 通知, True 开启, False 关闭
 BOT_TOKEN = ""  # 你的 Telegram 用户 ID
 USER_ID = ""  # 你的 Telegram Bot Token
+
+# ==================== For Development ====================
+DEBUG_MODE = False  # 开启后输出详细日志
