@@ -15,11 +15,11 @@ class Alist:
         ),
         "Content-Type": "application/json",
     }
-    isLogin = False
     proxies = getattr(config, "PROXIES", None)
 
     def __init__(self, base_url: str) -> None:
         self.base_url = base_url
+        self.is_login = False
 
     def login(self, username: str, password: str) -> dict:
         """Login to Alist and get authorization token"""
@@ -42,7 +42,7 @@ class Alist:
 
         self.token = jsonData["data"]["token"]
         self.headers["Authorization"] = self.token
-        self.isLogin = True
+        self.is_login = True
 
         return jsonData
 
@@ -56,7 +56,7 @@ class Alist:
         Returns:
             dict: response JSON data
         """
-        assert self.isLogin, "Please login first"
+        assert self.is_login, "Please login first"
 
         api_url = urllib.parse.urljoin(self.base_url, "api/fs/add_aria2")
         body = {"path": save_path, "urls": urls}
@@ -86,7 +86,7 @@ class Alist:
         Returns:
             dict: response JSON data
         """
-        assert self.isLogin, "Please login first"
+        assert self.is_login, "Please login first"
 
         api_url = urllib.parse.urljoin(self.base_url, "api/fs/put")
         file_path = os.path.abspath(file_path)
