@@ -78,21 +78,3 @@ class SubscribeDatabase:
             return True
         else:
             return False
-
-
-if __name__ == "__main__":
-    # 示例数据
-    sample_id = "7c7c27175340c457de690243d9d0fabb01101be4"
-    sample_title = "Sample Title"
-    sample_link = "https://example.com/sample"
-    sample_pubDate = "2023-10-09"
-    sample_animeName = "Sample Anime"
-
-    # 创建数据库对象
-    db = SubscribeDatabase()
-
-    # 添加示例数据
-    db.insert(sample_id, sample_title, sample_link, sample_pubDate, sample_animeName)
-
-    # 查询是否存在相同id的数据
-    db.is_exist(sample_id)

@@ -13,8 +13,6 @@ from core.mikan import MikanAnimeResource
 
 
 class RssManager:
-    """rss feed manager"""
-
     proxies = getattr(config, "PROXIES", None)
 
     def __init__(
@@ -25,12 +23,15 @@ class RssManager:
         alist: alist.Alist,
         notification_bots: list[NotificationBot] = None,
     ) -> None:
-        """init the rss feed manager
+        """The rss feed manager
 
         Args:
             rss_list (list[rss.Rss]): List rss
+            subscribe_url (str): Mikan subscribe url
             download_path (str): Default path to download torrent file
+            filter (RegexFilter): Filter to filter out the resource
             alist (alist.Alist): Alist's api handler
+            notification_bots (list[NotificationBot], optional): List of notification bot. Defaults to None.
         """
 
         self.subscribe_url = subscribe_url
@@ -66,7 +67,7 @@ class RssManager:
                 logger.error(f"Error when send notification:\n {e}")
 
     def filt_entries(self, feed):
-        """Filter feed entries using regex"""
+        """Filter feed entries"""
         for entry in feed.entries:
             filt_result = self.filter.filt_single(entry.title)
             if filt_result:
@@ -109,7 +110,8 @@ class RssManager:
         logger.debug("Start Update Checking...")
         resources = self.parse_subscribe()
         resource_group = {}
-        # group resource by anime name
+
+        # group new resource by anime name
         for resource in self.new_resource(resources):
             if not resource.anime_name:
                 logger.info(f"Pass {resource} because of no anime name")
@@ -117,18 +119,18 @@ class RssManager:
             if resource.anime_name not in resource_group:
                 resource_group[resource.anime_name] = []
             resource_group[resource.anime_name].append(resource)
+
         notify_msg = NotificationMsg()
         for name, resources in resource_group.items():
             # Download the torrent of new feed
             try:
-                # name = resource.anime_name
                 links = [resource.torrent_link for resource in resources]
                 titles = [resource.resource_title for resource in resources]
                 self.download(links, name)
             except Exception as e:
                 logger.error(f"Error when downloading {name}:\n {e}")
                 continue
-            notify_msg.update(name, titles)
+            notify_msg.update(name, titles)  # make msg for notification
             logger.info("Start to download: \n{}".format("\n".join(titles)))
             # add downloaded resource to database
             for resource in resources:
