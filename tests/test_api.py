@@ -33,7 +33,7 @@ class TestAlistApi:
         return base_url
 
     def test_alist_add_aria2_task(self, alist, remote_path, mikanani_base_url):
-        torrent_url = f"https://{mikanani_base_url}/Download/20230419/af9edbcb71798164bf4ffd362f527d35fbeb1545.torrent"
+        torrent_url = "https://i0.hdslb.com/bfs/new_dyn/074e73f8a47df3a26e1b9af8ec75364d512995925.jpg"  # About 250KB
         alist.add_aria2(remote_path, [torrent_url])
 
     def test_alsit_upload(self, alist, remote_path):
