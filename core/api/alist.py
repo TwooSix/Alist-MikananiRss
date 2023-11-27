@@ -40,19 +40,19 @@ class Alist:
 
         response.raise_for_status()
 
-        jsonData = response.json()
+        json_data = response.json()
 
-        if jsonData["code"] != 200:
-            error_message = jsonData.get(
+        if json_data["code"] != 200:
+            error_message = json_data.get(
                 "message", f"Unknonw error when login to {self.base_url} "
             )
             raise ConnectionError(error_message)
 
-        self.token = jsonData["data"]["token"]
+        self.token = json_data["data"]["token"]
         self.headers["Authorization"] = self.token
         self.is_login = True
 
-        return jsonData
+        return json_data
 
     def add_aria2(self, save_path: str, urls: list[str]) -> dict:
         """Add download task to aria2 queue
