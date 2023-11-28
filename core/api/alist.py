@@ -3,7 +3,6 @@ import os
 import urllib.parse
 
 import requests
-from loguru import logger
 
 import config
 
@@ -21,13 +20,6 @@ class Alist:
     def __init__(self, base_url: str) -> None:
         self.base_url = base_url
         self.is_login = False
-        self.__get_alist_ver()
-
-    def __get_alist_ver(self) -> str:
-        api_url = urllib.parse.urljoin(self.base_url, "/api/public/settings")
-        response = requests.get(api_url, proxies=self.proxies)
-        response.raise_for_status()
-        self.version = response.json()["data"]["version"]
 
     def login(self, username: str, password: str) -> dict:
         """Login to Alist and get authorization token"""
@@ -40,19 +32,19 @@ class Alist:
 
         response.raise_for_status()
 
-        json_data = response.json()
+        jsonData = response.json()
 
-        if json_data["code"] != 200:
-            error_message = json_data.get(
+        if jsonData["code"] != 200:
+            error_message = jsonData.get(
                 "message", f"Unknonw error when login to {self.base_url} "
             )
             raise ConnectionError(error_message)
 
-        self.token = json_data["data"]["token"]
+        self.token = jsonData["data"]["token"]
         self.headers["Authorization"] = self.token
         self.is_login = True
 
-        return json_data
+        return jsonData
 
     def add_aria2(self, save_path: str, urls: list[str]) -> dict:
         """Add download task to aria2 queue
@@ -65,27 +57,15 @@ class Alist:
             dict: response JSON data
         """
         assert self.is_login, "Please login first"
-        if self.version < "3.29.0":
-            api_url = urllib.parse.urljoin(self.base_url, "api/fs/add_aria2")
-            body = {
-                "path": save_path,
-                "urls": urls,
-            }
-            logger.warning(
-                "api/fs/add_aria2 has been deprecated, please update Alist to 3.29.0+"
-            )
-        else:
-            api_url = urllib.parse.urljoin(self.base_url, "api/fs/add_offline_download")
-            body = {
-                "delete_policy": "delete_never",
-                "path": save_path,
-                "urls": urls,
-                "tool": "aria2",
-            }
+
+        api_url = urllib.parse.urljoin(self.base_url, "api/fs/add_aria2")
+        body = {"path": save_path, "urls": urls}
+
         response = requests.post(
             api_url, headers=self.headers, json=body, proxies=self.proxies
         )
         response.raise_for_status()
+
         json_data = response.json()
 
         if json_data["code"] != 200:
