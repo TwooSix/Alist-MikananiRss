@@ -1,0 +1,8 @@
+__pycache__/
+*.ipynb
+*.csv
+log/
+data/
+.pytest_cache
+config.py
+checkpoint_time.txt
