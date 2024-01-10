@@ -1,6 +1,5 @@
 import threading
 import time
-from datetime import datetime
 from queue import Queue
 from urllib.request import ProxyHandler
 
@@ -60,19 +59,10 @@ class AlistDonwloadMonitor(threading.Thread):
             logger.debug(f"Checking Task {resource_url} status: {status}")
             if status == Aria2TaskStatus.DONE:
                 self.success_queue.put(resource)
-                # insert into database
-                downloaded_date = datetime.now()
-                downloaded_date = downloaded_date.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
-                self.db.insert(
-                    resource.resource_id,
-                    resource.resource_title,
-                    resource.torrent_url,
-                    str(resource.published_date),
-                    resource.anime_name,
-                    downloaded_date,
-                )
                 self.download_queue.task_done()
             elif status == Aria2TaskStatus.ERROR:
+                # delete the failed resource from database
+                self.db.delete_by_id(resource.resource_id)
                 self.download_queue.task_done()
                 logger.error(f"Error when download {resource_url}")
             else:

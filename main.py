@@ -111,6 +111,7 @@ if __name__ == "__main__":
         alist, download_task_queue, success_download_task_queue, download_path
     )
     download_monitor_thread.start()
+    db = rss_monitor.db
     while interval_time > 0:
         status, msg = alist.login(user_name, password)
         if not status:
@@ -133,7 +134,8 @@ if __name__ == "__main__":
                 # Step 4: wait for download complete
                 for resource in success_resources:
                     download_task_queue.put(resource)
-                # Step 5: insert downloaded resource to database(in AlistDonwloadMonitor thread)
+                    # Step 5: insert downloaded resource to database(in AlistDonwloadMonitor thread)
+                    db.insert_from_mikan_resource(resource)
                 # Step 6: Rename downloaded resource (in renamer thread)
             except Exception as e:
                 logger.error(e)
