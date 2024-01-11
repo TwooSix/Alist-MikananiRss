@@ -63,10 +63,9 @@ class Alist:
     }
     UNLOGGING_MSG = "Please login first"
 
-    def __init__(self, base_url: str, proxies=None) -> None:
+    def __init__(self, base_url: str) -> None:
         self.base_url = base_url
         self.is_login = False
-        self.proxies = proxies
         self.__init_alist_ver()
 
     def __get_json_data(self, response: requests.Response) -> dict:
@@ -89,7 +88,7 @@ class Alist:
 
     def __init_alist_ver(self):
         api_url = urllib.parse.urljoin(self.base_url, "/api/public/settings")
-        response = requests.get(api_url, proxies=self.proxies)
+        response = requests.get(api_url)
         response.raise_for_status()
         self.version = response.json()["data"]["version"][1:]  # 去掉字母v
 
@@ -98,9 +97,7 @@ class Alist:
         api_url = urllib.parse.urljoin(self.base_url, "api/auth/login")
         body = {"username": username, "password": password}
         try:
-            response = requests.post(
-                api_url, headers=self.headers, json=body, proxies=self.proxies
-            )
+            response = requests.post(api_url, headers=self.headers, json=body)
             json_data = self.__get_json_data(response)
         except requests.exceptions.ConnectionError as e:
             return (
@@ -148,9 +145,7 @@ class Alist:
             }
 
         try:
-            response = requests.post(
-                api_url, headers=self.headers, json=body, proxies=self.proxies
-            )
+            response = requests.post(api_url, headers=self.headers, json=body)
             self.__get_json_data(response)
         except requests.exceptions.ConnectionError as e:
             return (
@@ -198,9 +193,7 @@ class Alist:
 
         with open(file_path_encoded, "rb") as f:
             try:
-                resp = requests.put(
-                    api_url, headers=headers, data=f, proxies=self.proxies
-                )
+                resp = requests.put(api_url, headers=headers, data=f)
                 self.__get_json_data(resp)
             except requests.exceptions.ConnectionError as e:
                 return (
@@ -235,9 +228,7 @@ class Alist:
         }
 
         try:
-            response = requests.post(
-                api_url, headers=self.headers, json=body, proxies=self.proxies
-            )
+            response = requests.post(api_url, headers=self.headers, json=body)
             json_data = self.__get_json_data(response)
         except requests.exceptions.ConnectionError as e:
             return (
@@ -265,11 +256,11 @@ class Alist:
         # get task list
         try:
             download_undone_response = requests.get(
-                download_undone_url, headers=self.headers, proxies=self.proxies
+                download_undone_url, headers=self.headers
             )
             download_undone_json_data = self.__get_json_data(download_undone_response)
             download_done_response = requests.get(
-                download_done_url, headers=self.headers, proxies=self.proxies
+                download_done_url, headers=self.headers
             )
             download_done_json_data = self.__get_json_data(download_done_response)
         except requests.exceptions.ConnectionError as e:
@@ -304,9 +295,7 @@ class Alist:
         }
 
         try:
-            response = requests.post(
-                api_url, headers=self.headers, json=body, proxies=self.proxies
-            )
+            response = requests.post(api_url, headers=self.headers, json=body)
             self.__get_json_data(response)
         except requests.exceptions.ConnectionError as e:
             return (

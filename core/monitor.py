@@ -1,7 +1,6 @@
 import threading
 import time
 from queue import Queue
-from urllib.request import ProxyHandler
 
 import feedparser
 from loguru import logger
@@ -69,7 +68,6 @@ class MikanRSSMonitor:
         self,
         subscribe_url: str,
         filter: RegexFilter,
-        proxies=None,
     ) -> None:
         """The rss feed manager
 
@@ -81,7 +79,6 @@ class MikanRSSMonitor:
 
         self.subscribe_url = subscribe_url
         self.filter = filter
-        self.proxies = proxies
         self.db = SubscribeDatabase()
 
     def __filt_entries(self, feed):
@@ -93,8 +90,7 @@ class MikanRSSMonitor:
 
     def __parse_subscribe(self):
         """Get anime resource from rss feed"""
-        proxy_handler = ProxyHandler(self.proxies)
-        feed = feedparser.parse(self.subscribe_url, handlers=[proxy_handler])
+        feed = feedparser.parse(self.subscribe_url)
         if feed.bozo:
             logger.error(
                 f"Error when connect to {self.subscribe_url}:\n {feed.bozo_exception}"

@@ -68,10 +68,18 @@ if __name__ == "__main__":
     logger.add("log/debug_{time}.log", retention="7 days", level=log_level)
     logger.add(sys.stderr, level=log_level)  # 添加新的 handler 且设置等级为 INFO
 
+    # proxy init
+    use_proxy = config_loader.get_use_proxy()
+    if use_proxy:
+        proxies = config_loader.get_proxies()
+        if "http" in proxies:
+            os.environ["HTTP_PROXY"] = proxies["http"]
+        if "https" in proxies:
+            os.environ["HTTPS_PROXY"] = proxies["https"]
+
     # alist init
-    proxies = config_loader.get_proxies()
     base_url = config_loader.get_base_url()
-    alist = api.Alist(base_url, proxies)
+    alist = api.Alist(base_url)
 
     # init notification bot
     notification_bots = []
@@ -79,7 +87,7 @@ if __name__ == "__main__":
     if use_tg_notification:
         bot_token = config_loader.get_bot_token()
         user_id = config_loader.get_user_id()
-        bot = TelegramBot(bot_token, user_id, proxies=proxies)
+        bot = TelegramBot(bot_token, user_id)
         notification_bots.append(NotificationBot(bot))
 
     # init resource filters

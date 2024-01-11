@@ -4,7 +4,7 @@ import time
 import bs4
 import requests
 
-from core.common import config_loader, extractor
+from core.common import extractor
 
 
 def get_torrent_url(feed_entry) -> str:
@@ -16,7 +16,7 @@ def get_torrent_url(feed_entry) -> str:
 def get_anime_name(feed_entry) -> str:
     home_page_url = feed_entry.link
     # craw the anime name from homepage
-    resp = requests.get(home_page_url, proxies=config_loader.get_proxies())
+    resp = requests.get(home_page_url)
     resp.raise_for_status()
     time.sleep(1)
     soup = bs4.BeautifulSoup(resp.text, "html.parser")
