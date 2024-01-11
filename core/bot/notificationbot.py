@@ -24,7 +24,7 @@ class NotificationMsg:
             for name in self._update_info.keys():
                 for i in range(len(self._update_info[name])):
                     title = self._update_info[name][i]
-                    if "[" in title[0]:
+                    if "[" in title:
                         self._update_info[name][i] = title.replace("[", "\\[")
 
         for name, titles in self._update_info.items():
