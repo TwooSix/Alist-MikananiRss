@@ -18,7 +18,7 @@ success_download_task_queue = Queue()
 
 
 def download_new_resources(
-    alist: api.Alist, resources: list[MikanAnimeResource], download_path: str
+    alist: api.Alist, resources: list[MikanAnimeResource], root_path: str
 ):
     # group new resource by anime name and season
     resource_group: dict[str, dict[str, list[MikanAnimeResource]]] = {}
@@ -37,7 +37,7 @@ def download_new_resources(
             urls = [resource.torrent_url for resource in resources]
             titles = [resource.resource_title for resource in resources]
             subfolder = os.path.join(name, f"Season {season}")
-            download_path = os.path.join(download_path, subfolder)
+            download_path = os.path.join(root_path, subfolder)
             # download
             status, msg = alist.add_aria2(download_path, urls)
             if not status:

@@ -13,7 +13,7 @@ class TelegramBot(BotBase):
         self.message_type = msg_type
         self.proxies = proxies
 
-    def send_message(self, message: str) -> bool:
+    def send_message(self, message: str) -> tuple[bool, str]:
         """Send message via Telegram"""
         api_url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
         body = {

@@ -27,13 +27,13 @@ class Aria2Task:
     @classmethod
     def from_json(cls, json_data):
         name = json_data["name"]
-        pattern = r"download\s+(.+)\s+to"
+        pattern = r"download\s+(.+?)\s+to"
         match = re.match(pattern, name)
         if match:
             url = match.group(1)
         else:
             raise ValueError(f"Invalid task name: {name}")
-        id = json_data["id"]
+        tid = json_data["id"]
         state = json_data["state"]
         status_str = json_data["status"]
         error_str = json_data["error"]
@@ -50,7 +50,7 @@ class Aria2Task:
             status = Aria2TaskStatus.ERROR
         else:
             status = Aria2TaskStatus.UNKNOWN
-        return cls(id, url, status, error_str)
+        return cls(tid, url, status, error_str)
 
 
 class Alist:
@@ -80,7 +80,10 @@ class Alist:
         response.raise_for_status()
         json_data = response.json()
         if json_data["code"] != 200:
-            raise Exception(json_data.get("message", "Unknown error"))
+            msg = json_data.get("message", "Unknown error")
+            raise requests.exceptions.HTTPError(
+                f"Error code: {json_data['code']}: {msg}"
+            )
         return json_data["data"]
 
     def __init_alist_ver(self):
@@ -88,6 +91,13 @@ class Alist:
         response = requests.get(api_url, proxies=self.proxies)
         response.raise_for_status()
         self.version = response.json()["data"]["version"][1:]  # 去掉字母v
+
+    def check_is_login(self) -> bool:
+        if not self.is_login:
+            msg = "Please login first"
+            logger.error(msg)
+            raise Exception(msg)
+        return True
 
     def login(self, username: str, password: str) -> tuple[bool, str]:
         """Login to Alist and get authorization token"""
@@ -122,7 +132,7 @@ class Alist:
         Returns:
             dict: response JSON data
         """
-        assert self.is_login, "Please login first"
+        self.check_is_login()
         if self.version < "3.29.0":
             api_url = urllib.parse.urljoin(self.base_url, "api/fs/add_aria2")
             body = {
@@ -145,7 +155,7 @@ class Alist:
             response = requests.post(
                 api_url, headers=self.headers, json=body, proxies=self.proxies
             )
-            json_data = self.__get_json_data(response)
+            self.__get_json_data(response)
         except requests.exceptions.ConnectionError as e:
             return (
                 False,
@@ -154,6 +164,8 @@ class Alist:
                     f" network: {e}"
                 ),
             )
+        except Exception as e:
+            return False, f"Error occur during adding aria2 task: {e}"
 
         return True, "Task added successfully"
 
@@ -167,7 +179,7 @@ class Alist:
         Returns:
             dict: response JSON data
         """
-        assert self.is_login, "Please login first"
+        self.check_is_login()
 
         api_url = urllib.parse.urljoin(self.base_url, "api/fs/put")
         file_path = os.path.abspath(file_path)
@@ -189,7 +201,10 @@ class Alist:
 
         with open(file_path_encoded, "rb") as f:
             try:
-                _ = requests.put(api_url, headers=headers, data=f, proxies=self.proxies)
+                resp = requests.put(
+                    api_url, headers=headers, data=f, proxies=self.proxies
+                )
+                self.__get_json_data(resp)
             except requests.exceptions.ConnectionError as e:
                 return (
                     False,
@@ -210,7 +225,7 @@ class Alist:
         Returns:
             dict: response JSON data
         """
-        assert self.is_login, "Please login first"
+        self.check_is_login()
 
         api_url = urllib.parse.urljoin(self.base_url, "api/fs/list")
         body = {
@@ -240,17 +255,13 @@ class Alist:
         return True, files_list
 
     def get_aria2_task_list(self) -> tuple[bool, list[Aria2Task]]:
-        assert self.is_login, "Please login first"
+        self.check_is_login()
 
         # prepare url
         download_undone_api = "/api/admin/task/aria2_down/undone"
         download_done_api = "/api/admin/task/aria2_down/done"
-        # transfer_undone_api = "/api/admin/task/aria2_transfer/undone"
-        # transfer_done_api = "/api/admin/task/aria2_transfer/done"
         download_undone_url = urllib.parse.urljoin(self.base_url, download_undone_api)
         download_done_url = urllib.parse.urljoin(self.base_url, download_done_api)
-        # transfer_undone_url = urllib.parse.urljoin(self.base_url, transfer_undone_api)
-        # transfer_done_url = urllib.parse.urljoin(self.base_url, transfer_done_api)
 
         # get task list
         try:
@@ -284,7 +295,7 @@ class Alist:
         return True, task_list
 
     def rename(self, path, new_name):
-        assert self.is_login, "Please login first"
+        self.check_is_login()
         api = "/api/fs/rename"
         api_url = urllib.parse.urljoin(self.base_url, api)
         body = {

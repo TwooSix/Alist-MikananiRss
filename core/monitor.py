@@ -31,7 +31,7 @@ class AlistDonwloadMonitor(threading.Thread):
     def get_task_status(self, url):
         flag, task_list = self.alist.get_aria2_task_list()
         if not flag:
-            raise Exception(task_list)
+            return None
 
         for task in task_list:
             if task.url == url and task.status not in [
@@ -47,12 +47,7 @@ class AlistDonwloadMonitor(threading.Thread):
             if resource is None:
                 time.sleep(60)
             resource_url = resource.torrent_url
-            try:
-                status = self.get_task_status(resource_url)
-            except Exception as e:
-                logger.error(e)
-                self.download_queue.put(resource)
-                continue
+            status = self.get_task_status(resource_url)
             if status is None:
                 logger.error(f"Error when get task status of {resource_url}")
                 self.download_queue.put(resource)

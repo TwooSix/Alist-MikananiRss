@@ -81,13 +81,11 @@ class ChatGPT:
                     f"Chatgpt provide a wrong type of quality: {data['quality']}"
                 )
             return data
-        return None
+        else:
+            raise ValueError(f"Chatgpt provide a wrong format response: {resp}")
 
 
 class Regex:
-    def __init__(self) -> None:
-        pass
-
     def __chinese_to_arabic(self, chinese_num):
         num_dict = {
             "零": 0,
@@ -123,9 +121,9 @@ class Regex:
 
         return arabic_num
 
-    def analyse_anime_name(self, anime_name: str):
+    def analyse_anime_name(self, anime_name: str) -> dict:
         # 从番剧名字中提取番剧名字和季数
-        pattern = r"(.+) 第(.+)[季|期]"
+        pattern = r"(.+) 第(.+?)[季|期]"
         match = re.search(pattern, anime_name)
         if match:
             name = match.group(1)

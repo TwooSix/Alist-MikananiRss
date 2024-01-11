@@ -29,7 +29,7 @@ def get_anime_name(feed_entry) -> str:
     return anime_name
 
 
-def process_anime_name(anime_name: str) -> str:
+def process_anime_name(anime_name: str) -> dict:
     """Process the anime name, get the real name and season"""
     regex_extractor = extractor.Regex()
     res = regex_extractor.analyse_anime_name(anime_name)
@@ -39,7 +39,7 @@ def process_anime_name(anime_name: str) -> str:
 class MikanAnimeResource:
     def __init__(
         self,
-        id,
+        rid,
         name,
         season,
         torrent_url,
@@ -47,7 +47,7 @@ class MikanAnimeResource:
         resource_title,
         episode=None,
     ) -> None:
-        self.resource_id = id
+        self.resource_id = rid
         self.anime_name = name
         self.season = season
         self.torrent_url = torrent_url
@@ -57,14 +57,14 @@ class MikanAnimeResource:
 
     @classmethod
     def from_feed_entry(cls, feed_entry):
-        id = feed_entry.link.split("/")[-1]
+        rid = feed_entry.link.split("/")[-1]
         tmp_anime_name = get_anime_name(feed_entry)
         res = process_anime_name(tmp_anime_name)
         resource_title = feed_entry.title
         published_date = feed_entry.published
         torrent_url = get_torrent_url(feed_entry)
         return cls(
-            id, res["name"], res["season"], torrent_url, published_date, resource_title
+            rid, res["name"], res["season"], torrent_url, published_date, resource_title
         )
 
     def __repr__(self):

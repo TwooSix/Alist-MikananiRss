@@ -36,12 +36,11 @@ class RenamerThread(threading.Thread):
         ]
         return wrong_format_videos
 
-    def __get_file_path(self, name, season, download_path):
+    def __get_file_path(self, name, season, download_path) -> list[str]:
         dir_path = os.path.join(download_path, name, f"Season {season}")
         flag, data = self.alist.list_dir(dir_path)
         if not flag:
-            logger.error(f"Error when list dir {dir_path}:\n {data}")
-            raise Exception(f"Error when list dir {dir_path}:\n {data}")
+            return []
         file_list = data
         wrong_format_videos = self.find_wrong_format_videos(file_list)
         filepath_rename = [os.path.join(dir_path, s) for s in wrong_format_videos]
@@ -51,15 +50,12 @@ class RenamerThread(threading.Thread):
         try:
             res = self.chatgpt.analyse_resource_name(filename)
         except Exception as e:
-            logger.error(f"Error when analyse {filename}")
-            raise Exception(f"Error when analyse {filename}: {e}")
+            logger.error(f"Error when analyse {filename}: {e}")
+            return None
         ext = filename.split(".")[-1]
-        if res:
-            episode = res["episode"]
-            new_name = f"{name} S{season:02}E{episode:02}.{ext}"
-            return new_name
-        else:
-            raise Exception(f"Error when analyse {filename}")
+        episode = res["episode"]
+        new_name = f"{name} S{season:02}E{episode:02}.{ext}"
+        return new_name
 
     def run(self):
         while True:
@@ -70,12 +66,10 @@ class RenamerThread(threading.Thread):
             filepath_rename = self.__get_file_path(name, season, self.download_path)
             done_flag = True
             for filepath in filepath_rename:
-                try:
-                    new_name = self.__build_new_name(name, season, filepath)
-                except Exception as e:
+                new_name = self.__build_new_name(name, season, filepath)
+                if new_name is None:
                     done_flag = False
-                    logger.error(e)
-                    break
+                    break  # break而非continue是因为每个任务按理只对应一个文件，避免把其他任务的文件重命名了导致任务无法结束
                 logger.info(f"Rename {filepath} to {new_name}")
                 flag, msg = self.alist.rename(filepath, new_name)
                 if not flag:
