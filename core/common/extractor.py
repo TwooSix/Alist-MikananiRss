@@ -123,7 +123,7 @@ class Regex:
 
     def analyse_anime_name(self, anime_name: str) -> dict:
         # 从番剧名字中提取番剧名字和季数
-        pattern = r"(.+) 第(.+?)[季|期]"
+        pattern = r"(.+) 第(.+)[季期]"
         match = re.search(pattern, anime_name)
         if match:
             name = match.group(1)

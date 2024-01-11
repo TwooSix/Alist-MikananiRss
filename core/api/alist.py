@@ -61,6 +61,7 @@ class Alist:
         ),
         "Content-Type": "application/json",
     }
+    UNLOGGING_MSG = "Please login first"
 
     def __init__(self, base_url: str, proxies=None) -> None:
         self.base_url = base_url
@@ -91,13 +92,6 @@ class Alist:
         response = requests.get(api_url, proxies=self.proxies)
         response.raise_for_status()
         self.version = response.json()["data"]["version"][1:]  # 去掉字母v
-
-    def check_is_login(self) -> bool:
-        if not self.is_login:
-            msg = "Please login first"
-            logger.error(msg)
-            raise Exception(msg)
-        return True
 
     def login(self, username: str, password: str) -> tuple[bool, str]:
         """Login to Alist and get authorization token"""
@@ -132,7 +126,9 @@ class Alist:
         Returns:
             dict: response JSON data
         """
-        self.check_is_login()
+        if not self.is_login:
+            return False, self.UNLOGGING_MSG
+
         if self.version < "3.29.0":
             api_url = urllib.parse.urljoin(self.base_url, "api/fs/add_aria2")
             body = {
@@ -179,7 +175,8 @@ class Alist:
         Returns:
             dict: response JSON data
         """
-        self.check_is_login()
+        if not self.is_login:
+            return False, self.UNLOGGING_MSG
 
         api_url = urllib.parse.urljoin(self.base_url, "api/fs/put")
         file_path = os.path.abspath(file_path)
@@ -225,7 +222,8 @@ class Alist:
         Returns:
             dict: response JSON data
         """
-        self.check_is_login()
+        if not self.is_login:
+            return False, self.UNLOGGING_MSG
 
         api_url = urllib.parse.urljoin(self.base_url, "api/fs/list")
         body = {
@@ -255,7 +253,8 @@ class Alist:
         return True, files_list
 
     def get_aria2_task_list(self) -> tuple[bool, list[Aria2Task]]:
-        self.check_is_login()
+        if not self.is_login:
+            return False, self.UNLOGGING_MSG
 
         # prepare url
         download_undone_api = "/api/admin/task/aria2_down/undone"
@@ -295,7 +294,8 @@ class Alist:
         return True, task_list
 
     def rename(self, path, new_name):
-        self.check_is_login()
+        if not self.is_login:
+            return False, self.UNLOGGING_MSG
         api = "/api/fs/rename"
         api_url = urllib.parse.urljoin(self.base_url, api)
         body = {
