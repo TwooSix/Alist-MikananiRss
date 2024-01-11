@@ -1,7 +1,10 @@
 import os
 import sqlite3
+from datetime import datetime
 
 from loguru import logger
+
+from core.mikan import MikanAnimeResource
 
 db_path = "data"
 os.makedirs(db_path, exist_ok=True)
@@ -41,6 +44,29 @@ class SubscribeDatabase:
             logger.error(f"Error when insert resource data:\n {e}")
         finally:
             self.close()
+
+    def delete_by_id(self, id):
+        self.connect()
+        try:
+            self.cursor.execute("DELETE FROM resource_data WHERE id=?", (id,))
+            self.conn.commit()
+            logger.debug(f"Delete resource data: {id}")
+        except Exception as e:
+            logger.error(f"Error when delete resource data:\n {e}")
+        finally:
+            self.close()
+
+    def insert_from_mikan_resource(self, resource: MikanAnimeResource):
+        downloaded_date = datetime.now()
+        downloaded_date = downloaded_date.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
+        self.insert(
+            resource.resource_id,
+            resource.resource_title,
+            resource.torrent_url,
+            resource.published_date,
+            resource.anime_name,
+            downloaded_date,
+        )
 
     def is_exist(self, id):
         self.connect()
