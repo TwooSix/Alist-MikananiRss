@@ -38,6 +38,6 @@ USER_ID = "你的 USER_ID"
 
 ## 重命名效果展示
 <div align=center>
-<img src="https://github.com/TwooSix/Alist-MikananiRss/blob/master/imgs/show_pic1.jpg"/>
+<img src="https://github.com/TwooSix/Alist-MikananiRss/blob/master/imgs/show_pic1.png"/>
 </div>
 
