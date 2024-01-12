@@ -63,7 +63,7 @@ if __name__ == "__main__":
     debug_mode = config_loader.get_debug_mode()
     log_level = "DEBUG" if debug_mode else "INFO"
     logger.remove()
-    logger.add("log/debug_{time}.log", retention="7 days", level=log_level)
+    logger.add("log/main_{time}.log", retention="7 days", level=log_level)
     logger.add(sys.stderr, level=log_level)  # 添加新的 handler 且设置等级为 INFO
 
     # proxy init
