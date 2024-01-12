@@ -8,8 +8,13 @@
   并结合使用ChatGPT分析资源名，将资源重命名为Emby可解析的格式。（现为纯自用脚本分享，代码质量差请见谅）
 </p>  
 
+## 重命名效果展示
+<div align=center>
+<img src="https://github.com/TwooSix/Alist-MikananiRss/blob/master/imgs/show_pic1.png"/>
+</div>
+
 ## 准备工作 
-1. 请自行参照[Alist](https://github.com/alist-org/alist)项目文档部署Alist，并搭建好Aria2离线下载（暂未支持QBit）
+1. 请自行参照[Alist](https://github.com/alist-org/alist)项目文档部署Alist，并搭建好Aria2/qBittorrent离线下载
 2. 自行注册蜜柑计划账户，订阅番剧，获取订阅链接
 
 ## 如何使用
@@ -36,8 +41,15 @@ BOT_TOKEN = "你的 BOT_TOKEN"
 USER_ID = "你的 USER_ID"
 ```
 
-## 重命名效果展示
-<div align=center>
-<img src="https://github.com/TwooSix/Alist-MikananiRss/blob/master/imgs/show_pic1.png"/>
-</div>
-
+## 实用的小脚本
+1. 老番下载
+   一键下载老番并重命名（遵循config.py的设置，包括正则表达式筛选等），用例：
+   ```shell
+   python download_old_anime.py "rss_url"
+   ```
+   rss_url为在老番的主页，获取的对应字幕组的RSS链接，例如：
+   ![RSS链接获取入口](https://github.com/TwooSix/Alist-MikananiRss/blob/master/imgs/dl_old_anime_rss_example.png)
+   ```shell
+   python download_old_anime.py "https://mikanani.me/RSS/Bangumi?bangumiId=2134&subgroupid=552"
+   ```
+   
