@@ -1,5 +1,6 @@
 # config_loader.py
 import config
+from core.api.alist import DownloaderType
 
 
 def get_base_url():
@@ -38,6 +39,17 @@ def get_subscribe_url():
 
 def get_filters():
     return getattr(config, "FILTERS", [])
+
+
+def get_downloader():
+    downloader_str = getattr(config, "DOWNLOADER", None)
+    assert downloader_str, "Please set DOWNLOADER in config.py"
+    if downloader_str == "aria":
+        return DownloaderType.ARIA
+    elif downloader_str == "qbit":
+        return DownloaderType.QBIT
+    else:
+        raise ValueError("DOWNLOADER must be 'aria' or 'qbit'")
 
 
 def get_interval_time():

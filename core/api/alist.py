@@ -5,16 +5,20 @@ import urllib.parse
 from enum import Enum
 
 import requests
-from loguru import logger
 
 
-class Aria2TaskStatus(Enum):
+class DownloadTaskStatus(Enum):
     DOWNLOADING = 1
     TRANSFERRING = 2
     WAITING = 3
     DONE = 4
     ERROR = 5
     UNKNOWN = 6
+
+
+class DownloaderType(Enum):
+    ARIA = 1
+    QBIT = 2
 
 
 class Aria2Task:
@@ -39,17 +43,17 @@ class Aria2Task:
         error_str = json_data["error"]
         if state == "running":
             if "transferring" in status_str:
-                status = Aria2TaskStatus.TRANSFERRING
+                status = DownloadTaskStatus.TRANSFERRING
             else:
-                status = Aria2TaskStatus.DOWNLOADING
+                status = DownloadTaskStatus.DOWNLOADING
         elif state == "succeeded":
-            status = Aria2TaskStatus.DONE
+            status = DownloadTaskStatus.DONE
         elif state == "pending":
-            status = Aria2TaskStatus.WAITING
+            status = DownloadTaskStatus.WAITING
         elif error_str:
-            status = Aria2TaskStatus.ERROR
+            status = DownloadTaskStatus.ERROR
         else:
-            status = Aria2TaskStatus.UNKNOWN
+            status = DownloadTaskStatus.UNKNOWN
         return cls(tid, url, status, error_str)
 
 
@@ -63,9 +67,10 @@ class Alist:
     }
     UNLOGGING_MSG = "Please login first"
 
-    def __init__(self, base_url: str) -> None:
+    def __init__(self, base_url: str, downloader: DownloaderType) -> None:
         self.base_url = base_url
         self.is_login = False
+        self.downloader = downloader
         self.__init_alist_ver()
 
     def __get_json_data(self, response: requests.Response) -> dict:
@@ -114,27 +119,15 @@ class Alist:
         return True, "Login successful"
 
     def add_aria2(self, save_path: str, urls: list[str]) -> tuple[bool, str]:
-        """Add download task to aria2 queue
-
-        Args:
-            save_path (str): save path starting from /
-            urls (list[str]): download URLs
-
-        Returns:
-            dict: response JSON data
-        """
         if not self.is_login:
             return False, self.UNLOGGING_MSG
-
+        # alist author rebuild the offdownload api in version 3.29.0
         if self.version < "3.29.0":
             api_url = urllib.parse.urljoin(self.base_url, "api/fs/add_aria2")
             body = {
                 "path": save_path,
                 "urls": urls,
             }
-            logger.warning(
-                "api/fs/add_aria2 has been deprecated, please update Alist to 3.29.0+"
-            )
         else:
             api_url = urllib.parse.urljoin(self.base_url, "api/fs/add_offline_download")
             body = {
@@ -160,6 +153,47 @@ class Alist:
 
         return True, "Task added successfully"
 
+    def add_qbit(self, save_path: str, urls: list[str]) -> tuple[bool, str]:
+        if not self.is_login:
+            return False, self.UNLOGGING_MSG
+        # alist author rebuild the offdownload api in version 3.29.0
+        if self.version < "3.29.0":
+            api_url = urllib.parse.urljoin(self.base_url, "api/fs/add_qbit")
+            body = {
+                "path": save_path,
+                "urls": urls,
+            }
+        else:
+            api_url = urllib.parse.urljoin(self.base_url, "api/fs/add_offline_download")
+            body = {
+                "delete_policy": "delete_never",
+                "path": save_path,
+                "urls": urls,
+                "tool": "qbit",
+            }
+
+        try:
+            response = requests.post(api_url, headers=self.headers, json=body)
+            self.__get_json_data(response)
+        except requests.exceptions.ConnectionError as e:
+            return (
+                False,
+                (
+                    "Connection error during adding qbit task, please check your"
+                    f" network: {e}"
+                ),
+            )
+        except Exception as e:
+            return False, f"Error occur during adding qbit task: {e}"
+
+        return True, "Task added successfully"
+
+    def add_offline_download(self, save_path: str, urls: list[str]) -> tuple[bool, str]:
+        if self.downloader == DownloaderType.ARIA:
+            return self.add_aria2(save_path, urls)
+        elif self.downloader == DownloaderType.QBIT:
+            return self.add_qbit(save_path, urls)
+
     def upload(self, save_path: str, file_path: str) -> tuple[bool, str]:
         """Upload file to Alist
 
@@ -168,7 +202,7 @@ class Alist:
             file_path (str): Local file's path
 
         Returns:
-            dict: response JSON data
+            tuple[bool, str]: (status, msg)
         """
         if not self.is_login:
             return False, self.UNLOGGING_MSG
@@ -213,7 +247,7 @@ class Alist:
             file_path (str): Local file's path
 
         Returns:
-            dict: response JSON data
+            tuple[bool, str|list]: (status, msg|files_list)
         """
         if not self.is_login:
             return False, self.UNLOGGING_MSG
@@ -283,6 +317,53 @@ class Alist:
             for task in download_done_json_data:
                 task_list.append(Aria2Task.from_json(task))
         return True, task_list
+
+    def get_qbit_task_list(self) -> tuple[bool, list[Aria2Task]]:
+        if not self.is_login:
+            return False, self.UNLOGGING_MSG
+
+        # prepare url
+        download_undone_api = "/api/admin/task/qbit_down/undone"
+        download_done_api = "/api/admin/task/qbit_down/done"
+        download_undone_url = urllib.parse.urljoin(self.base_url, download_undone_api)
+        download_done_url = urllib.parse.urljoin(self.base_url, download_done_api)
+
+        # get task list
+        try:
+            download_undone_response = requests.get(
+                download_undone_url, headers=self.headers
+            )
+            download_undone_json_data = self.__get_json_data(download_undone_response)
+            download_done_response = requests.get(
+                download_done_url, headers=self.headers
+            )
+            download_done_json_data = self.__get_json_data(download_done_response)
+        except requests.exceptions.ConnectionError as e:
+            return (
+                False,
+                (
+                    "Connection error during get qbit task list, please check your"
+                    f" network: {e}"
+                ),
+            )
+        except Exception as e:
+            return False, f"Error occur during get qbit task list: {e}"
+
+        # parse task list
+        task_list = []
+        if download_undone_json_data:
+            for task in download_undone_json_data:
+                task_list.append(Aria2Task.from_json(task))
+        if download_done_json_data:
+            for task in download_done_json_data:
+                task_list.append(Aria2Task.from_json(task))
+        return True, task_list
+
+    def get_offline_download_task_list(self) -> tuple[bool, list[Aria2Task]]:
+        if self.downloader == DownloaderType.ARIA:
+            return self.get_aria2_task_list()
+        elif self.downloader == DownloaderType.QBIT:
+            return self.get_qbit_task_list()
 
     def rename(self, path, new_name):
         if not self.is_login:

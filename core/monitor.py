@@ -4,7 +4,7 @@ from queue import Queue
 import feedparser
 from loguru import logger
 
-from core.api.alist import Alist, Aria2TaskStatus
+from core.api.alist import Alist, DownloadTaskStatus
 from core.common.database import SubscribeDatabase
 from core.common.filters import RegexFilter
 from core.mikan import MikanAnimeResource
@@ -33,14 +33,14 @@ class AlistDonwloadMonitor(threading.Thread):
             )
 
     def get_task_status(self, url):
-        flag, task_list = self.alist.get_aria2_task_list()
+        flag, task_list = self.alist.get_offline_download_task_list()
         if not flag:
             return None
 
         for task in task_list:
             if task.url == url and task.status not in [
-                Aria2TaskStatus.UNKNOWN,
-                Aria2TaskStatus.ERROR,
+                DownloadTaskStatus.UNKNOWN,
+                DownloadTaskStatus.ERROR,
             ]:
                 return task.status
         return None
@@ -62,7 +62,7 @@ class AlistDonwloadMonitor(threading.Thread):
                 self.download_queue.put(resource)
                 continue
             logger.debug(f"Checking Task {resource_url} status: {status}")
-            if status == Aria2TaskStatus.DONE:
+            if status == DownloadTaskStatus.DONE:
                 self.success_download_queue.put(resource)
                 self.download_queue.task_done()
                 if self.use_renamer:
@@ -72,7 +72,7 @@ class AlistDonwloadMonitor(threading.Thread):
                         )
                         self.renamer.start()
 
-            elif status == Aria2TaskStatus.ERROR:
+            elif status == DownloadTaskStatus.ERROR:
                 # delete the failed resource from database
                 self.db.delete_by_id(resource.resource_id)
                 self.download_queue.task_done()

@@ -37,7 +37,7 @@ def download_new_resources(
             subfolder = os.path.join(name, f"Season {season}")
             download_path = os.path.join(root_path, subfolder)
             # download
-            status, msg = alist.add_aria2(download_path, urls)
+            status, msg = alist.add_offline_download(download_path, urls)
             if not status:
                 logger.error(f"Error when downloading {name}:\n {msg}")
                 continue
@@ -70,7 +70,8 @@ if __name__ == "__main__":
 
     # alist init
     base_url = config_loader.get_base_url()
-    alist = api.Alist(base_url)
+    downloader_type = config_loader.get_downloader()
+    alist = api.Alist(base_url, downloader_type)
 
     # init notification bot
     notification_bots = []
