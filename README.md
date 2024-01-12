@@ -14,7 +14,7 @@
 </div>
 
 ## 准备工作 
-1. 请自行参照[Alist](https://github.com/alist-org/alist)项目文档部署Alist，并搭建好Aria2/qBittorrent离线下载
+1. 请自行参照[Alist](https://github.com/alist-org/alist)项目文档部署Alist，并搭建好Aria2/qBittorrent离线下载（建议使用v3.28.0版本的Alist，新版Alist重构了离线下载后非常多问题，因此个人未在新版进行测试）
 2. 自行注册蜜柑计划账户，订阅番剧，获取订阅链接
 
 ## 如何使用
