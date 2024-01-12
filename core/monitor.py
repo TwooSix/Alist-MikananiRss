@@ -16,17 +16,21 @@ class AlistDonwloadMonitor(threading.Thread):
         self,
         alist: Alist,
         download_queue: Queue,
+        success_download_queue: Queue,
         download_path: str,
         use_renamer: bool = False,
     ):
         super().__init__(daemon=True)
         self.alist = alist
         self.download_queue = download_queue
+        self.success_download_queue = success_download_queue
         self.download_path = download_path
         self.db = SubscribeDatabase()
         self.use_renamer = use_renamer
         if use_renamer:
-            self.renamer = RenamerThread(self.alist, self.download_path)
+            self.renamer = RenamerThread(
+                self.alist, self.download_path, self.success_download_queue
+            )
 
     def get_task_status(self, url):
         flag, task_list = self.alist.get_aria2_task_list()
@@ -59,12 +63,15 @@ class AlistDonwloadMonitor(threading.Thread):
                 continue
             logger.debug(f"Checking Task {resource_url} status: {status}")
             if status == Aria2TaskStatus.DONE:
+                self.success_download_queue.put(resource)
                 self.download_queue.task_done()
                 if self.use_renamer:
-                    self.renamer.add_rename_task(resource)
                     if not self.renamer.is_alive():
-                        self.renamer = RenamerThread(self.alist, self.download_path)
+                        self.renamer = RenamerThread(
+                            self.alist, self.download_path, self.success_download_queue
+                        )
                         self.renamer.start()
+
             elif status == Aria2TaskStatus.ERROR:
                 # delete the failed resource from database
                 self.db.delete_by_id(resource.resource_id)

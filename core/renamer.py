@@ -12,10 +12,10 @@ from core.mikan import MikanAnimeResource
 
 
 class RenamerThread(threading.Thread):
-    def __init__(self, alist: Alist, download_path: str):
+    def __init__(self, alist: Alist, download_path: str, rename_queue: Queue):
         super().__init__(daemon=True)
         self.alist = alist
-        self.rename_queue = Queue()
+        self.rename_queue = rename_queue
         self.download_path = download_path
         api_key = config_loader.get_chatgpt_api_key()
         base_url = config_loader.get_chatgpt_base_url()

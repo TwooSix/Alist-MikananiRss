@@ -12,6 +12,7 @@ from core.mikan import MikanAnimeResource
 from core.monitor import AlistDonwloadMonitor, MikanRSSMonitor
 
 download_task_queue = Queue()
+success_download_queue = Queue()
 
 
 def download_new_resources(
@@ -124,6 +125,13 @@ if __name__ == "__main__":
                 for resource in success_resources:
                     download_task_queue.put(resource)
                 if not download_monitor_thread.is_alive():
+                    download_monitor_thread = AlistDonwloadMonitor(
+                        alist,
+                        download_task_queue,
+                        success_download_queue,
+                        download_path,
+                        use_renamer,
+                    )
                     download_monitor_thread.start()
                 # Step 4: Rename downloaded resource (in AlistDownloadMonitor thread)
         except Exception as e:
