@@ -11,10 +11,8 @@ from core.common import config_loader
 from core.common.filters import RegexFilter
 from core.mikan import MikanAnimeResource
 from core.monitor import AlistDonwloadMonitor, MikanRSSMonitor
-from core.renamer import RenamerThread
 
 download_task_queue = Queue()
-success_download_task_queue = Queue()
 
 
 def download_new_resources(
@@ -105,22 +103,22 @@ if __name__ == "__main__":
         filter=regex_filter,
     )
 
-    # start main loop and thread
+    # start main loop
     user_name = config_loader.get_user_name()
     password = config_loader.get_password()
     interval_time = config_loader.get_interval_time()
     use_renamer = config_loader.get_use_renamer()
-    if use_renamer:
-        renamer_thread = RenamerThread(
-            alist, success_download_task_queue, download_path
-        )
-        renamer_thread.start()
+
     download_monitor_thread = AlistDonwloadMonitor(
-        alist, download_task_queue, success_download_task_queue, download_path
+        alist, download_task_queue, download_path, use_renamer
     )
-    download_monitor_thread.start()
     db = rss_monitor.db
-    while interval_time > 0:
+
+    if interval_time < 0:
+        interval_time = 0
+    execute_once = interval_time == 0
+
+    while interval_time > 0 or execute_once:
         status, msg = alist.login(user_name, password)
         if not status:
             logger.error(msg)
@@ -131,7 +129,10 @@ if __name__ == "__main__":
                 new_resources = rss_monitor.get_new_resource()
                 if not new_resources:
                     logger.info("No new resources")
-                    time.sleep(interval_time)
+                    if execute_once:
+                        break
+                    if interval_time > 0:
+                        time.sleep(interval_time)
                     continue
                 # Step 2: Start to download
                 success_resources = download_new_resources(
@@ -142,35 +143,22 @@ if __name__ == "__main__":
                 # Step 4: wait for download complete
                 for resource in success_resources:
                     download_task_queue.put(resource)
-                    # Step 5: insert downloaded resource to database(in AlistDonwloadMonitor thread)
+                    # Step 5: insert downloaded resource to database
                     db.insert_from_mikan_resource(resource)
-                # Step 6: Rename downloaded resource (in renamer thread)
+                if not download_monitor_thread.is_alive():
+                    download_monitor_thread = AlistDonwloadMonitor(
+                        alist, download_task_queue, download_path, use_renamer
+                    )
+                    download_monitor_thread.start()
+                # Step 6: Rename downloaded resource (in AlistDownloadMonitor thread)
             except Exception as e:
                 logger.error(e)
-        time.sleep(interval_time)
 
-    if interval_time <= 0:
-        status, msg = alist.login(user_name, password)
-        if not status:
-            logger.error(msg)
-        else:
-            try:
-                # Step 1: Get new resources
-                new_resources = rss_monitor.get_new_resource()
-                # Step 2: Start to download
-                success_resources = download_new_resources(
-                    alist, new_resources, download_path
-                )
-                # Step 3: Send notification
-                send_notification(notification_bots, success_resources)
-                # Step 4: wait for download complete
-                for resource in success_resources:
-                    download_task_queue.put(resource)
-                # Step 5: insert downloaded resource to database(in AlistDonwloadMonitor thread)
-                # Step 6: Rename downloaded resource (in renamer thread)
-            except Exception as e:
-                logger.error(e)
+        if execute_once:
+            break
+
+        if interval_time > 0:
+            time.sleep(interval_time)
+
     # wait for thread complete
     download_monitor_thread.join()
-    if use_renamer:
-        renamer_thread.join()

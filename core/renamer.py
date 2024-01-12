@@ -1,7 +1,6 @@
 import os
 import re
 import threading
-import time
 from queue import Queue
 
 from loguru import logger
@@ -13,15 +12,18 @@ from core.mikan import MikanAnimeResource
 
 
 class RenamerThread(threading.Thread):
-    def __init__(self, alist: Alist, rename_queue: Queue, download_path: str):
+    def __init__(self, alist: Alist, download_path: str):
         super().__init__(daemon=True)
         self.alist = alist
-        self.rename_queue = rename_queue
+        self.rename_queue = Queue()
         self.download_path = download_path
         api_key = config_loader.get_chatgpt_api_key()
         base_url = config_loader.get_chatgpt_base_url()
         model = config_loader.get_chatgpt_model()
         self.chatgpt = ChatGPT(api_key, base_url, model)
+
+    def add_rename_task(self, resource: MikanAnimeResource):
+        self.rename_queue.put(resource)
 
     def find_wrong_format_videos(self, filename_list):
         video_extensions = ["mp4", "mkv", "MP4", "MKV"]
@@ -59,9 +61,10 @@ class RenamerThread(threading.Thread):
 
     def run(self):
         while True:
-            resource: MikanAnimeResource = self.rename_queue.get()
-            if resource is None:
-                time.sleep(10)
+            if self.rename_queue.empty():
+                logger.debug("No more rename task, exit the rename thread")
+                break  # no more renaming task, exit the thread
+            resource: MikanAnimeResource = self.rename_queue.get(block=False)
             name, season = resource.anime_name, resource.season
             filepath_rename = self.__get_file_path(name, season, self.download_path)
             done_flag = True
@@ -70,11 +73,11 @@ class RenamerThread(threading.Thread):
                 if new_name is None:
                     done_flag = False
                     break  # break而非continue是因为每个任务按理只对应一个文件，避免把其他任务的文件重命名了导致任务无法结束
-                logger.info(f"Rename {filepath} to {new_name}")
                 flag, msg = self.alist.rename(filepath, new_name)
                 if not flag:
                     logger.error(f"Error when rename {filepath}:\n {msg}")
                     break
+                logger.info(f"Rename {filepath} to {new_name}")
             if done_flag:
                 self.rename_queue.task_done()
             else:
