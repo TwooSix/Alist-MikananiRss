@@ -24,6 +24,8 @@ SUBSCRIBE_URL = "https://mikanani.me/RSS/MyBangumi?token=xxx"
 # 实际使用的REGEX_PATTERN名字
 FILTERS = ["1080", "非合集"]
 
+DOWNLOADER = "aria"  # 下载工具，qbittorent则为"qbit"
+
 INTERVAL_TIME = 0  # 定时执行的间隔时间，单位为秒，0 为只运行一次
 
 # ==================== 代理配置 ====================

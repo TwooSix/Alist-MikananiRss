@@ -1,14 +1,14 @@
 import threading
-import time
 from queue import Queue
 
 import feedparser
 from loguru import logger
 
-from core.api.alist import Alist, Aria2TaskStatus
+from core.api.alist import Alist, DownloadTaskStatus
 from core.common.database import SubscribeDatabase
 from core.common.filters import RegexFilter
 from core.mikan import MikanAnimeResource
+from core.renamer import RenamerThread
 
 
 class AlistDonwloadMonitor(threading.Thread):
@@ -16,34 +16,62 @@ class AlistDonwloadMonitor(threading.Thread):
         self,
         alist: Alist,
         download_queue: Queue,
-        success_queue: Queue,
+        success_download_queue: Queue,
         download_path: str,
+        use_renamer: bool = False,
     ):
         super().__init__(daemon=True)
         self.alist = alist
         self.download_queue = download_queue
-        self.success_queue = success_queue
+        self.success_download_queue = success_download_queue
         self.download_path = download_path
         self.db = SubscribeDatabase()
+        self.use_renamer = use_renamer
+        if use_renamer:
+            self.renamer = RenamerThread(
+                self.alist, self.download_path, self.success_download_queue
+            )
 
     def get_task_status(self, url):
-        flag, task_list = self.alist.get_aria2_task_list()
+        flag, task_list = self.alist.get_offline_download_task_list()
         if not flag:
             return None
 
         for task in task_list:
             if task.url == url and task.status not in [
-                Aria2TaskStatus.UNKNOWN,
-                Aria2TaskStatus.ERROR,
+                DownloadTaskStatus.UNKNOWN,
+                DownloadTaskStatus.ERROR,
             ]:
                 return task.status
         return None
 
+    def process_task_status(self, task: MikanAnimeResource, status: DownloadTaskStatus):
+        if status == DownloadTaskStatus.DONE:
+            self.success_download_queue.put(task)
+            self.download_queue.task_done()
+            if self.use_renamer and not self.renamer.is_alive():
+                self.renamer = RenamerThread(
+                    self.alist, self.download_path, self.success_download_queue
+                )
+                self.renamer.start()
+        elif status == DownloadTaskStatus.ERROR:
+            # delete the failed resource from database
+            self.db.delete_by_id(task.resource_id)
+            self.download_queue.task_done()
+            logger.error(f"Error when download {task}")
+        else:
+            self.download_queue.put(task)
+
     def run(self):
         while True:
-            resource: MikanAnimeResource = self.download_queue.get()
-            if resource is None:
-                time.sleep(60)
+            if self.download_queue.empty():
+                if self.use_renamer and self.renamer.is_alive():
+                    self.renamer.join()
+                logger.debug(
+                    "No more downloading task, exit the download monitor thread"
+                )
+                break  # no more downloading task, exit the thread
+            resource: MikanAnimeResource = self.download_queue.get(block=False)
             resource_url = resource.torrent_url
             status = self.get_task_status(resource_url)
             if status is None:
@@ -51,16 +79,7 @@ class AlistDonwloadMonitor(threading.Thread):
                 self.download_queue.put(resource)
                 continue
             logger.debug(f"Checking Task {resource_url} status: {status}")
-            if status == Aria2TaskStatus.DONE:
-                self.success_queue.put(resource)
-                self.download_queue.task_done()
-            elif status == Aria2TaskStatus.ERROR:
-                # delete the failed resource from database
-                self.db.delete_by_id(resource.resource_id)
-                self.download_queue.task_done()
-                logger.error(f"Error when download {resource_url}")
-            else:
-                self.download_queue.put(resource)
+            self.process_task_status(resource, status)
 
 
 class MikanRSSMonitor:
