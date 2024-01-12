@@ -45,6 +45,23 @@ class AlistDonwloadMonitor(threading.Thread):
                 return task.status
         return None
 
+    def process_task_status(self, task: MikanAnimeResource, status: DownloadTaskStatus):
+        if status == DownloadTaskStatus.DONE:
+            self.success_download_queue.put(task)
+            self.download_queue.task_done()
+            if self.use_renamer and not self.renamer.is_alive():
+                self.renamer = RenamerThread(
+                    self.alist, self.download_path, self.success_download_queue
+                )
+                self.renamer.start()
+        elif status == DownloadTaskStatus.ERROR:
+            # delete the failed resource from database
+            self.db.delete_by_id(task.resource_id)
+            self.download_queue.task_done()
+            logger.error(f"Error when download {task}")
+        else:
+            self.download_queue.put(task)
+
     def run(self):
         while True:
             if self.download_queue.empty():
@@ -62,23 +79,7 @@ class AlistDonwloadMonitor(threading.Thread):
                 self.download_queue.put(resource)
                 continue
             logger.debug(f"Checking Task {resource_url} status: {status}")
-            if status == DownloadTaskStatus.DONE:
-                self.success_download_queue.put(resource)
-                self.download_queue.task_done()
-                if self.use_renamer:
-                    if not self.renamer.is_alive():
-                        self.renamer = RenamerThread(
-                            self.alist, self.download_path, self.success_download_queue
-                        )
-                        self.renamer.start()
-
-            elif status == DownloadTaskStatus.ERROR:
-                # delete the failed resource from database
-                self.db.delete_by_id(resource.resource_id)
-                self.download_queue.task_done()
-                logger.error(f"Error when download {resource_url}")
-            else:
-                self.download_queue.put(resource)
+            self.process_task_status(resource, status)
 
 
 class MikanRSSMonitor:
