@@ -4,6 +4,7 @@ import time
 import bs4
 import requests
 
+from core.alist.offline_download import DownloadTask
 from core.common import extractor
 
 
@@ -54,6 +55,7 @@ class MikanAnimeResource:
         self.published_date = published_date
         self.resource_title = resource_title
         self.episode = episode
+        self.download_task = None
 
     @classmethod
     def from_feed_entry(cls, feed_entry):
@@ -66,6 +68,9 @@ class MikanAnimeResource:
         return cls(
             rid, res["name"], res["season"], torrent_url, published_date, resource_title
         )
+
+    def set_download_task(self, task: DownloadTask):
+        self.download_task = task
 
     def __repr__(self):
         return (

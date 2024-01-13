@@ -5,7 +5,8 @@ from queue import Queue
 
 from loguru import logger
 
-from core import api
+from core import alist
+from core.alist.offline_download import TaskList, TaskStatus
 from core.bot import NotificationBot, NotificationMsg, TelegramBot
 from core.common import config_loader
 from core.common.filters import RegexFilter
@@ -17,7 +18,7 @@ success_download_queue = Queue()
 
 
 def download_new_resources(
-    alist: api.Alist, resources: list[MikanAnimeResource], root_path: str
+    alist: alist.Alist, resources: list[MikanAnimeResource], root_path: str
 ):
     # group new resource by anime name and season
     resource_group: dict[str, dict[str, list[MikanAnimeResource]]] = {}
@@ -30,7 +31,7 @@ def download_new_resources(
         resource_group[resource.anime_name][resource.season].append(resource)
 
     # download new resources by group
-    success_resource = []  # the resource that has been started to download successfully
+    success_resource: list[MikanAnimeResource] = []
     for name, season_group in resource_group.items():
         for season, resources in season_group.items():
             urls = [resource.torrent_url for resource in resources]
@@ -45,6 +46,28 @@ def download_new_resources(
             titles_str = "\n".join(titles)
             logger.info(f"Start to download {name}:\n {titles_str}")
             success_resource += resources
+    for resource in success_resource:
+        start_time = time.time()
+        while True:
+            flag, tmp_task_list = alist.get_offline_download_task_list()
+            if not flag:
+                # 60s timeout
+                now_time = time.time()
+                if now_time - start_time > 60:
+                    msg = tmp_task_list
+                    logger.error(msg)
+                    break
+                continue
+            else:
+                task_list = TaskList()
+                for task in tmp_task_list:
+                    if task.status in [TaskStatus.Pending, TaskStatus.Running]:
+                        task_list.append(task)
+                for task in task_list:
+                    if task.url == resource.torrent_url:
+                        resource.set_download_task(task)
+                        break
+                break
     return success_resource
 
 
@@ -79,7 +102,7 @@ if __name__ == "__main__":
     # alist init
     base_url = config_loader.get_base_url()
     downloader_type = config_loader.get_downloader()
-    alist = api.Alist(base_url, downloader_type)
+    alist = alist.Alist(base_url, downloader_type)
 
     # init notification bot
     notification_bots = []

@@ -4,7 +4,8 @@ from queue import Queue
 import feedparser
 from loguru import logger
 
-from core.api.alist import Alist, DownloadTaskStatus
+from core.alist.api import Alist
+from core.alist.offline_download import Task, TaskStatus
 from core.common.database import SubscribeDatabase
 from core.common.filters import RegexFilter
 from core.mikan import MikanAnimeResource
@@ -27,40 +28,86 @@ class AlistDonwloadMonitor(threading.Thread):
         self.download_path = download_path
         self.db = SubscribeDatabase()
         self.use_renamer = use_renamer
+        self.transfer_uuid_set = set()
         if use_renamer:
             self.renamer = RenamerThread(
                 self.alist, self.download_path, self.success_download_queue
             )
 
-    def get_task_status(self, url):
+    def get_task_status(self, tid) -> TaskStatus:
         flag, task_list = self.alist.get_offline_download_task_list()
         if not flag:
             return None
+        task: Task = task_list[tid]
+        if task is None:
+            return None
+        return task.status
 
-        for task in task_list:
-            if task.url == url and task.status not in [
-                DownloadTaskStatus.UNKNOWN,
-                DownloadTaskStatus.ERROR,
-            ]:
-                return task.status
-        return None
-
-    def process_task_status(self, task: MikanAnimeResource, status: DownloadTaskStatus):
-        if status == DownloadTaskStatus.DONE:
-            self.success_download_queue.put(task)
-            self.download_queue.task_done()
-            if self.use_renamer and not self.renamer.is_alive():
-                self.renamer = RenamerThread(
-                    self.alist, self.download_path, self.success_download_queue
-                )
-                self.renamer.start()
-        elif status == DownloadTaskStatus.ERROR:
-            # delete the failed resource from database
-            self.db.delete_by_id(task.resource_id)
-            self.download_queue.task_done()
-            logger.error(f"Error when download {task}")
+    def proccess_finished_task(self, resource: MikanAnimeResource):
+        download_task = resource.download_task
+        flag, transfer_task_list = self.alist.get_offline_transfer_task_list()
+        if not flag:
+            logger.error(
+                f"Error when get transfer task list of {resource.resource_title}"
+            )
+            self.download_queue.put(resource)
+            return
+        if not download_task.is_started_transfer:
+            # 初始化下载任务对应的传输任务（使用新的未出现过的tempdir名称，即uuid建立关联）
+            for transfer_task in transfer_task_list:
+                if transfer_task.uuid in self.transfer_uuid_set:
+                    continue
+                if transfer_task.status in [TaskStatus.Pending, TaskStatus.Running]:
+                    self.transfer_uuid_set.add(transfer_task.uuid)
+                    download_task.add_transfer_task(transfer_task)
+                    download_task.set_started_transfer(transfer_task.uuid)
+                    logger.debug(
+                        f"Link {resource.resource_title} to {transfer_task.uuid}"
+                    )
+                    break
+            self.download_queue.put(resource)
+            return
         else:
-            self.download_queue.put(task)
+            # 添加新的正在运行的传输任务
+            for transfer_task in transfer_task_list:
+                if transfer_task.uuid != download_task.uuid:
+                    continue
+                if transfer_task.tid in download_task.transfer_task_id:
+                    continue
+                if transfer_task.status in [TaskStatus.Pending, TaskStatus.Running]:
+                    download_task.add_transfer_task(transfer_task)
+            if len(download_task.transfer_task_id) == 0:
+                # 没有对应的传输任务了，则判断下载任务完成
+                self.download_queue.task_done()
+                return
+            need_remove = []
+            # 遍历下载任务对应的所有传输任务，判断其状态并进行相应的处理
+            for ttid in download_task.transfer_task_id:
+                transfer_task = transfer_task_list[ttid]
+                if transfer_task is None:
+                    logger.warning(f"Can't find the transfer task: {ttid}")
+                    continue
+                if transfer_task.status == TaskStatus.Errored:
+                    need_remove.append(ttid)
+                elif transfer_task.status == TaskStatus.Succeeded:
+                    need_remove.append(ttid)
+                    self.success_download_queue.put(resource)
+                    if self.use_renamer and not self.renamer.is_alive():
+                        self.renamer = RenamerThread(
+                            self.alist, self.download_path, self.success_download_queue
+                        )
+                        self.renamer.start()
+                else:
+                    continue
+            # 移除出错/已完成的任务
+            for need_remove_id in need_remove:
+                download_task.transfer_task_id.remove(need_remove_id)
+            self.download_queue.put(resource)
+
+    def proccess_error_task(self, resource: MikanAnimeResource):
+        self.db.delete_by_id(resource.resource_id)
+        self.download_queue.task_done()
+        logger.error(f"Error when download {resource}")
 
     def run(self):
         while True:
@@ -72,14 +119,29 @@ class AlistDonwloadMonitor(threading.Thread):
                 )
                 break  # no more downloading task, exit the thread
             resource: MikanAnimeResource = self.download_queue.get(block=False)
-            resource_url = resource.torrent_url
-            status = self.get_task_status(resource_url)
+            task = resource.download_task
+            if task is None:
+                logger.error(
+                    f"Can't find the download task of {resource.resource_title}"
+                )
+                self.download_queue.task_done()
+                continue
+
+            status = self.get_task_status(task.tid)
             if status is None:
-                logger.error(f"Error when get task status of {resource_url}")
+                logger.warning(f"Can't get task status of {resource.resource_title}")
                 self.download_queue.put(resource)
                 continue
-            logger.debug(f"Checking Task {resource_url} status: {status}")
-            self.process_task_status(resource, status)
+            task.update_status(status)  # update只是为了方便显示Transferring状态
+            logger.debug(
+                f"Checking Task {resource.resource_title} status: {task.status.name}"
+            )
+            if status == TaskStatus.Errored:
+                self.proccess_error_task(resource)
+            elif status == TaskStatus.Succeeded:  # 下载完成，并非传输完成
+                self.proccess_finished_task(resource)
+            else:
+                self.download_queue.put(resource)
 
 
 class MikanRSSMonitor:

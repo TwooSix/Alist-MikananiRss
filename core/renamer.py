@@ -5,7 +5,7 @@ from queue import Queue
 
 from loguru import logger
 
-from core.api.alist import Alist
+from core.alist.api import Alist
 from core.common import config_loader
 from core.common.extractor import ChatGPT
 from core.mikan import MikanAnimeResource
@@ -64,21 +64,21 @@ class RenamerThread(threading.Thread):
             if self.rename_queue.empty():
                 logger.debug("No more rename task, exit the rename thread")
                 break  # no more renaming task, exit the thread
-            resource: MikanAnimeResource = self.rename_queue.get(block=False)
-            name, season = resource.anime_name, resource.season
+            task: MikanAnimeResource = self.rename_queue.get(block=False)
+            name, season = task.anime_name, task.season
             filepath_rename = self.__get_file_path(name, season, self.download_path)
             done_flag = True
             for filepath in filepath_rename:
                 new_name = self.__build_new_name(name, season, filepath)
                 if new_name is None:
                     done_flag = False
-                    break  # break而非continue是因为每个任务按理只对应一个文件，避免把其他任务的文件重命名了导致任务无法结束
+                    continue
                 flag, msg = self.alist.rename(filepath, new_name)
                 if not flag:
                     logger.error(f"Error when rename {filepath}:\n {msg}")
-                    break
+                    continue
                 logger.info(f"Rename {filepath} to {new_name}")
             if done_flag:
                 self.rename_queue.task_done()
             else:
-                self.rename_queue.put(resource)
+                self.rename_queue.put(task)

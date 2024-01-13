@@ -1,6 +1,6 @@
 import pytest
 
-from core.api import Alist
+from core.alist import Alist
 from core.common import config_loader
 
 
