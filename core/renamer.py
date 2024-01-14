@@ -1,19 +1,19 @@
 import os
 import re
-import threading
 from queue import Queue
+from threading import Event
 
 from loguru import logger
 
 from core.alist.api import Alist
 from core.common import config_loader
 from core.common.extractor import ChatGPT
+from core.common.globalvar import executor
 from core.mikan import MikanAnimeResource
 
 
-class RenamerThread(threading.Thread):
+class RenamerThread:
     def __init__(self, alist: Alist, download_path: str, rename_queue: Queue):
-        super().__init__(daemon=True)
         self.alist = alist
         self.rename_queue = rename_queue
         self.download_path = download_path
@@ -21,11 +21,15 @@ class RenamerThread(threading.Thread):
         base_url = config_loader.get_chatgpt_base_url()
         model = config_loader.get_chatgpt_model()
         self.chatgpt = ChatGPT(api_key, base_url, model)
+        self.keep_running = Event()
+        self.keep_running.set()
+        self._is_running = False
+        self.future = None
 
     def add_rename_task(self, resource: MikanAnimeResource):
         self.rename_queue.put(resource)
 
-    def find_wrong_format_videos(self, filename_list):
+    def __find_wrong_format_videos(self, filename_list):
         video_extensions = ["mp4", "mkv", "MP4", "MKV"]
         video_ext_regex = r".*\.({})$".format("|".join(video_extensions))
         format_pattern = r".+ S\d+E\d+\..{3,4}"  # find correct format video files
@@ -44,7 +48,7 @@ class RenamerThread(threading.Thread):
         if not flag:
             return []
         file_list = data
-        wrong_format_videos = self.find_wrong_format_videos(file_list)
+        wrong_format_videos = self.__find_wrong_format_videos(file_list)
         filepath_rename = [os.path.join(dir_path, s) for s in wrong_format_videos]
         return filepath_rename
 
@@ -60,7 +64,7 @@ class RenamerThread(threading.Thread):
         return new_name
 
     def run(self):
-        while True:
+        while self.keep_running.is_set():
             if self.rename_queue.empty():
                 logger.debug("No more rename task, exit the rename thread")
                 break  # no more renaming task, exit the thread
@@ -82,3 +86,16 @@ class RenamerThread(threading.Thread):
                 self.rename_queue.task_done()
             else:
                 self.rename_queue.put(task)
+        self._is_running = False
+
+    def start(self):
+        if self.future is None or self.future.done():
+            self.future = executor.submit(self.run)
+            self._is_running = True
+
+    def wait(self):
+        if self.future:
+            self.future.result()  # 等待任务完成
+
+    def is_running(self):
+        return self._is_running
