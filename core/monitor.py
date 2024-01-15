@@ -70,7 +70,7 @@ class AlistDownloadMonitor:
                     )
                     break
             if not download_task.is_started_transfer:
-                # maybe the transfer task is finished
+                # 可能传输任务已经完成了
                 for transfer_task in transfer_task_list:
                     if (
                         transfer_task.status == TaskStatus.Succeeded
@@ -87,9 +87,7 @@ class AlistDownloadMonitor:
                 logger.error(
                     f"Can't find the transfer task of {resource.resource_title}"
                 )
-                self.download_queue.task_done()
-            else:
-                self.download_queue.put(resource)
+            self.download_queue.put(resource)
             return
         else:
             # 添加新的正在运行的传输任务
