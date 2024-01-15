@@ -1,8 +1,7 @@
-import gc
 import time
 
+import aiohttp
 import bs4
-import requests
 
 from core.alist.offline_download import DownloadTask
 from core.common import extractor
@@ -14,19 +13,16 @@ def get_torrent_url(feed_entry) -> str:
             return link["href"]
 
 
-def get_anime_name(feed_entry) -> str:
+async def get_anime_name(feed_entry) -> str:
     home_page_url = feed_entry.link
     # craw the anime name from homepage
-    resp = requests.get(home_page_url)
-    resp.raise_for_status()
-    time.sleep(1)
-    soup = bs4.BeautifulSoup(resp.text, "html.parser")
-    anime_name = soup.find("p", class_="bangumi-title").text.strip()
-    # try to fix memory leak caused by BeautifulSoup
-    resp.close()
-    soup.decompose()
-    soup = None
-    gc.collect()
+    async with aiohttp.ClientSession(trust_env=True) as session:
+        async with session.get(home_page_url) as response:
+            response.raise_for_status()
+            time.sleep(1)
+            soup = bs4.BeautifulSoup(await response.text(), "html.parser")
+            anime_name = soup.find("p", class_="bangumi-title").text.strip()
+            soup.decompose()
     return anime_name
 
 
@@ -58,9 +54,9 @@ class MikanAnimeResource:
         self.download_task = None
 
     @classmethod
-    def from_feed_entry(cls, feed_entry):
+    async def from_feed_entry(cls, feed_entry):
         rid = feed_entry.link.split("/")[-1]
-        tmp_anime_name = get_anime_name(feed_entry)
+        tmp_anime_name = await get_anime_name(feed_entry)
         res = process_anime_name(tmp_anime_name)
         resource_title = feed_entry.title
         published_date = feed_entry.published

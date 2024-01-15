@@ -1,12 +1,12 @@
 import os
 import sys
-from queue import Queue
 
 from loguru import logger
 
 from core.alist import Alist
 from core.bot import NotificationBot, TelegramBot
 from core.common import config_loader
+from core.common.extractor import ChatGPT
 from core.common.filters import RegexFilter
 from core.monitor import AlistDownloadMonitor, MikanRSSMonitor
 
@@ -30,15 +30,15 @@ def setup_proxy():
             os.environ["HTTPS_PROXY"] = proxies["https"]
 
 
-def init_alist():
+async def init_alist():
     # alist init
     base_url = config_loader.get_base_url()
     downloader_type = config_loader.get_downloader()
-    alist_client = Alist(base_url, downloader_type)
+    alist_client = await Alist.create(base_url, downloader_type)
     return alist_client
 
 
-def init_notification_bot():
+def init_notification_bots():
     # init notification bot
     notification_bots = []
     use_tg_notification = config_loader.get_telegram_notification()
@@ -70,18 +70,20 @@ def init_mikan_rss_monitor(regex_filter: RegexFilter):
     return rss_monitor
 
 
-def init_download_monitor(
-    alist_client: Alist,
-    download_task_queue: Queue,
-    success_download_queue: Queue,
-):
+def init_download_monitor(alist_client: Alist):
     download_path = config_loader.get_download_path()
     use_renamer = config_loader.get_use_renamer()
     download_monitor_thread = AlistDownloadMonitor(
         alist_client,
-        download_task_queue,
-        success_download_queue,
         download_path,
         use_renamer,
     )
     return download_monitor_thread
+
+
+def init_chatgpt_client():
+    api_key = config_loader.get_chatgpt_api_key()
+    base_url = config_loader.get_chatgpt_base_url()
+    model = config_loader.get_chatgpt_model()
+    chatgpt = ChatGPT(api_key, base_url, model)
+    return chatgpt

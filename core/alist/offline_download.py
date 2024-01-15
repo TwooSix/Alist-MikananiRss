@@ -1,6 +1,8 @@
 import re
 from enum import Enum
 
+from loguru import logger
+
 
 # https://github.com/alist-org/alist/blob/86b35ae5cfec400871072356fec4dea88303195d/pkg/task/task.go#L27
 class TaskStatus(Enum):
@@ -14,18 +16,7 @@ class TaskStatus(Enum):
     Failed = 7
     StateWaitingRetry = 8
     StateBeforeRetry = 9
-    Transferring = 10
-    UNKNOWN = 11
-
-
-old_taskstatus_map = {
-    "pending": TaskStatus.Pending,
-    "running": TaskStatus.Running,
-    "succeeded": TaskStatus.Succeeded,
-    "canceling": TaskStatus.Canceling,
-    "canceled": TaskStatus.Canceled,
-    "errored": TaskStatus.Errored,
-}
+    UNKNOWN = 10
 
 
 class DownloaderType(Enum):
@@ -58,13 +49,12 @@ class Task:
         try:
             status = TaskStatus(state_str)
         except ValueError:
-            # for old version api
-            status = old_taskstatus_map[state_str]
-            status_str = json_data["status"]
-            if status == TaskStatus.Running and "transferring" in status_str:
-                # 让旧版api的逻辑和新版一致
-                status = TaskStatus.Succeeded
+            logger.warning(f"Unknown task status {state_str} of task {tid}")
+            status = TaskStatus.UNKNOWN
         return cls(tid, description, status, progress, error_str)
+
+    def update_status(self, status: TaskStatus):
+        self.status = status
 
 
 class TransferTask(Task):
@@ -84,6 +74,9 @@ class TransferTask(Task):
 
     def set_download_task(self, task: Task):
         self.download_task_id = task.tid
+
+    def __repr__(self) -> str:
+        return f"<TransferTask {self.tid}>"
 
 
 class DownloadTask(Task):
@@ -109,17 +102,8 @@ class DownloadTask(Task):
         self.is_started_transfer = True
         self.uuid = uuid
 
-    def update_status(self, status: TaskStatus):
-        if status == TaskStatus.Succeeded:
-            if self.is_started_transfer:
-                if len(self.transfer_task_id) == 0:
-                    self.status = TaskStatus.Succeeded
-                else:
-                    self.status = TaskStatus.Transferring
-            else:
-                self.status = TaskStatus.Succeeded
-        else:
-            self.status = status
+    def __repr__(self) -> str:
+        return f"<DownloadTask {self.tid}>"
 
 
 class TaskList:
@@ -145,6 +129,9 @@ class TaskList:
         if id not in self.id_task_map:
             return None
         return self.id_task_map[id]
+
+    def __contains__(self, task: Task):
+        return task.tid in self.id_task_map
 
     def __iter__(self):
         return iter(self.tasks)

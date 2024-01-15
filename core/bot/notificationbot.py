@@ -1,3 +1,5 @@
+from core.mikan import MikanAnimeResource
+
 from . import BotBase, MsgType
 
 
@@ -63,13 +65,28 @@ class NotificationMsg:
         self._markdown_msg = None
         self._normal_msg = None
 
+    @classmethod
+    def from_resources(cls, resources: list[MikanAnimeResource]):
+        """Generate NotificationMsg from resources
+
+        Args:
+            resources (list[MikanAnimeResource]): the downloaded resources
+
+        Returns:
+            NotificationMsg: the NotificationMsg instance
+        """
+        msg = cls()
+        for resource in resources:
+            msg.update(resource.anime_name, [resource.resource_title])
+        return msg
+
 
 class NotificationBot:
     def __init__(self, bot_handler: BotBase):
         self.bot = bot_handler
 
-    def send_message(self, msg: NotificationMsg):
+    async def send_message(self, msg: NotificationMsg):
         if self.bot.message_type == MsgType.NORMAL:
-            return self.bot.send_message(msg.normal_msg)
+            return await self.bot.send_message(msg.normal_msg)
         elif self.bot.message_type == MsgType.MARKDOWN:
-            return self.bot.send_message(msg.markdown_msg)
+            return await self.bot.send_message(msg.markdown_msg)

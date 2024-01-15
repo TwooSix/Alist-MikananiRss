@@ -1,97 +1,111 @@
-import time
+import argparse
+import asyncio
+import sys
+from enum import Enum
 from queue import Queue
 
 from loguru import logger
 
-import functional
 from core.alist import Alist
-from core.bot import NotificationBot
+from core.bot import NotificationBot, NotificationMsg
 from core.common import config_loader, initializer
-from core.common.globalvar import executor
-from core.monitor import AlistDownloadMonitor, MikanRSSMonitor
+from core.downloader import AlistDownloader
+from core.monitor import MikanRSSMonitor
 
 download_task_queue = Queue()
 success_download_queue = Queue()
 
 
-def check_update(
+class RunMode(Enum):
+    UpdateMonitor = 0
+    DownloadOldAnime = 1
+
+
+async def check_update(
     alist_client: Alist,
     rss_monitor: MikanRSSMonitor,
-    download_monitor_thread: AlistDownloadMonitor,
     notification_bots: list[NotificationBot],
+    mode: RunMode,
 ):
     user_name = config_loader.get_user_name()
     password = config_loader.get_password()
     download_path = config_loader.get_download_path()
-    status, msg = alist_client.login(user_name, password)
-    if not status:
-        logger.error(msg)
-    else:
-        try:
-            logger.info("Start update checking")
-            # Step 1: Get new resources
-            new_resources = rss_monitor.get_new_resource()
-            if not new_resources:
-                logger.info("No new resources")
-                return
-            # Step 2: Start to download
-            success_resources = functional.download_new_resources(
-                alist_client, new_resources, download_path
-            )
-            # Step 3: Send notification
-            functional.send_notification(notification_bots, success_resources)
-            # Step 4: wait for download complete
+    downloader = AlistDownloader(alist_client)
+    db = rss_monitor.db
+    try:
+        await alist_client.login(user_name, password)
+        logger.info("Start update checking")
+        # Step 1: Get new resources
+        new_resources = await rss_monitor.get_new_resource()
+        if not new_resources:
+            logger.info("No new resources")
+            return
+        # Step 2: Start to download
+        downloading_resources = await downloader.download(download_path, new_resources)
+        # Step 3: Wait for download complete
+        download_monitor = initializer.init_download_monitor(alist_client)
+        success_resources = await download_monitor.wait_succeed(downloading_resources)
+        if mode == RunMode.UpdateMonitor:
+            # Step 4: Insert success resources to db
             for resource in success_resources:
-                download_task_queue.put(resource)
-                # Step 5: insert downloaded resource to database
-                rss_monitor.db.insert_from_mikan_resource(resource)
-            if not download_monitor_thread.is_running():
-                download_monitor_thread.start()
-            # Step 6: Rename downloaded resource (in AlistDownloadMonitor thread)
-        except Exception as e:
-            logger.error(e)
+                db.insert_mikan_resource(resource)
+            # Step 5: Send notification
+            msg = NotificationMsg.from_resources(success_resources)
+            results = await asyncio.gather(
+                *[bot.send_message(msg) for bot in notification_bots],
+                return_exceptions=True,
+            )
+            for result in results:
+                if isinstance(result, Exception):
+                    logger.error(result)
+        # Step 6: Rename downloaded resource (in download_monitor)
+    except Exception as e:
+        logger.error(e)
 
 
 @logger.catch
-def main():
+async def main():
+    # read args
+    parser = argparse.ArgumentParser(description="Process command line arguments.")
+    parser.add_argument(
+        "--mode",
+        "-m",
+        type=int,
+        choices=[0, 1],
+        default=0,
+        help=(
+            f"Runmode, {RunMode.UpdateMonitor.value}: UpdateMonitor,"
+            f" {RunMode.DownloadOldAnime.value}: DownloadOldAnime"
+        ),
+    )
+    parser.add_argument(
+        "--url", "-u", type=str, required=False, help="Rss url of old anime."
+    )
+    args = parser.parse_args()
+    try:
+        mode = RunMode(args.mode)
+    except ValueError:
+        logger.error("Invalid mode")
+        sys.exit(1)
+
+    rss_url = args.url
+    if mode == RunMode.DownloadOldAnime and rss_url is None:
+        logger.error("--mode 1 requires --url to be set.")
+        sys.exit(1)
+
     initializer.setup_logger()
     initializer.setup_proxy()
-    alist_client = initializer.init_alist()
-    notification_bots = initializer.init_notification_bot()
+    alist_client = await initializer.init_alist()
     regex_filter = initializer.init_regex_filter()
-
-    subscribe_url = config_loader.get_subscribe_url()
+    notification_bots = initializer.init_notification_bots()
+    if mode == RunMode.UpdateMonitor:
+        rss_url = config_loader.get_subscribe_url()
     rss_monitor = MikanRSSMonitor(
-        subscribe_url,
+        rss_url,
         filter=regex_filter,
     )
-
-    download_monitor_thread = initializer.init_download_monitor(
-        alist_client, download_task_queue, success_download_queue
-    )
-
-    interval_time = config_loader.get_interval_time()
-
-    # start main loop
-    if interval_time < 0:
-        interval_time = 0
-    execute_once = interval_time == 0
-
-    while interval_time > 0 or execute_once:
-        check_update(
-            alist_client, rss_monitor, download_monitor_thread, notification_bots
-        )
-        if execute_once:
-            break
-
-        if interval_time > 0:
-            time.sleep(interval_time)
-
-    # wait for thread complete
-    if download_monitor_thread.is_running():
-        download_monitor_thread.wait()
+    await check_update(alist_client, rss_monitor, notification_bots, mode)
 
 
 if __name__ == "__main__":
-    main()
-    executor.shutdown(wait=True)
+    asyncio.run(main())

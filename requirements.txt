@@ -1,6 +1,7 @@
-requests>=2.31.0
-feedparser==6.0.10
-beautifulsoup4==4.12.2
-openai
-pyyaml
+aiohttp>=3.9.1
+asyncio>=3.4.3
+feedparser>=6.0.10
+beautifulsoup4>=4.12.2
+openai==1.7.0
+pyyaml>=6.0.1
 loguru

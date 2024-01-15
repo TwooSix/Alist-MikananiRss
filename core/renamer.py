@@ -1,33 +1,19 @@
+import asyncio
 import os
 import re
-from queue import Queue
-from threading import Event
 
 from loguru import logger
 
 from core.alist.api import Alist
-from core.common import config_loader
-from core.common.extractor import ChatGPT
-from core.common.globalvar import executor
+from core.common import initializer
 from core.mikan import MikanAnimeResource
 
 
-class RenamerThread:
-    def __init__(self, alist: Alist, download_path: str, rename_queue: Queue):
+class Renamer:
+    def __init__(self, alist: Alist, download_path: str):
         self.alist = alist
-        self.rename_queue = rename_queue
         self.download_path = download_path
-        api_key = config_loader.get_chatgpt_api_key()
-        base_url = config_loader.get_chatgpt_base_url()
-        model = config_loader.get_chatgpt_model()
-        self.chatgpt = ChatGPT(api_key, base_url, model)
-        self.keep_running = Event()
-        self.keep_running.set()
-        self._is_running = False
-        self.future = None
-
-    def add_rename_task(self, resource: MikanAnimeResource):
-        self.rename_queue.put(resource)
+        self.chatgpt = initializer.init_chatgpt_client()
 
     def __find_wrong_format_videos(self, filename_list):
         video_extensions = ["mp4", "mkv", "MP4", "MKV"]
@@ -42,19 +28,16 @@ class RenamerThread:
         ]
         return wrong_format_videos
 
-    def __get_file_path(self, name, season, download_path) -> list[str]:
+    async def __get_file_path(self, name, season, download_path) -> list[str]:
         dir_path = os.path.join(download_path, name, f"Season {season}")
-        flag, data = self.alist.list_dir(dir_path)
-        if not flag:
-            return []
-        file_list = data
+        file_list = await self.alist.list_dir(dir_path)
         wrong_format_videos = self.__find_wrong_format_videos(file_list)
         filepath_rename = [os.path.join(dir_path, s) for s in wrong_format_videos]
         return filepath_rename
 
-    def __build_new_name(self, name, season, filename):
+    async def __build_new_name(self, name, season, filename):
         try:
-            res = self.chatgpt.analyse_resource_name(filename)
+            res = await self.chatgpt.analyse_resource_name(filename)
         except Exception as e:
             logger.error(f"Error when analyse {filename}: {e}")
             return None
@@ -63,39 +46,30 @@ class RenamerThread:
         new_name = f"{name} S{season:02}E{episode:02}.{ext}"
         return new_name
 
-    def run(self):
-        while self.keep_running.is_set():
-            if self.rename_queue.empty():
-                logger.debug("No more rename task, exit the rename thread")
-                break  # no more renaming task, exit the thread
-            task: MikanAnimeResource = self.rename_queue.get(block=False)
-            name, season = task.anime_name, task.season
-            filepath_rename = self.__get_file_path(name, season, self.download_path)
+    async def rename(self, resource: MikanAnimeResource):
+        while True:
+            name, season = resource.anime_name, resource.season
+            try:
+                filepath_rename = await self.__get_file_path(
+                    name, season, self.download_path
+                )
+            except Exception as e:
+                logger.error(f"Error when get file path: {e}")
+                await asyncio.sleep(1)
+                continue
             done_flag = True
             for filepath in filepath_rename:
-                new_name = self.__build_new_name(name, season, filepath)
+                new_name = await self.__build_new_name(name, season, filepath)
                 if new_name is None:
                     done_flag = False
                     continue
-                flag, msg = self.alist.rename(filepath, new_name)
-                if not flag:
-                    logger.error(f"Error when rename {filepath}:\n {msg}")
+                try:
+                    await self.alist.rename(filepath, new_name)
+                except Exception as e:
+                    logger.error(f"Error when rename {filepath}: {e}")
+                    done_flag = False
                     continue
                 logger.info(f"Rename {filepath} to {new_name}")
             if done_flag:
-                self.rename_queue.task_done()
-            else:
-                self.rename_queue.put(task)
-        self._is_running = False
-
-    def start(self):
-        if self.future is None or self.future.done():
-            self.future = executor.submit(self.run)
-            self._is_running = True
-
-    def wait(self):
-        if self.future:
-            self.future.result()  # 等待任务完成
-
-    def is_running(self):
-        return self._is_running
+                break
+            await asyncio.sleep(1)

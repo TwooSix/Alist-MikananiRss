@@ -56,7 +56,7 @@ class SubscribeDatabase:
         finally:
             self.close()
 
-    def insert_from_mikan_resource(self, resource: MikanAnimeResource):
+    def insert_mikan_resource(self, resource: MikanAnimeResource):
         downloaded_date = datetime.now()
         downloaded_date = downloaded_date.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
         self.insert(

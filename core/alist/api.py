@@ -2,7 +2,7 @@ import mimetypes
 import os
 import urllib.parse
 
-import requests
+import aiohttp
 
 from core.alist.offline_download import (
     DeletePolicy,
@@ -14,8 +14,6 @@ from core.alist.offline_download import (
 
 
 class Alist:
-    UNLOGGING_MSG = "Please login first"
-
     def __init__(self, base_url: str, downloader: DownloaderType) -> None:
         self.base_url = base_url
         self.is_login = False
@@ -27,142 +25,76 @@ class Alist:
             ),
             "Content-Type": "application/json",
         }
-        self.__init_alist_ver()
 
-    def __get_json_data(self, response: requests.Response) -> dict:
-        """Get JSON data from response
+    @classmethod
+    async def create(cls, base_url: str, downloader: DownloaderType):
+        """Create Alist client asynchronously"""
+        client = cls(base_url, downloader)
+        await client.__init_alist_ver()
+        assert client.version >= "3.29.0", "Alist version must be greater than 3.29.0"
+        return client
 
-        Args:
-            response (requests.Response): Response object
-
-        Returns:
-            dict: JSON data
-        """
+    async def __get_json_data(self, response: aiohttp.ClientResponse):
+        """Get JSON data from response asynchronously"""
         response.raise_for_status()
-        json_data = response.json()
+        json_data = await response.json()
         if json_data["code"] != 200:
             msg = json_data.get("message", "Unknown error")
-            raise requests.exceptions.HTTPError(
-                f"Error code: {json_data['code']}: {msg}"
+            raise aiohttp.ClientResponseError(
+                response.request_info,
+                response.history,
+                status=json_data["code"],
+                message=msg,
+                headers=response.headers,
             )
         return json_data["data"]
 
-    def __init_alist_ver(self):
+    async def __init_alist_ver(self):
         api_url = urllib.parse.urljoin(self.base_url, "/api/public/settings")
-        response = requests.get(api_url)
-        response.raise_for_status()
-        self.version = response.json()["data"]["version"][1:]  # 去掉字母v
+        async with aiohttp.ClientSession(trust_env=True) as session:
+            async with session.get(api_url) as response:
+                json_data = await self.__get_json_data(response)
+                self.version = json_data["version"][1:]  # 去掉字母v
 
-    def login(self, username: str, password: str) -> tuple[bool, str]:
-        """Login to Alist and get authorization token"""
+    async def login(self, username: str, password: str):
+        """Login to Alist and get authorization token asynchronously"""
         api_url = urllib.parse.urljoin(self.base_url, "api/auth/login")
         body = {"username": username, "password": password}
-        try:
-            response = requests.post(api_url, headers=self.headers, json=body)
-            json_data = self.__get_json_data(response)
-        except requests.exceptions.ConnectionError as e:
-            return (
-                False,
-                f"Connection error during login, please check your network: {e}",
-            )
-        except Exception as e:
-            return False, f"Error occur during login: {e}"
+        async with aiohttp.ClientSession(trust_env=True) as session:
+            async with session.post(
+                api_url, headers=self.headers, json=body
+            ) as response:
+                json_data = await self.__get_json_data(response)
+            self.token = json_data["token"]
+            self.headers["Authorization"] = self.token
+            self.is_login = True
 
-        self.token = json_data["token"]
-        self.headers["Authorization"] = self.token
-        self.is_login = True
+            return True, "Login successful"
 
-        return True, "Login successful"
+    def check_login(self):
+        """Check if user has logged in"""
+        assert self.is_login, "Please login first"
 
-    def add_aria2(self, save_path: str, urls: list[str]) -> tuple[bool, str]:
-        if not self.is_login:
-            return False, self.UNLOGGING_MSG
-        # alist author rebuild the offdownload api in version 3.29.0
-        if self.version < "3.29.0":
-            api_url = urllib.parse.urljoin(self.base_url, "api/fs/add_aria2")
-            body = {
-                "path": save_path,
-                "urls": urls,
-            }
-        else:
-            api_url = urllib.parse.urljoin(self.base_url, "api/fs/add_offline_download")
-            body = {
-                "delete_policy": DeletePolicy.DeleteOnUploadSucceed.value,
-                "path": save_path,
-                "urls": urls,
-                "tool": self.downloader.value,
-            }
+    async def add_offline_download_task(
+        self, save_path: str, urls: list[str]
+    ) -> TaskList:
+        self.check_login()
+        api_url = urllib.parse.urljoin(self.base_url, "api/fs/add_offline_download")
+        body = {
+            "delete_policy": DeletePolicy.DeleteOnUploadSucceed.value,
+            "path": save_path,
+            "urls": urls,
+            "tool": self.downloader.value,
+        }
+        async with aiohttp.ClientSession(trust_env=True) as session:
+            async with session.post(
+                api_url, headers=self.headers, json=body
+            ) as response:
+                json_data = await self.__get_json_data(response)
+        return TaskList([DownloadTask.from_json(task) for task in json_data["tasks"]])
 
-        try:
-            response = requests.post(api_url, headers=self.headers, json=body)
-            self.__get_json_data(response)
-        except requests.exceptions.ConnectionError as e:
-            return (
-                False,
-                (
-                    "Connection error during adding aria2 task, please check your"
-                    f" network: {e}"
-                ),
-            )
-        except Exception as e:
-            return False, f"Error occur during adding aria2 task: {e}"
-
-        return True, "Task added successfully"
-
-    def add_qbit(self, save_path: str, urls: list[str]) -> tuple[bool, str]:
-        if not self.is_login:
-            return False, self.UNLOGGING_MSG
-        # alist author rebuild the offdownload api in version 3.29.0
-        if self.version < "3.29.0":
-            api_url = urllib.parse.urljoin(self.base_url, "api/fs/add_qbit")
-            body = {
-                "path": save_path,
-                "urls": urls,
-            }
-        else:
-            api_url = urllib.parse.urljoin(self.base_url, "api/fs/add_offline_download")
-            body = {
-                "delete_policy": DeletePolicy.DeleteOnUploadSucceed.value,
-                "path": save_path,
-                "urls": urls,
-                "tool": self.downloader.value,
-            }
-
-        try:
-            response = requests.post(api_url, headers=self.headers, json=body)
-            self.__get_json_data(response)
-        except requests.exceptions.ConnectionError as e:
-            return (
-                False,
-                (
-                    "Connection error during adding qbit task, please check your"
-                    f" network: {e}"
-                ),
-            )
-        except Exception as e:
-            return False, f"Error occur during adding qbit task: {e}"
-
-        return True, "Task added successfully"
-
-    def add_offline_download(self, save_path: str, urls: list[str]) -> tuple[bool, str]:
-        if self.downloader == DownloaderType.ARIA:
-            return self.add_aria2(save_path, urls)
-        elif self.downloader == DownloaderType.QBIT:
-            return self.add_qbit(save_path, urls)
-
-    def upload(self, save_path: str, file_path: str) -> tuple[bool, str]:
-        """Upload file to Alist
-
-        Args:
-            save_path (str): Server file save path
-            file_path (str): Local file's path
-
-        Returns:
-            tuple[bool, str]: (status, msg)
-        """
-        if not self.is_login:
-            return False, self.UNLOGGING_MSG
-
+    async def upload(self, save_path: str, file_path: str) -> bool:
+        self.check_login()
         api_url = urllib.parse.urljoin(self.base_url, "api/fs/put")
         file_path = os.path.abspath(file_path)
         file_name = os.path.basename(file_path)
@@ -181,32 +113,28 @@ class Alist:
         upload_path = urllib.parse.quote(f"{save_path}/{file_name}")
         headers["file-path"] = upload_path
 
-        with open(file_path_encoded, "rb") as f:
-            try:
-                resp = requests.put(api_url, headers=headers, data=f)
-                self.__get_json_data(resp)
-            except requests.exceptions.ConnectionError as e:
-                return (
-                    False,
-                    f"Connection error during upload, please check your network: {e}",
-                )
-            except Exception as e:
-                return False, f"Error occur during upload: {e}"
+        async with aiohttp.ClientSession(trust_env=True) as session:
+            with open(file_path_encoded, "rb") as f:
+                async with session.put(api_url, headers=headers, data=f) as resp:
+                    await self.__get_json_data(resp)
+        return True
 
-        return True, "File uploaded successfully"
-
-    def list_dir(self, path, password=None, page=1, per_page=30, refresh=False):
-        """Upload file to Alist
+    async def list_dir(
+        self, path, password=None, page=1, per_page=30, refresh=False
+    ) -> list[str]:
+        """List dir.
 
         Args:
-            save_path (str): Server file save path
-            file_path (str): Local file's path
+            path (str): dir path
+            password (str, optional): dir's password. Defaults to None.
+            page (int, optional): page number. Defaults to 1.
+            per_page (int, optional): how many item in one page. Defaults to 30.
+            refresh (bool, optional): force to refresh. Defaults to False.
 
         Returns:
-            tuple[bool, str|list]: (status, msg|files_list)
+            Tuple[bool, List[str]]: Success flag and a list of files in the dir.
         """
-        if not self.is_login:
-            return False, self.UNLOGGING_MSG
+        self.check_login()
 
         api_url = urllib.parse.urljoin(self.base_url, "api/fs/list")
         body = {
@@ -216,24 +144,18 @@ class Alist:
             "per_page": per_page,
             "refresh": refresh,
         }
-
-        try:
-            response = requests.post(api_url, headers=self.headers, json=body)
-            json_data = self.__get_json_data(response)
-        except requests.exceptions.ConnectionError as e:
-            return (
-                False,
-                f"Connection error during list dir, please check your network: {e}",
-            )
-        except Exception as e:
-            return False, f"Error occur during list dir: {e}"
+        async with aiohttp.ClientSession(trust_env=True) as session:
+            async with session.post(
+                api_url, headers=self.headers, json=body
+            ) as response:
+                json_data = await self.__get_json_data(response)
         if json_data["content"]:
             files_list = [file_info["name"] for file_info in json_data["content"]]
         else:
             files_list = []
-        return True, files_list
+        return files_list
 
-    def __get_task_list(self, task_type: str, status: str) -> tuple[bool, TaskList]:
+    async def __get_task_list(self, task_type: str, status: str) -> TaskList:
         """Get download task list.
 
         Args:
@@ -243,8 +165,7 @@ class Alist:
         Returns:
             Tuple[bool, List[Task]]: Success flag and a list of Tasks.
         """
-        if not self.is_login:
-            return False, self.UNLOGGING_MSG
+        self.check_login()
 
         # Mapping of type and web pages based on version and downloader.
         web_page_mapping = {
@@ -266,20 +187,16 @@ class Alist:
         )
 
         if not web_page:
-            return False, f"Invalid type: {task_type}"
+            raise ValueError(f"Invalid task type: {task_type}")
 
         api_url = urllib.parse.urljoin(
             self.base_url, f"/api/admin/task/{web_page}/{status}"
         )
 
         # Get task list
-        try:
-            resp = requests.get(api_url, headers=self.headers)
-            json_data = self.__get_json_data(resp)
-        except requests.exceptions.ConnectionError as e:
-            return False, f"Connection error: {e}"
-        except Exception as e:
-            return False, f"Error: {e}"
+        async with aiohttp.ClientSession(trust_env=True) as session:
+            async with session.get(api_url, headers=self.headers) as response:
+                json_data = await self.__get_json_data(response)
 
         # Parse task list
         if task_type == "transfer":
@@ -294,27 +211,22 @@ class Alist:
             else:
                 tmp_task_list = []
             task_list = TaskList(tmp_task_list)
-        return True, task_list
+        return task_list
 
-    def get_offline_download_task_list(self) -> tuple[bool, TaskList]:
-        flag1, done_task_list = self.__get_task_list("download", "done")
-        flag2, undone_task_list = self.__get_task_list("download", "undone")
-        if not flag1 or not flag2:
-            return False, "Error occur during get offline download task list"
+    async def get_offline_download_task_list(self) -> TaskList:
+        done_task_list = await self.__get_task_list("download", "done")
+        undone_task_list = await self.__get_task_list("download", "undone")
         task_list = done_task_list + undone_task_list
-        return True, task_list
+        return task_list
 
-    def get_offline_transfer_task_list(self) -> tuple[bool, TaskList]:
-        flag1, done_task_list = self.__get_task_list("transfer", "done")
-        flag2, undone_task_list = self.__get_task_list("transfer", "undone")
-        if not flag1 or not flag2:
-            return False, "Error occur during get offline transfer task list"
+    async def get_offline_transfer_task_list(self) -> TaskList:
+        done_task_list = await self.__get_task_list("transfer", "done")
+        undone_task_list = await self.__get_task_list("transfer", "undone")
         task_list = done_task_list + undone_task_list
-        return True, task_list
+        return task_list
 
-    def rename(self, path, new_name):
-        if not self.is_login:
-            return False, self.UNLOGGING_MSG
+    async def rename(self, path, new_name):
+        self.check_login()
         api = "/api/fs/rename"
         api_url = urllib.parse.urljoin(self.base_url, api)
         body = {
@@ -322,15 +234,10 @@ class Alist:
             "name": new_name,
         }
 
-        try:
-            response = requests.post(api_url, headers=self.headers, json=body)
-            self.__get_json_data(response)
-        except requests.exceptions.ConnectionError as e:
-            return (
-                False,
-                f"Connection error during rename, please check your network: {e}",
-            )
-        except Exception as e:
-            return False, f"Error occur during rename: {e}"
+        async with aiohttp.ClientSession(trust_env=True) as session:
+            async with session.post(
+                api_url, headers=self.headers, json=body
+            ) as response:
+                await self.__get_json_data(response)
 
-        return True, ""
+        return True
