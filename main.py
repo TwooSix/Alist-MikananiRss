@@ -55,14 +55,15 @@ async def check_update(
                 # Step 4: Insert success resources to db
                 rss_monitor.mark_downloaed(success_resources)
                 # Step 5: Send notification
-                msg = NotificationMsg.from_resources(success_resources)
-                results = await asyncio.gather(
-                    *[bot.send_message(msg) for bot in notification_bots],
-                    return_exceptions=True,
-                )
-                for result in results:
-                    if isinstance(result, Exception):
-                        logger.error(result)
+                if success_resources:
+                    msg = NotificationMsg.from_resources(success_resources)
+                    results = await asyncio.gather(
+                        *[bot.send_message(msg) for bot in notification_bots],
+                        return_exceptions=True,
+                    )
+                    for result in results:
+                        if isinstance(result, Exception):
+                            logger.error(result)
             # Step 6: Rename downloaded resource (in download_monitor)
             if mode == RunMode.DownloadOldAnime:
                 return
