@@ -128,7 +128,10 @@ class AlistDownloadMonitor:
             self.__proccess_error_task(resource)
             return None
         if self.use_renamer:
-            await self.renamer.rename(resource)
+            flag = await self.renamer.rename(resource)
+            if not flag:
+                self.__proccess_error_task(resource)
+                return None
         return resource
 
     async def wait_succeed(self, resrouces):

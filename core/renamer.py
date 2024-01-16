@@ -58,6 +58,7 @@ class Renamer:
                 await asyncio.sleep(1)
                 continue
             done_flag = True
+            error_flag = False
             for filepath in filepath_rename:
                 new_name = await self.__build_new_name(name, season, filepath)
                 if new_name is None:
@@ -67,9 +68,12 @@ class Renamer:
                     await self.alist.rename(filepath, new_name)
                 except Exception as e:
                     logger.error(f"Error when rename {filepath}: {e}")
-                    done_flag = False
+                    error_flag = True
                     continue
                 logger.info(f"Rename {filepath} to {new_name}")
             if done_flag:
-                break
+                if error_flag:
+                    return False
+                else:
+                    return True
             await asyncio.sleep(1)
