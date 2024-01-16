@@ -30,35 +30,46 @@ async def check_update(
     user_name = config_loader.get_user_name()
     password = config_loader.get_password()
     download_path = config_loader.get_download_path()
+    interval_time = config_loader.get_interval_time()
     downloader = AlistDownloader(alist_client)
     db = rss_monitor.db
     try:
-        await alist_client.login(user_name, password)
-        logger.info("Start update checking")
-        # Step 1: Get new resources
-        new_resources = await rss_monitor.get_new_resource()
-        if not new_resources:
-            logger.info("No new resources")
-            return
-        # Step 2: Start to download
-        downloading_resources = await downloader.download(download_path, new_resources)
-        # Step 3: Wait for download complete
-        download_monitor = initializer.init_download_monitor(alist_client)
-        success_resources = await download_monitor.wait_succeed(downloading_resources)
-        if mode == RunMode.UpdateMonitor:
-            # Step 4: Insert success resources to db
-            for resource in success_resources:
-                db.insert_mikan_resource(resource)
-            # Step 5: Send notification
-            msg = NotificationMsg.from_resources(success_resources)
-            results = await asyncio.gather(
-                *[bot.send_message(msg) for bot in notification_bots],
-                return_exceptions=True,
+        while True:
+            await alist_client.login(user_name, password)
+            logger.info("Start update checking")
+            # Step 1: Get new resources
+            new_resources = await rss_monitor.get_new_resource()
+            if not new_resources:
+                logger.info("No new resources")
+                if mode == RunMode.DownloadOldAnime:
+                    return
+                await asyncio.sleep(interval_time)
+            # Step 2: Start to download
+            downloading_resources = await downloader.download(
+                download_path, new_resources
             )
-            for result in results:
-                if isinstance(result, Exception):
-                    logger.error(result)
-        # Step 6: Rename downloaded resource (in download_monitor)
+            # Step 3: Wait for download complete
+            download_monitor = initializer.init_download_monitor(alist_client)
+            success_resources = await download_monitor.wait_succeed(
+                downloading_resources
+            )
+            if mode == RunMode.UpdateMonitor:
+                # Step 4: Insert success resources to db
+                for resource in success_resources:
+                    db.insert_mikan_resource(resource)
+                # Step 5: Send notification
+                msg = NotificationMsg.from_resources(success_resources)
+                results = await asyncio.gather(
+                    *[bot.send_message(msg) for bot in notification_bots],
+                    return_exceptions=True,
+                )
+                for result in results:
+                    if isinstance(result, Exception):
+                        logger.error(result)
+            # Step 6: Rename downloaded resource (in download_monitor)
+            if mode == RunMode.DownloadOldAnime:
+                return
+            await asyncio.sleep(interval_time)
     except Exception as e:
         logger.error(e)
 
