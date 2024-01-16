@@ -53,7 +53,7 @@ async def check_update(
             )
             if mode == RunMode.UpdateMonitor:
                 # Step 4: Insert success resources to db
-                rss_monitor.mark_downloaed(success_resources)
+                rss_monitor.mark_downloaded(success_resources)
                 # Step 5: Send notification
                 if success_resources:
                     msg = NotificationMsg.from_resources(success_resources)

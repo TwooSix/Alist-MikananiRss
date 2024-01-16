@@ -184,6 +184,6 @@ class MikanRSSMonitor:
                 new_resources.append(resource)
         return new_resources
 
-    def mark_downloaed(self, resources: list[MikanAnimeResource]):
+    def mark_downloaded(self, resources: list[MikanAnimeResource]):
         for resource in resources:
             self.db.insert_mikan_resource(resource)
