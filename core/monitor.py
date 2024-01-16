@@ -183,3 +183,7 @@ class MikanRSSMonitor:
             if not self.db.is_exist(resource.resource_id):
                 new_resources.append(resource)
         return new_resources
+
+    def mark_downloaed(self, resources: list[MikanAnimeResource]):
+        for resource in resources:
+            self.db.insert_mikan_resource(resource)

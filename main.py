@@ -32,7 +32,6 @@ async def check_update(
     download_path = config_loader.get_download_path()
     interval_time = config_loader.get_interval_time()
     downloader = AlistDownloader(alist_client)
-    db = rss_monitor.db
     try:
         while True:
             await alist_client.login(user_name, password)
@@ -55,8 +54,7 @@ async def check_update(
             )
             if mode == RunMode.UpdateMonitor:
                 # Step 4: Insert success resources to db
-                for resource in success_resources:
-                    db.insert_mikan_resource(resource)
+                rss_monitor.mark_downloaed(success_resources)
                 # Step 5: Send notification
                 msg = NotificationMsg.from_resources(success_resources)
                 results = await asyncio.gather(
