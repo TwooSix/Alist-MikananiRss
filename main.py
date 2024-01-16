@@ -42,7 +42,6 @@ async def check_update(
                 logger.info("No new resources")
                 if mode == RunMode.DownloadOldAnime:
                     return
-                await asyncio.sleep(interval_time)
             # Step 2: Start to download
             downloading_resources = await downloader.download(
                 download_path, new_resources
