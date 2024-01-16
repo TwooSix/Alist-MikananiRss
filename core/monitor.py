@@ -59,14 +59,10 @@ class AlistDownloadMonitor:
     ):
         self.alist = alist
         self.download_path = download_path
-        self.db = SubscribeDatabase()
         self.use_renamer = use_renamer
         self.transfer_uuid_set = set()
         if use_renamer:
             self.renamer = Renamer(alist, download_path)
-
-    def __proccess_error_task(self, resource: MikanAnimeResource):
-        self.db.delete_by_id(resource.resource_id)
 
     async def find_transfer_task(self, resource: MikanAnimeResource):
         while True:
@@ -111,7 +107,6 @@ class AlistDownloadMonitor:
         status = await download_task_monitor.wait_succeed()
         if status != TaskStatus.Succeeded:
             logger.error(f"Error when download {resource.resource_title}")
-            self.__proccess_error_task(resource)
             return None
         try:
             transfer_task = await asyncio.wait_for(
@@ -119,19 +114,14 @@ class AlistDownloadMonitor:
             )
         except asyncio.TimeoutError:
             logger.error(f"Can't find the transfer task of {resource.resource_title}")
-            self.__proccess_error_task(resource)
             return None
         transfer_task_monitor = TaskMonitor(self.alist, transfer_task)
         status = await transfer_task_monitor.wait_succeed()
         if status != TaskStatus.Succeeded:
             logger.error(f"Error when transfer {resource.resource_title}")
-            self.__proccess_error_task(resource)
             return None
         if self.use_renamer:
-            flag = await self.renamer.rename(resource)
-            if not flag:
-                self.__proccess_error_task(resource)
-                return None
+            await self.renamer.rename(resource)
         return resource
 
     async def wait_succeed(self, resrouces):
