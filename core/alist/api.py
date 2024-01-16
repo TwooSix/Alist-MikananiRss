@@ -69,7 +69,7 @@ class Alist:
             self.headers["Authorization"] = self.token
             self.is_login = True
 
-            return True, "Login successful"
+            return True
 
     def check_login(self):
         """Check if user has logged in"""

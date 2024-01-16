@@ -3,6 +3,15 @@ import pytest
 from core.bot import NotificationBot, NotificationMsg, TelegramBot
 from core.common import config_loader
 
+if config_loader.get_use_proxy():
+    import os
+
+    proxies = config_loader.get_proxies()
+    if "http" in proxies:
+        os.environ["HTTP_PROXY"] = proxies["http"]
+    if "https" in proxies:
+        os.environ["HTTPS_PROXY"] = proxies["https"]
+
 
 class TestNotificationMsg:
     @pytest.fixture
@@ -40,6 +49,7 @@ class TestNotificationBot:
         bot = NotificationBot(handler)
         return bot
 
-    def test_telegram_notify_md(self, tg_bot_md, msg):
-        res = tg_bot_md.send_message(msg)
+    @pytest.mark.asyncio
+    async def test_telegram_notify_md(self, tg_bot_md, msg):
+        res = await tg_bot_md.send_message(msg)
         assert res

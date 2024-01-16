@@ -1,5 +1,5 @@
 import feedparser
-import pytest
+import pytest_asyncio
 
 from core.common import config_loader
 from core.mikan import MikanAnimeResource
@@ -15,13 +15,13 @@ if config_loader.get_use_proxy():
 
 
 class TestRssParser:
-    @pytest.fixture
-    def resource(self):
+    @pytest_asyncio.fixture
+    async def resource(self):
         base_url = "mikanani.me"
         # base_url = "mikanime.tv"
         feed_url = f"https://{base_url}/RSS/Bangumi?bangumiId=3039&subgroupid=611"
         feed = feedparser.parse(feed_url)
-        resource = MikanAnimeResource(feed.entries[-1])
+        resource = await MikanAnimeResource.from_feed_entry(feed.entries[-1])
         return resource
 
     def test_parse_torrent_link(self, resource: MikanAnimeResource):
