@@ -16,7 +16,7 @@ class ChatGPT:
     async def analyse_resource_name(self, resource_name: str):
         prompt = """
         你是一个执行命令并准确的返回执行结果的程序，当我给出指定内容时，你会按照我的要求返回指定格式的内容。
-        后续我将会给你提供一个番剧的资源名字，请你根据番剧名字，提取出字幕组名称，类型为string，存储在fansub字段中；番剧的集数，类型为int，存储在episode字段中；番剧的清晰度，类型为string，以"xP"的格式存储在quality字段中，例如"1920x1080"请重命名为"1080P"。最后以YAML的格式返回。YAML具体格式如下：
+        后续我将会给你提供一个番剧的资源名字，请你根据番剧名字，提取出字幕组名称，类型为string，存储在fansub字段中；番剧的集数，类型为int，存储在episode字段中；番剧的清晰度，类型为string，以"xp"的格式存储在quality字段中，例如"1920x1080"请重命名为"1080p"。最后以YAML的格式返回。YAML具体格式如下：
         ```yaml
         fansub:
         episode:
@@ -50,6 +50,7 @@ class ChatGPT:
                 raise TypeError(
                     f"Chatgpt provide a wrong type of quality: {data['quality']}"
                 )
+            data["quality"] = data["quality"].lower()
             return data
         else:
             raise ValueError(f"Chatgpt provide a wrong format response: {resp}")
