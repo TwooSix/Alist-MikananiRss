@@ -77,7 +77,7 @@ class AlistDownloadMonitor:
             for transfer_task in transfer_task_list:
                 if transfer_task.uuid in self.transfer_uuid_set:
                     continue
-                if transfer_task.status in [TaskStatus.Pending, TaskStatus.Running]:
+                if transfer_task.status in [TaskStatus.Pending, TaskStatus.Running] and resource.anime_name in transfer_task.description:
                     self.transfer_uuid_set.add(transfer_task.uuid)
                     logger.debug(
                         f"Link {resource.resource_title} to {transfer_task.uuid}"
