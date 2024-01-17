@@ -125,7 +125,7 @@ class TaskList:
         else:
             raise TypeError("Operands must be instance of TaskList")
 
-    def __getitem__(self, id: str) -> Task:
+    def __getitem__(self, id: str) -> Task|None:
         if id not in self.id_task_map:
             return None
         return self.id_task_map[id]

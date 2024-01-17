@@ -18,5 +18,5 @@ class BotBase(ABC):
         self.message_type = MsgType.NORMAL
 
     @abstractmethod
-    async def send_message(self, message: str) -> tuple[bool, str]:
+    async def send_message(self, message: str) -> bool:
         raise NotImplementedError

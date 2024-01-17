@@ -72,8 +72,5 @@ class Renamer:
                     continue
                 logger.info(f"Rename {filepath} to {new_name}")
             if done_flag:
-                if error_flag:
-                    return False
-                else:
-                    return True
+                return not error_flag
             await asyncio.sleep(1)

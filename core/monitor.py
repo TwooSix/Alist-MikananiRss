@@ -84,18 +84,6 @@ class AlistDownloadMonitor:
                     )
                     return transfer_task
             if not download_task.is_started_transfer:
-                # 可能传输任务已经完成了
-                for transfer_task in transfer_task_list:
-                    if (
-                        transfer_task.status == TaskStatus.Succeeded
-                        and resource.anime_name in transfer_task.description
-                    ):
-                        self.transfer_uuid_set.add(transfer_task.uuid)
-                        logger.debug(
-                            f"Link {resource.resource_title} to {transfer_task.uuid}"
-                        )
-                        return transfer_task
-            if not download_task.is_started_transfer:
                 logger.error(
                     f"Can't find the transfer task of {resource.resource_title}"
                 )
@@ -109,6 +97,7 @@ class AlistDownloadMonitor:
             logger.error(f"Error when download {resource.resource_title}")
             return None
         try:
+            # 10s内未能找到对应的transfer task，则认为传输失败
             transfer_task = await asyncio.wait_for(
                 self.find_transfer_task(resource), timeout=10
             )

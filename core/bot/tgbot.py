@@ -10,7 +10,7 @@ class TelegramBot(BotBase):
         self.support_markdown = True
         self.message_type = msg_type
 
-    async def send_message(self, message: str) -> tuple[bool, str]:
+    async def send_message(self, message: str) -> bool:
         """Send message via Telegram"""
         api_url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
         body = {
