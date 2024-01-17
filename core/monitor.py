@@ -1,85 +1,124 @@
-import threading
-from queue import Queue
+import asyncio
 
 import feedparser
 from loguru import logger
 
-from core.api.alist import Alist, DownloadTaskStatus
+from core.alist.api import Alist
+from core.alist.offline_download import DownloadTask, TaskStatus, TransferTask
 from core.common.database import SubscribeDatabase
 from core.common.filters import RegexFilter
 from core.mikan import MikanAnimeResource
-from core.renamer import RenamerThread
+from core.renamer import Renamer
 
 
-class AlistDonwloadMonitor(threading.Thread):
+class TaskMonitor:
+    normal_status = [
+        TaskStatus.Pending,
+        TaskStatus.Running,
+        TaskStatus.StateBeforeRetry,
+        TaskStatus.StateWaitingRetry,
+    ]
+
+    def __init__(self, alist: Alist, task: DownloadTask | TransferTask):
+        self.alist = alist
+        self.task = task
+
+    async def __refresh_status(self) -> TaskStatus:
+        if isinstance(self.task, DownloadTask):
+            task_list = await self.alist.get_offline_download_task_list()
+        elif isinstance(self.task, TransferTask):
+            task_list = await self.alist.get_offline_transfer_task_list()
+        else:
+            raise ValueError(f"Invalid task type: {type(self.task)}")
+        if self.task not in task_list:
+            raise ValueError(f"Can't find {self.task} in task list")
+        status = task_list[self.task.tid].status
+        self.task.update_status(status)
+        return self.task.status
+
+    async def wait_succeed(self):
+        while True:
+            try:
+                status = await self.__refresh_status()
+            except Exception as e:
+                logger.error(f"Error when refresh status: {e}")
+                await asyncio.sleep(1)
+                continue
+            logger.debug(f"Checking {self.task} status: {status}")
+            if status not in self.normal_status:
+                return status
+            await asyncio.sleep(1)
+
+
+class AlistDownloadMonitor:
     def __init__(
         self,
         alist: Alist,
-        download_queue: Queue,
-        success_download_queue: Queue,
-        download_path: str,
-        use_renamer: bool = False,
+        download_path,
+        use_renamer=False,
     ):
-        super().__init__(daemon=True)
         self.alist = alist
-        self.download_queue = download_queue
-        self.success_download_queue = success_download_queue
         self.download_path = download_path
-        self.db = SubscribeDatabase()
         self.use_renamer = use_renamer
+        self.transfer_uuid_set = set()
         if use_renamer:
-            self.renamer = RenamerThread(
-                self.alist, self.download_path, self.success_download_queue
-            )
+            self.renamer = Renamer(alist, download_path)
 
-    def get_task_status(self, url):
-        flag, task_list = self.alist.get_offline_download_task_list()
-        if not flag:
-            return None
-
-        for task in task_list:
-            if task.url == url and task.status not in [
-                DownloadTaskStatus.UNKNOWN,
-                DownloadTaskStatus.ERROR,
-            ]:
-                return task.status
-        return None
-
-    def process_task_status(self, task: MikanAnimeResource, status: DownloadTaskStatus):
-        if status == DownloadTaskStatus.DONE:
-            self.success_download_queue.put(task)
-            self.download_queue.task_done()
-            if self.use_renamer and not self.renamer.is_alive():
-                self.renamer = RenamerThread(
-                    self.alist, self.download_path, self.success_download_queue
-                )
-                self.renamer.start()
-        elif status == DownloadTaskStatus.ERROR:
-            # delete the failed resource from database
-            self.db.delete_by_id(task.resource_id)
-            self.download_queue.task_done()
-            logger.error(f"Error when download {task}")
-        else:
-            self.download_queue.put(task)
-
-    def run(self):
+    async def find_transfer_task(self, resource: MikanAnimeResource):
         while True:
-            if self.download_queue.empty():
-                if self.use_renamer and self.renamer.is_alive():
-                    self.renamer.join()
-                logger.debug(
-                    "No more downloading task, exit the download monitor thread"
-                )
-                break  # no more downloading task, exit the thread
-            resource: MikanAnimeResource = self.download_queue.get(block=False)
-            resource_url = resource.torrent_url
-            status = self.get_task_status(resource_url)
-            if status is None:
-                logger.error(f"Error when get task status of {resource_url}")
-                self.download_queue.put(resource)
+            download_task = resource.download_task
+            try:
+                transfer_task_list = await self.alist.get_offline_transfer_task_list()
+            except Exception as e:
+                logger.error(f"Error when get transfer task list: {e}")
+                await asyncio.sleep(1)
                 continue
-            logger.debug(f"Checking Task {resource_url} status: {status}")
-            self.process_task_status(resource, status)
+            # 使用新的未出现过的tempdir名称，即uuid，与下载任务建立关联
+            for transfer_task in transfer_task_list:
+                if transfer_task.uuid in self.transfer_uuid_set:
+                    continue
+                if transfer_task.status in [TaskStatus.Pending, TaskStatus.Running] and resource.anime_name in transfer_task.description:
+                    self.transfer_uuid_set.add(transfer_task.uuid)
+                    logger.debug(
+                        f"Link {resource.resource_title} to {transfer_task.uuid}"
+                    )
+                    return transfer_task
+            if not download_task.is_started_transfer:
+                logger.error(
+                    f"Can't find the transfer task of {resource.resource_title}"
+                )
+            await asyncio.sleep(1)
+
+    async def monitor_one_task(self, resource: MikanAnimeResource):
+        download_task = resource.download_task
+        download_task_monitor = TaskMonitor(self.alist, download_task)
+        status = await download_task_monitor.wait_succeed()
+        if status != TaskStatus.Succeeded:
+            logger.error(f"Error when download {resource.resource_title}")
+            return None
+        try:
+            # 10s内未能找到对应的transfer task，则认为传输失败
+            transfer_task = await asyncio.wait_for(
+                self.find_transfer_task(resource), timeout=10
+            )
+        except asyncio.TimeoutError:
+            logger.error(f"Can't find the transfer task of {resource.resource_title}")
+            return None
+        transfer_task_monitor = TaskMonitor(self.alist, transfer_task)
+        status = await transfer_task_monitor.wait_succeed()
+        if status != TaskStatus.Succeeded:
+            logger.error(f"Error when transfer {resource.resource_title}")
+            return None
+        if self.use_renamer:
+            await self.renamer.rename(resource)
+        return resource
+
+    async def wait_succeed(self, resrouces):
+        results = await asyncio.gather(
+            *[self.monitor_one_task(resource) for resource in resrouces]
+        )
+        success_resources = [r for r in results if r is not None]
+        return success_resources
 
 
 class MikanRSSMonitor:
@@ -107,7 +146,7 @@ class MikanRSSMonitor:
             if filt_result:
                 yield entry
 
-    def __parse_subscribe(self):
+    async def __parse_subscribe(self):
         """Get anime resource from rss feed"""
         feed = feedparser.parse(self.subscribe_url)
         if feed.bozo:
@@ -118,18 +157,22 @@ class MikanRSSMonitor:
         resources: list[MikanAnimeResource] = []
         for entry in self.__filt_entries(feed):
             try:
-                resource = MikanAnimeResource.from_feed_entry(entry)
+                resource = await MikanAnimeResource.from_feed_entry(entry)
                 resources.append(resource)
             except Exception as e:
                 logger.error(f"Pass {entry.title} because of error: {e}")
                 continue
         return resources
 
-    def get_new_resource(self):
+    async def get_new_resource(self):
         """Filter out the new resources from the resource list"""
-        resources = self.__parse_subscribe()
+        resources = await self.__parse_subscribe()
         new_resources = []
         for resource in resources:
             if not self.db.is_exist(resource.resource_id):
                 new_resources.append(resource)
         return new_resources
+
+    def mark_downloaded(self, resources: list[MikanAnimeResource]):
+        for resource in resources:
+            self.db.insert_mikan_resource(resource)

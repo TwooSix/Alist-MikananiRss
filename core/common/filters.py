@@ -3,7 +3,10 @@ import re
 
 class RegexFilter:
     def __init__(self, regex_patterns: list = None):
-        self.patterns = regex_patterns if regex_patterns else []
+        tmp_regex_patterns = regex_patterns if regex_patterns else []
+        self.patterns = [
+            re.compile(pattern, re.IGNORECASE) for pattern in tmp_regex_patterns
+        ]
 
     def add_pattern(self, pattern: str) -> None:
         """Add regex pattern to filter"""

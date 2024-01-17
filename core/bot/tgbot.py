@@ -1,4 +1,4 @@
-import requests
+import aiohttp
 
 from . import BotBase, MsgType
 
@@ -10,7 +10,7 @@ class TelegramBot(BotBase):
         self.support_markdown = True
         self.message_type = msg_type
 
-    def send_message(self, message: str) -> tuple[bool, str]:
+    async def send_message(self, message: str) -> bool:
         """Send message via Telegram"""
         api_url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
         body = {
@@ -21,10 +21,7 @@ class TelegramBot(BotBase):
             body["parse_mode"] = "Markdown"
         elif self.message_type == MsgType.HTML:
             body["parse_mode"] = "HTML"
-        response = requests.request("POST", api_url, json=body)
-        if not response.ok:
-            return (
-                False,
-                f"Send telegram message failed with status code {response.status_code}",
-            )
-        return True, "Send telegram message successful"
+        async with aiohttp.ClientSession(trust_env=True) as session:
+            async with session.post(api_url, json=body) as response:
+                response.raise_for_status()
+        return True

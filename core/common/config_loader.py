@@ -1,6 +1,6 @@
 # config_loader.py
 import config
-from core.api.alist import DownloaderType
+from core.alist.api import DownloaderType
 
 
 def get_base_url():
@@ -44,11 +44,9 @@ def get_filters():
 def get_downloader():
     downloader_str = getattr(config, "DOWNLOADER", None)
     assert downloader_str, "Please set DOWNLOADER in config.py"
-    if downloader_str == "aria":
-        return DownloaderType.ARIA
-    elif downloader_str == "qbit":
-        return DownloaderType.QBIT
-    else:
+    try:
+        return DownloaderType(downloader_str)
+    except ValueError:
         raise ValueError("DOWNLOADER must be 'aria' or 'qbit'")
 
 

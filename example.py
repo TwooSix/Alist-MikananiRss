@@ -10,12 +10,12 @@ PASSWORD = "password"
 # 下载路径，相对于 Alist 根目录
 DOWNLOAD_PATH = "Onedrive/Anime"
 
-# 正则表达式，用于过滤番剧，不符合表达式的番剧将不会被下载
+# 正则表达式，用于过滤番剧，不符合表达式的番剧将不会被下载(无视大小写匹配)
 REGEX_PATTERN = {
-    "简体": r"(简体)|(简中)|(简日)|(CHS)",
-    "繁体": r"(繁体)|(繁中)|(繁日)|(CHT)",
-    "1080": r"(1080[pP])",
-    "非合集": r"^(?!.*\d{2}-\d{2}).*",
+    "简体": r"(简体|简中|简日|CHS)",
+    "繁体": r"(繁体|繁中|繁日|CHT|Baha)",
+    "1080": r"(X1080|1080P)",
+    "非合集": r"^(?!(\d{2}-\d{2}|合集))",
 }
 
 # Mikan 订阅链接
@@ -24,7 +24,7 @@ SUBSCRIBE_URL = "https://mikanani.me/RSS/MyBangumi?token=xxx"
 # 实际使用的REGEX_PATTERN名字
 FILTERS = ["1080", "非合集"]
 
-DOWNLOADER = "aria"  # 下载工具，qbittorent则为"qbit"
+DOWNLOADER = "aria2"  # 下载工具，qbittorent则为"qBittorrent"
 
 INTERVAL_TIME = 0  # 定时执行的间隔时间，单位为秒，0 为只运行一次
 
