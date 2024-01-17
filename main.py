@@ -42,6 +42,7 @@ async def check_update(
             new_resources = await rss_monitor.get_new_resource()
             if not new_resources:
                 logger.info("No new resources")
+                await asyncio.sleep(interval_time)
                 continue
             # Step 2: Start to download
             downloading_resources = await downloader.download(
