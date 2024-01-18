@@ -2,11 +2,11 @@ import re
 
 
 class RegexFilter:
-    def __init__(self, regex_patterns: list = None):
-        tmp_regex_patterns = regex_patterns if regex_patterns else []
-        self.patterns = [
-            re.compile(pattern, re.IGNORECASE) for pattern in tmp_regex_patterns
-        ]
+    def __init__(self, patterns: list = None):
+        self.patterns = []
+        if patterns is not None:
+            for pattern in patterns:
+                self.add_pattern(pattern)
 
     def add_pattern(self, tmp_pattern: str) -> None:
         """Add regex pattern to filter"""
