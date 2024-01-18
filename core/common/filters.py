@@ -8,15 +8,16 @@ class RegexFilter:
             re.compile(pattern, re.IGNORECASE) for pattern in tmp_regex_patterns
         ]
 
-    def add_pattern(self, pattern: str) -> None:
+    def add_pattern(self, tmp_pattern: str) -> None:
         """Add regex pattern to filter"""
+        pattern = re.compile(tmp_pattern, re.IGNORECASE)
         self.patterns.append(pattern)
 
     def filt_single(self, string) -> bool:
         """Filter single string using regex"""
         match_result = True
         for pattern in self.patterns:
-            match_result = match_result and re.search(pattern, string)
+            match_result = match_result and bool(re.search(pattern, string))
         return match_result
 
     def filt_list(self, string_list: list[str]) -> list[int]:
