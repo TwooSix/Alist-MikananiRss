@@ -15,6 +15,7 @@ def get_torrent_url(feed_entry) -> str:
 
 async def get_anime_name(feed_entry) -> str:
     home_page_url = feed_entry.link
+    illegal_chars = ["\\", "/", ":", "*", "?", '"', "<", ">", "|"]
     # craw the anime name from homepage
     async with aiohttp.ClientSession(trust_env=True) as session:
         async with session.get(home_page_url) as response:
@@ -23,7 +24,9 @@ async def get_anime_name(feed_entry) -> str:
             soup = bs4.BeautifulSoup(await response.text(), "html.parser")
             anime_name = soup.find("p", class_="bangumi-title").text.strip()
             soup.decompose()
-    return anime_name
+            for char in illegal_chars:
+                anime_name = anime_name.replace(char, " ")
+            return anime_name
 
 
 def process_anime_name(anime_name: str) -> dict:
