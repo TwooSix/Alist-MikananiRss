@@ -55,59 +55,39 @@ class TestRegexFilter:
         }
         return _resources
 
-    @pytest.fixture
-    def chs_pattern(self):
-        pattern = r"(简体|简中|简日|CHS)"
-        return pattern
-
-    @pytest.fixture
-    def cht_pattern(self):
-        pattern = r"(繁体|繁中|繁日|CHT|Baha)"
-        return pattern
-
-    @pytest.fixture
-    def p1080_pattern(self):
-        pattern = r"(X1080|1080P)"
-        return pattern
-
-    @pytest.fixture
-    def non_collection_pattern(self):
-        pattern = r"^(?!(\d{2}-\d{2}|合集))"
-        return pattern
-
-    def test_chs_filt(self, resources, chs_pattern):
+    def test_chs_filt(self, resources):
         resources_name = list(resources.keys())
         chs = [name for name, tag in resources.items() if ResourceTag.CHS in tag]
-        rgx_filter = RegexFilter([chs_pattern])
+        rgx_filter = RegexFilter(["简体"])
         idx_after_filt = rgx_filter.filt_list(resources_name)
         res = [resources_name[i] for i in idx_after_filt]
         for each in chs:
             assert each in res
 
-    def test_cht_filt(self, resources, cht_pattern):
+    def test_cht_filt(self, resources):
         resources_name = list(resources.keys())
         cht = [name for name, tag in resources.items() if ResourceTag.CHT in tag]
-        rgx_filter = RegexFilter([cht_pattern])
+        rgx_filter = RegexFilter(["繁体"])
         idx_after_filt = rgx_filter.filt_list(resources_name)
         res = [resources_name[i] for i in idx_after_filt]
         for each in cht:
             assert each in res
 
-    def test_p1080_filt(self, resources, p1080_pattern):
+    def test_p1080_filt(self, resources):
         resources_name = list(resources.keys())
         p1080 = [name for name, tag in resources.items() if ResourceTag.P1080 in tag]
-        rgx_filter = RegexFilter([p1080_pattern])
+        rgx_filter = RegexFilter(["1080p"])
         idx_after_filt = rgx_filter.filt_list(resources_name)
         res = [resources_name[i] for i in idx_after_filt]
         for each in p1080:
             assert each in res
 
-    def test_non_collection_filt(self, resources, non_collection_pattern):
+    def test_non_collection_filt(self, resources):
         resources_name = list(resources.keys())
         non_collection = [
             name for name, tag in resources.items() if ResourceTag.COLLECTION not in tag
         ]
-        rgx_filter = RegexFilter([non_collection_pattern])
+        rgx_filter = RegexFilter(["非合集"])
         idx_after_filt = rgx_filter.filt_list(resources_name)
         res = [resources_name[i] for i in idx_after_filt]
         for each in non_collection:

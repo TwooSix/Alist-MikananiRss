@@ -2,45 +2,26 @@ import pytest
 import pytest_asyncio
 
 from core.alist import Alist
-from core.common import config_loader
+from core.common import initializer
+from core.common.config_loader import ConfigLoader
 
-if config_loader.get_use_proxy():
-    import os
-
-    proxies = config_loader.get_proxies()
-    if "http" in proxies:
-        os.environ["HTTP_PROXY"] = proxies["http"]
-    if "https" in proxies:
-        os.environ["HTTPS_PROXY"] = proxies["https"]
+initializer.setup_proxy()
+config_loader = ConfigLoader("config.yaml")
 
 
 class TestAlist:
     @pytest.fixture
-    def alist_info(self):
-        envs = {
-            "base_url": config_loader.get_base_url(),
-            "username": config_loader.get_user_name(),
-            "password": config_loader.get_password(),
-            "downloader": config_loader.get_downloader(),
-        }
-        return envs
-
-    @pytest.fixture
     def remote_path(self):
-        remote_path = config_loader.get_download_path()
+        remote_path = config_loader.get("alist.download_path")
         return remote_path
 
     @pytest_asyncio.fixture
-    async def alist(self, alist_info):
-        alist = await Alist.create(alist_info["base_url"], alist_info["downloader"])
-        await alist.login(alist_info["username"], alist_info["password"])
+    async def alist(self):
+        alist = await initializer.init_alist()
+        user_name = config_loader.get("alist.user_name")
+        password = config_loader.get("alist.password")
+        await alist.login(user_name, password)
         return alist
-
-    @pytest.mark.asyncio
-    async def test_login(self, alist: Alist):
-        username = config_loader.get_user_name()
-        password = config_loader.get_password()
-        await alist.login(username, password)
 
     @pytest.mark.asyncio
     async def test_add_offline_download_task(self, alist: Alist, remote_path):

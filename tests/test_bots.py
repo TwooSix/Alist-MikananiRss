@@ -1,16 +1,9 @@
 import pytest
 
-from core.bot import NotificationBot, NotificationMsg, TelegramBot
-from core.common import config_loader
+from core.bot import NotificationMsg
+from core.common import initializer
 
-if config_loader.get_use_proxy():
-    import os
-
-    proxies = config_loader.get_proxies()
-    if "http" in proxies:
-        os.environ["HTTP_PROXY"] = proxies["http"]
-    if "https" in proxies:
-        os.environ["HTTPS_PROXY"] = proxies["https"]
+initializer.setup_proxy()
 
 
 class TestNotificationMsg:
@@ -25,12 +18,9 @@ class TestNotificationMsg:
 
 class TestNotificationBot:
     @pytest.fixture
-    def tele_info(self):
-        tele_info = {
-            "BotToken": config_loader.get_bot_token(),
-            "UserID": config_loader.get_user_id(),
-        }
-        return tele_info
+    def bots(self):
+        _bots = initializer.init_notification_bots()
+        return _bots
 
     @pytest.fixture
     def msg(self):
@@ -43,13 +33,8 @@ class TestNotificationBot:
         )
         return msg
 
-    @pytest.fixture
-    def tg_bot_md(self, tele_info):
-        handler = TelegramBot(tele_info["BotToken"], tele_info["UserID"])
-        bot = NotificationBot(handler)
-        return bot
-
     @pytest.mark.asyncio
-    async def test_telegram_notify_md(self, tg_bot_md, msg):
-        res = await tg_bot_md.send_message(msg)
-        assert res
+    async def test_telegram_notify_md(self, bots, msg):
+        for bot in bots:
+            res = await bot.send_message(msg)
+            assert res

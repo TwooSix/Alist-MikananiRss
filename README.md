@@ -26,7 +26,7 @@ git clone https://github.com/TwooSix/Alist-MikananiRss.git && cd Alist-MikananiR
 ```shell
 pip install -r requirements.txt
 ```
-3. 在目录下新建一个`config.py`配置文件，并填写配置文件，具体填写示例见`example.py`
+3. 在目录下新建一个`config.yaml`配置文件，并填写配置文件，具体填写示例见`example.yaml`/`example_full.yaml`
 
 4. 运行代码：`python main.py`  
 
@@ -34,11 +34,22 @@ pip install -r requirements.txt
 
 ## 开启订阅更新通知（可选）
 ### Telegram 通知
-在`config.py`中加入以下配置
-```python
-TELEGRAM_NOTIFICATION = True # 开启Telegram通知，为 False 则关闭
-BOT_TOKEN = "你的 BOT_TOKEN"
-USER_ID = "你的 USER_ID"
+在`config.yaml`中加入以下配置
+```yaml
+notification:
+  telegram: 
+    bot_token: your_token
+    user_id: your_id
+```
+
+## 自动重命名（可选）
+在`config.yaml`中加入以下配置
+```yaml
+rename:
+  chatgpt:
+    api_key: sk-xxx
+    base_url: https://example.com/v1
+    model: gpt-3.5-turbo
 ```
 
 ## 运行参数

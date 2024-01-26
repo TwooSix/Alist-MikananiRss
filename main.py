@@ -8,12 +8,14 @@ from loguru import logger
 
 from core.alist import Alist
 from core.bot import NotificationBot, NotificationMsg
-from core.common import config_loader, initializer
+from core.common import initializer
+from core.common.config_loader import ConfigLoader
 from core.downloader import AlistDownloader
 from core.monitor import MikanRSSMonitor
 
 download_task_queue = Queue()
 success_download_queue = Queue()
+config_loader = ConfigLoader("config.yaml")
 
 
 class RunMode(Enum):
@@ -27,10 +29,10 @@ async def check_update(
     notification_bots: list[NotificationBot],
     mode: RunMode,
 ):
-    user_name = config_loader.get_user_name()
-    password = config_loader.get_password()
-    download_path = config_loader.get_download_path()
-    interval_time = config_loader.get_interval_time()
+    user_name = config_loader.get("alist.user_name")
+    password = config_loader.get("alist.password")
+    download_path = config_loader.get("alist.download_path")
+    interval_time = config_loader.get("common.interval_time", 0)
     downloader = AlistDownloader(alist_client)
     keep_run = True
     while keep_run:
@@ -111,7 +113,7 @@ async def main():
     regex_filter = initializer.init_regex_filter()
     notification_bots = initializer.init_notification_bots()
     if mode == RunMode.UpdateMonitor:
-        rss_url = config_loader.get_subscribe_url()
+        rss_url = config_loader.get("mikan.subscribe_url")
     rss_monitor = MikanRSSMonitor(
         rss_url,
         filter=regex_filter,

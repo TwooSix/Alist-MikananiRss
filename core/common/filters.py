@@ -2,14 +2,29 @@ import re
 
 
 class RegexFilter:
-    def __init__(self, patterns: list = None):
+    _default_patterns = {
+        "简体": r"(简体|简中|简日|CHS)",
+        "繁体": r"(繁体|繁中|繁日|CHT|Baha)",
+        "1080p": r"(X1080|1080P)",
+        "非合集": r"^(?!(\d{2}-\d{2}|合集))",
+    }
+
+    def __init__(self, patterns_name: list = None):
         self.patterns = []
-        if patterns is not None:
-            for pattern in patterns:
+        if patterns_name is not None:
+            for pattern in patterns_name:
                 self.add_pattern(pattern)
 
-    def add_pattern(self, tmp_pattern: str) -> None:
+    def update_regex(self, regex_pattern: dict) -> None:
+        if regex_pattern is not None:
+            self._default_patterns.update(regex_pattern)
+
+    def add_pattern(self, pattern_name: str) -> None:
         """Add regex pattern to filter"""
+        try:
+            tmp_pattern = self._default_patterns[pattern_name]
+        except KeyError:
+            raise KeyError(f"Can't find the filter <{pattern_name}>")
         pattern = re.compile(tmp_pattern, re.IGNORECASE)
         self.patterns.append(pattern)
 

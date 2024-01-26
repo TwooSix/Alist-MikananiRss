@@ -1,17 +1,7 @@
 import feedparser
 import pytest_asyncio
 
-from core.common import config_loader
 from core.mikan import MikanAnimeResource
-
-if config_loader.get_use_proxy():
-    import os
-
-    proxies = config_loader.get_proxies()
-    if "http" in proxies:
-        os.environ["HTTP_PROXY"] = proxies["http"]
-    if "https" in proxies:
-        os.environ["HTTPS_PROXY"] = proxies["https"]
 
 
 class TestRssParser:

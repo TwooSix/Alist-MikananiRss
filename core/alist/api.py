@@ -14,9 +14,11 @@ from core.alist.offline_download import (
 
 
 class Alist:
-    def __init__(self, base_url: str, downloader: DownloaderType) -> None:
+    def __init__(self, base_url: str, downloader: DownloaderType | str) -> None:
         self.base_url = base_url
         self.is_login = False
+        if isinstance(downloader, str):
+            downloader = DownloaderType(downloader)
         self.downloader = downloader
         self.headers = {
             "User-Agent": (
@@ -27,7 +29,7 @@ class Alist:
         }
 
     @classmethod
-    async def create(cls, base_url: str, downloader: DownloaderType):
+    async def create(cls, base_url: str, downloader: DownloaderType | str):
         """Create Alist client asynchronously"""
         client = cls(base_url, downloader)
         await client.__init_alist_ver()
