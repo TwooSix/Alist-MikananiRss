@@ -24,7 +24,7 @@ mikan:
     - 非合集
     
 notification: # 通知设置，可选
-  telegram: m
+  telegram: 
     bot_token: your_token
     user_id: your_id
   anpush:
