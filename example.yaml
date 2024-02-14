@@ -1,0 +1,13 @@
+common:
+  interval_time: 300 # 定时执行的间隔时间，单位为秒，0 为只运行一次
+
+alist:
+  base_url: http[s]://www.example.com # alist访问链接
+  # base_url: http://127.0.0.1:port
+  user_name: username # 管理员用户名/密码
+  password: password
+  downloader: aria2 # 下载器，可选项为aria2和qBittorrent
+  download_path: Onedrive/Anime # 下载路径，相对于alist根目录
+
+mikan:
+  subscribe_url: https://mikanani.me/RSS/MyBangumi?token=xxx # 蜜柑订阅链接

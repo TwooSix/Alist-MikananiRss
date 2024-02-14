@@ -3,26 +3,17 @@
 
 import pytest
 
-from core.common import config_loader
+from core.common import initializer
 from core.common.extractor import ChatGPT, Regex
 
-if config_loader.get_use_proxy():
-    import os
-
-    proxies = config_loader.get_proxies()
-    if "http" in proxies:
-        os.environ["HTTP_PROXY"] = proxies["http"]
-    if "https" in proxies:
-        os.environ["HTTPS_PROXY"] = proxies["https"]
+initializer.setup_proxy()
 
 
 class TestExtractor:
     @pytest.fixture
     def chatgpt(self):
-        api_key = config_loader.get_chatgpt_api_key()
-        base_url = config_loader.get_chatgpt_base_url()
-        model = config_loader.get_chatgpt_model()
-        return ChatGPT(api_key, base_url, model)
+        _chatgpt = initializer.init_chatgpt_client()
+        return _chatgpt
 
     @pytest.fixture
     def resources_info(self):
