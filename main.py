@@ -29,8 +29,6 @@ async def check_update(
     notification_bots: list[NotificationBot],
     mode: RunMode,
 ):
-    user_name = config_loader.get("alist.user_name")
-    password = config_loader.get("alist.password")
     download_path = config_loader.get("alist.download_path")
     interval_time = config_loader.get("common.interval_time", 0)
     downloader = AlistDownloader(alist_client)
@@ -38,7 +36,6 @@ async def check_update(
     while keep_run:
         keep_run = mode == RunMode.UpdateMonitor
         try:
-            await alist_client.login(user_name, password)
             logger.info("Start update checking")
             # Step 1: Get new resources
             new_resources = await rss_monitor.get_new_resource()
@@ -72,6 +69,16 @@ async def check_update(
             for result in results:
                 if isinstance(result, Exception):
                     logger.error(result)
+            await asyncio.sleep(interval_time)
+        except Exception as e:
+            logger.error(e)
+
+async def refresh_token(alist_client: Alist, interval_time: int):
+    while True:
+        try:
+            user_name = config_loader.get("alist.user_name")
+            password = config_loader.get("alist.password")
+            await alist_client.login(user_name, password)
             await asyncio.sleep(interval_time)
         except Exception as e:
             logger.error(e)
@@ -118,7 +125,11 @@ async def main():
         rss_url,
         filter=regex_filter,
     )
-    await check_update(alist_client, rss_monitor, notification_bots, mode)
+    tasks = [
+        check_update(alist_client, rss_monitor, notification_bots, mode),
+        refresh_token(alist_client, 60 * 60),
+    ]
+    await asyncio.gather(*tasks)
 
 
 if __name__ == "__main__":
