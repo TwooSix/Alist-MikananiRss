@@ -28,30 +28,30 @@ class Renamer:
         ]
         return wrong_format_videos
 
-    async def __get_file_path(self, name, season, download_path) -> list[str]:
-        dir_path = os.path.join(download_path, name, f"Season {season}")
-        file_list = await self.alist.list_dir(dir_path)
+    def __get_rename_files(self, dir_path, file_list) -> list[str]:
         wrong_format_videos = self.__find_wrong_format_videos(file_list)
         filepath_rename = [os.path.join(dir_path, s) for s in wrong_format_videos]
         return filepath_rename
 
-    async def __build_new_name(self, name, season, filename):
-        try:
-            res = await self.chatgpt.analyse_resource_name(filename)
-        except Exception as e:
-            logger.error(f"Error when analyse {filename}: {e}")
-            return None
-        ext = filename.split(".")[-1]
-        episode = res["episode"]
-        new_name = f"{name} S{season:02}E{episode:02}.{ext}"
+    async def __build_new_name(self, old_filename:str, resource: MikanAnimeResource, file_count:int):
+        name, season, episode = resource.anime_name, resource.season, resource.episode
+        ext = old_filename.split(".")[-1]
+        if season == 0:
+            # 总集篇/特别篇以播出顺序排序命名
+            new_name = f"{name} S{season:02}E{file_count:02}.{ext}"
+        else:
+            # 正常集数按照季数和集数排序命名
+            new_name = f"{name} S{season:02}E{episode:02}.{ext}"
         return new_name
 
     async def rename(self, resource: MikanAnimeResource):
         while True:
             name, season = resource.anime_name, resource.season
             try:
-                filepath_rename = await self.__get_file_path(
-                    name, season, self.download_path
+                dir_path = os.path.join(self.download_path, name, f"Season {season}")
+                file_list = await self.alist.list_dir(dir_path)
+                filepath_rename = await self.__get_rename_files(
+                    dir_path, file_list
                 )
             except Exception as e:
                 logger.error(f"Error when get file path: {e}")
@@ -60,7 +60,7 @@ class Renamer:
             done_flag = True
             error_flag = False
             for filepath in filepath_rename:
-                new_name = await self.__build_new_name(name, season, filepath)
+                new_name = await self.__build_new_name(filepath, resource, len(file_list))
                 if new_name is None:
                     done_flag = False
                     continue
