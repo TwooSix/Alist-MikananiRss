@@ -33,7 +33,14 @@ async def check_update(
     interval_time = config_loader.get("common.interval_time", 0)
     downloader = AlistDownloader(alist_client)
     keep_run = True
+
     while keep_run:
+        try:
+            await alist_client.wait_for_login(timeout=30)
+        except asyncio.TimeoutError:
+            logger.error("Alist is not login, recheck after 60s.")
+            asyncio.sleep(60)
+
         keep_run = mode == RunMode.UpdateMonitor
         try:
             logger.info("Start update checking")
@@ -82,6 +89,7 @@ async def refresh_token(alist_client: Alist, interval_time: int):
             await asyncio.sleep(interval_time)
         except Exception as e:
             logger.error(e)
+
 
 
 @logger.catch
