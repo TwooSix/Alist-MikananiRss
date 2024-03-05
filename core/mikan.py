@@ -46,7 +46,6 @@ class MikanAnimeResource:
         published_date,
         resource_title,
         episode=None,
-        is_special=False,
     ) -> None:
         self.resource_id = rid
         self.anime_name = name
@@ -56,7 +55,6 @@ class MikanAnimeResource:
         self.resource_title = resource_title
         self.episode = episode
         self.download_task = None
-        self.is_special = is_special
 
     @classmethod
     async def from_feed_entry(cls, feed_entry):
@@ -65,18 +63,9 @@ class MikanAnimeResource:
         res = process_anime_name(tmp_anime_name)
         resource_title = feed_entry.title
         published_date = feed_entry.published
-        chatgpt_client = extractor.ChatGPT()
-        resource_info = await chatgpt_client.analyse_resource_name(resource_title)
         torrent_url = get_torrent_url(feed_entry)
         return cls(
-            rid,
-            name=res["name"],
-            season= resource_info["season"],
-            torrent_url= torrent_url,
-            published_date= published_date,
-            resource_title= resource_title,
-            episode= resource_info["episode"],
-            is_special= resource_info["special"],
+            rid, res["name"], res["season"], torrent_url, published_date, resource_title
         )
 
     def set_download_task(self, task: DownloadTask):
