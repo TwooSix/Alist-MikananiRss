@@ -1,3 +1,4 @@
+import asyncio
 import mimetypes
 import os
 import urllib.parse
@@ -76,6 +77,13 @@ class Alist:
     def check_login(self):
         """Check if user has logged in"""
         assert self.is_login, "Please login first"
+
+    async def wait_for_login(self, timeout: int = 30):
+        async def wait_loop():
+            while not self.is_login:
+                await asyncio.sleep(0.1)
+
+        await asyncio.wait_for(wait_loop(), timeout)
 
     async def add_offline_download_task(
         self, save_path: str, urls: list[str]
