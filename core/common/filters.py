@@ -6,7 +6,7 @@ class RegexFilter:
         "简体": r"(简体|简中|简日|CHS)",
         "繁体": r"(繁体|繁中|繁日|CHT|Baha)",
         "1080p": r"(X1080|1080P)",
-        "非合集": r"^(?!(\d{2}-\d{2}|合集))",
+        "非合集": r"^(?!.*(\d{2}-\d{2}|合集)).*",
     }
 
     def __init__(self, patterns_name: list = None):
