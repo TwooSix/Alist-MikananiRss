@@ -40,6 +40,7 @@ async def check_update(
         except asyncio.TimeoutError:
             logger.error("Alist is not login, recheck after 60s.")
             asyncio.sleep(60)
+            continue
 
         keep_run = mode == RunMode.UpdateMonitor
         try:
