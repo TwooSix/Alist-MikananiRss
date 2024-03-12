@@ -76,9 +76,9 @@ async def check_update(
             for result in results:
                 if isinstance(result, Exception):
                     logger.error(result)
-            await asyncio.sleep(interval_time)
         except Exception as e:
             logger.error(e)
+        await asyncio.sleep(interval_time)
 
 async def refresh_token(alist_client: Alist, interval_time: int):
     while True:
