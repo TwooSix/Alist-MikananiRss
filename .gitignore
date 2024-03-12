@@ -4,5 +4,6 @@ __pycache__/
 log/
 data/
 .pytest_cache
+.vscode
 config.*
 checkpoint_time.txt

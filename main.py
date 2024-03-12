@@ -64,19 +64,18 @@ async def check_update(
             if mode == RunMode.DownloadOldAnime:
                 # DownloadOld mode don't need to modified database and send notification
                 return
-            if not success_resources:
-                continue
-            # Step 5: Insert success resources to db
-            rss_monitor.mark_downloaded(success_resources)
-            # Step 6: Send notification
-            msg = NotificationMsg.from_resources(success_resources)
-            results = await asyncio.gather(
-                *[bot.send_message(msg) for bot in notification_bots],
-                return_exceptions=True,
-            )
-            for result in results:
-                if isinstance(result, Exception):
-                    logger.error(result)
+            if success_resources:
+                # Step 5: Insert success resources to db
+                rss_monitor.mark_downloaded(success_resources)
+                # Step 6: Send notification
+                msg = NotificationMsg.from_resources(success_resources)
+                results = await asyncio.gather(
+                    *[bot.send_message(msg) for bot in notification_bots],
+                    return_exceptions=True,
+                )
+                for result in results:
+                    if isinstance(result, Exception):
+                        logger.error(result)
         except Exception as e:
             logger.error(e)
         await asyncio.sleep(interval_time)
