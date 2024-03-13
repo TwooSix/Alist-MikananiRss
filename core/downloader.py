@@ -10,8 +10,9 @@ from core.mikan import MikanAnimeResource
 
 
 class AlistDownloader:
-    def __init__(self, alist: Alist) -> None:
+    def __init__(self, alist: Alist, use_renamer: bool) -> None:
         self.alist = alist
+        self.use_renamer = use_renamer
 
     def __group_resources(self, resources: list[MikanAnimeResource]):
         """group resources by anime name and season"""
@@ -44,25 +45,36 @@ class AlistDownloader:
                     await downloading_res_q.put(resource)
             first_run = False
 
+    def __prepare_download(self, new_resources, download_path: str):
+        resrouce_group = self.__group_resources(new_resources)
+        path_urls = {}
+        for anime_name, season_group in resrouce_group.items():
+            for season, season_resources in season_group.items():
+                if self.use_renamer:
+                    subfolder = os.path.join(anime_name, f"Season {season}")
+                    fin_path = os.path.join(download_path, subfolder)
+                else:
+                    fin_path = download_path
+                path_urls[fin_path] = [
+                    resource.torrent_url for resource in season_resources
+                ]
+        return path_urls
+
     async def download(
         self, new_resources: list[MikanAnimeResource], download_path: str
     ):
-        resrouce_group = self.__group_resources(new_resources)
+        path_urls = self.__prepare_download(new_resources, download_path)
         task_list = TaskList()
-        for anime_name, season_group in resrouce_group.items():
-            for season, season_resources in season_group.items():
-                subfolder = os.path.join(anime_name, f"Season {season}")
-                fin_path = os.path.join(download_path, subfolder)
-                urls = [resource.torrent_url for resource in season_resources]
-                try:
-                    tmp_task_list = await self.alist.add_offline_download_task(
-                        fin_path, urls
-                    )
-                except Exception as e:
-                    logger.error(f"Error when add offline download task: {e}")
-                    continue
-                task_list = task_list + tmp_task_list
-
+        for _download_path, urls in path_urls.items():
+            try:
+                tmp_task_list = await self.alist.add_offline_download_task(
+                    _download_path, urls
+                )
+            except Exception as e:
+                logger.error(f"Error when add offline download task: {e}")
+                continue
+            task_list = task_list + tmp_task_list
+        # link resource with task
         success_resources = []
         for resource in new_resources:
             for task in task_list:

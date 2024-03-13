@@ -61,7 +61,7 @@ async def main():
     alist_client = await initializer.init_alist()
     regex_filter = initializer.init_regex_filter()
     notification_bots = initializer.init_notification_bots()
-    downloader = AlistDownloader(alist_client)
+    downloader = initializer.init_alist_downloader(alist_client)
     download_monitor = initializer.init_download_monitor(alist_client)
     rss_url = config_loader.get("mikan.subscribe_url")
     rss_monitor = MikanRSSMonitor(
@@ -77,8 +77,8 @@ async def main():
             new_res_q, downloading_res_q, config_loader.get("alist.download_path")
         ),
         download_monitor.run(downloading_res_q, success_res_q),
+        send_notification(success_res_q, notification_bots),
     ]
-    tasks.append(send_notification(success_res_q, notification_bots))
     await asyncio.gather(*tasks)
 
 

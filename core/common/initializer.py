@@ -8,6 +8,7 @@ from core.bot import NotificationBot, TelegramBot
 from core.common.config_loader import ConfigLoader
 from core.common.extractor import ChatGPT
 from core.common.filters import RegexFilter
+from core.downloader import AlistDownloader
 from core.monitor import AlistDownloadMonitor, MikanRSSMonitor
 
 config_loader = ConfigLoader("config.yaml")
@@ -83,6 +84,15 @@ def init_download_monitor(alist_client: Alist):
         use_renamer,
     )
     return download_monitor_thread
+
+
+def init_alist_downloader(alist_client: Alist):
+    rename_cfg = config_loader.get("rename")
+    use_renamer = False
+    if rename_cfg is not None:
+        use_renamer = True
+    downloader = AlistDownloader(alist_client, use_renamer)
+    return downloader
 
 
 def init_chatgpt_client():
