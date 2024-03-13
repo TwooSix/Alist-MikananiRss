@@ -52,9 +52,9 @@ class AlistDownloader:
             for season, season_resources in season_group.items():
                 if self.use_renamer:
                     subfolder = os.path.join(anime_name, f"Season {season}")
-                    fin_path = os.path.join(download_path, subfolder)
                 else:
-                    fin_path = download_path
+                    subfolder = anime_name
+                fin_path = os.path.join(download_path, subfolder)
                 path_urls[fin_path] = [
                     resource.torrent_url for resource in season_resources
                 ]

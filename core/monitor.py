@@ -118,28 +118,22 @@ class AlistDownloadMonitor:
             await self.renamer.rename(resource)
         return resource
 
-    async def wait_succeed(self, resrouces):
-        results = await asyncio.gather(
-            *[self.monitor_one_task(resource) for resource in resrouces]
-        )
-        success_resources = [r for r in results if r is not None]
-        failed_resources = [r for r in resrouces if r not in success_resources]
-        self.remove_failed_resource(failed_resources)
-        return success_resources
+    async def wait_succeed(self, resource, success_res_q):
+        result = await self.monitor_one_task(resource)
+        if result is not None:
+            await success_res_q.put(result)
+        else:
+            self.remove_failed_resource([resource])
 
     async def run(self, downloading_res_q: Queue, success_res_q: Queue):
         first_run = True
         while True:
             if not first_run:
                 await asyncio.sleep(1)
-            downloading_resources = []
             while not downloading_res_q.empty():
-                downloading_resources.append(await downloading_res_q.get())
-            if downloading_resources:
-                self.mark_downloading(downloading_resources)
-                success_resources = await self.wait_succeed(downloading_resources)
-                for resource in success_resources:
-                    await success_res_q.put(resource)
+                resource = await downloading_res_q.get()
+                self.mark_downloading([resource])
+                asyncio.create_task(self.wait_succeed(resource, success_res_q))
             first_run = False
 
     def mark_downloading(self, resources: list[MikanAnimeResource]):

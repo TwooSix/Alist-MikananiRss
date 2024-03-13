@@ -74,7 +74,10 @@ def init_mikan_rss_monitor(regex_filter: RegexFilter):
 
 def init_download_monitor(alist_client: Alist):
     download_path = config_loader.get("alist.download_path")
-    rename_cfg = config_loader.get("rename")
+    try:
+        rename_cfg = config_loader.get("rename")
+    except KeyError:
+        rename_cfg = None
     use_renamer = False
     if rename_cfg is not None:
         use_renamer = True
@@ -87,7 +90,10 @@ def init_download_monitor(alist_client: Alist):
 
 
 def init_alist_downloader(alist_client: Alist):
-    rename_cfg = config_loader.get("rename")
+    try:
+        rename_cfg = config_loader.get("rename")
+    except KeyError:
+        rename_cfg = None
     use_renamer = False
     if rename_cfg is not None:
         use_renamer = True

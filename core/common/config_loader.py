@@ -18,7 +18,7 @@ class ConfigLoader:
                 if default is not None:
                     return default
                 else:
-                    raise ValueError(
+                    raise KeyError(
                         f"{path} is not found in config file {self.config_path}"
                     )
             value = value[key]

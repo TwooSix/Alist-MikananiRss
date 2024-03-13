@@ -55,6 +55,11 @@ class ChatGPT:
                 raise TypeError(
                     f"Chatgpt provide a wrong type of quality: {data['quality']}"
                 )
+            data["episode"] = (
+                str(int(data["episode"]))
+                if data["episode"] == int(data["episode"])
+                else str(data["episode"])
+            )
             data["quality"] = data["quality"].lower()
             return data
         else:
