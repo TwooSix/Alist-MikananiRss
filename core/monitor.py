@@ -1,4 +1,5 @@
 import asyncio
+from asyncio import Queue
 
 import feedparser
 from loguru import logger
@@ -61,6 +62,7 @@ class AlistDownloadMonitor:
         self.download_path = download_path
         self.use_renamer = use_renamer
         self.transfer_uuid_set = set()
+        self.db = SubscribeDatabase()
         if use_renamer:
             self.renamer = Renamer(alist, download_path)
 
@@ -77,7 +79,10 @@ class AlistDownloadMonitor:
             for transfer_task in transfer_task_list:
                 if transfer_task.uuid in self.transfer_uuid_set:
                     continue
-                if transfer_task.status in [TaskStatus.Pending, TaskStatus.Running] and resource.anime_name in transfer_task.description:
+                if (
+                    transfer_task.status in [TaskStatus.Pending, TaskStatus.Running]
+                    and resource.anime_name in transfer_task.description
+                ):
                     self.transfer_uuid_set.add(transfer_task.uuid)
                     logger.debug(
                         f"Link {resource.resource_title} to {transfer_task.uuid}"
@@ -118,15 +123,38 @@ class AlistDownloadMonitor:
             *[self.monitor_one_task(resource) for resource in resrouces]
         )
         success_resources = [r for r in results if r is not None]
+        failed_resources = [r for r in resrouces if r not in success_resources]
+        self.remove_failed_resource(failed_resources)
         return success_resources
+
+    async def run(self, downloading_res_q: Queue, success_res_q: Queue):
+        first_run = True
+        while True:
+            if not first_run:
+                await asyncio.sleep(1)
+            downloading_resources = []
+            while not downloading_res_q.empty():
+                downloading_resources.append(await downloading_res_q.get())
+            if downloading_resources:
+                self.mark_downloading(downloading_resources)
+                success_resources = await self.wait_succeed(downloading_resources)
+                for resource in success_resources:
+                    await success_res_q.put(resource)
+            first_run = False
+
+    def mark_downloading(self, resources: list[MikanAnimeResource]):
+        # mark resources in db
+        for resource in resources:
+            self.db.insert_mikan_resource(resource)
+
+    def remove_failed_resource(self, resources: list[MikanAnimeResource]):
+        # remove failed resources from db
+        for resource in resources:
+            self.db.delete_by_id(resource.resource_id)
 
 
 class MikanRSSMonitor:
-    def __init__(
-        self,
-        subscribe_url: str,
-        filter: RegexFilter,
-    ) -> None:
+    def __init__(self, subscribe_url: str, filter: RegexFilter) -> None:
         """The rss feed manager
 
         Args:
@@ -173,6 +201,21 @@ class MikanRSSMonitor:
                 new_resources.append(resource)
         return new_resources
 
-    def mark_downloaded(self, resources: list[MikanAnimeResource]):
-        for resource in resources:
-            self.db.insert_mikan_resource(resource)
+    async def run(self, new_resources_queue: Queue, interval_time):
+        first_run = True
+        while 1:
+            if not first_run:
+                await asyncio.sleep(interval_time)
+            logger.info("Start update checking")
+            try:
+                new_resources = await self.get_new_resource()
+            except Exception as e:
+                logger.error(e)
+                continue
+            if not new_resources:
+                logger.info("No new resources")
+            else:
+                for resource in new_resources:
+                    await new_resources_queue.put(resource)
+
+            first_run = False

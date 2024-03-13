@@ -51,20 +51,4 @@ rename:
     base_url: https://example.com/v1
     model: gpt-3.5-turbo
 ```
-
-## 运行参数
-|     参数      |     类型    |     说明      |
-| ------------- | ------------- | ------------- |
-| --mode<br>-m  | int  | 0：默认模式，持续监控RSS订阅链接<br>1：下载旧番（执行一次，不插入数据库不发送通知）  |
-| --url<br>-u  | str  | 老番的RSS链接，模式0无效  |
-1. 老番下载说明<br>
-   一键下载老番并重命名（遵循config.py的设置，包括正则表达式筛选等），用例：
-   ```shell
-   python main.py --mode=1 --url="rss_url"
-   ```
-   rss_url为在老番的主页，获取番剧对应字幕组的RSS链接，例如：
-   ![RSS链接获取入口](https://github.com/TwooSix/Alist-MikananiRss/blob/master/imgs/dl_old_anime_rss_example.png)
-   ```shell
-   python main.py --mode=1 --url="https://mikanani.me/RSS/Bangumi?bangumiId=2134&subgroupid=552"
-   ```
    

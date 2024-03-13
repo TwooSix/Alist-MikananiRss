@@ -52,6 +52,10 @@ class TestRegexFilter:
                 ResourceTag.CHT,
                 ResourceTag.P1080,
             ],
+            "[喵萌奶茶屋&LoliHouse] 僵尸100 ~变成僵尸前想要完成的100件事~ / Zom 100: Zombie ni Naru made ni Shitai 100 no Koto [01-12 精校合集][WebRip 1080p HEVC-10bit AAC][简繁日内封字幕][Fin]": [
+                ResourceTag.P1080,
+                ResourceTag.COLLECTION,
+            ],
         }
         return _resources
 

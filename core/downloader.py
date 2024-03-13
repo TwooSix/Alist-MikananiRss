@@ -1,4 +1,6 @@
+import asyncio
 import os
+from asyncio import Queue
 
 from loguru import logger
 
@@ -22,18 +24,39 @@ class AlistDownloader:
             resource_group[resource.anime_name][resource.season].append(resource)
         return resource_group
 
-    async def download(self, root_path: str, new_resources: list[MikanAnimeResource]):
+    async def run(self, new_res_q: Queue, downloading_res_q: Queue, download_path: str):
+        first_run = True
+        while True:
+            if not first_run:
+                await asyncio.sleep(10)
+            new_resources = []
+            while not new_res_q.empty():
+                new_resources.append(await new_res_q.get())
+            if new_resources:
+                try:
+                    downloading_resources = await self.download(
+                        new_resources, download_path
+                    )
+                except Exception as e:
+                    logger.error(f"Error when download: {e}")
+                    continue
+                for resource in downloading_resources:
+                    await downloading_res_q.put(resource)
+            first_run = False
+
+    async def download(
+        self, new_resources: list[MikanAnimeResource], download_path: str
+    ):
         resrouce_group = self.__group_resources(new_resources)
         task_list = TaskList()
-
         for anime_name, season_group in resrouce_group.items():
             for season, season_resources in season_group.items():
                 subfolder = os.path.join(anime_name, f"Season {season}")
-                download_path = os.path.join(root_path, subfolder)
+                fin_path = os.path.join(download_path, subfolder)
                 urls = [resource.torrent_url for resource in season_resources]
                 try:
                     tmp_task_list = await self.alist.add_offline_download_task(
-                        download_path, urls
+                        fin_path, urls
                     )
                 except Exception as e:
                     logger.error(f"Error when add offline download task: {e}")

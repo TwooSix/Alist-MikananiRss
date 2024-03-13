@@ -81,7 +81,7 @@ class Alist:
     async def wait_for_login(self, timeout: int = 30):
         async def wait_loop():
             while not self.is_login:
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(1)
 
         await asyncio.wait_for(wait_loop(), timeout)
 
