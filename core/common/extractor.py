@@ -16,9 +16,10 @@ class ChatGPT:
     async def analyse_resource_name(self, resource_name: str):
         prompt = """
         你是一个执行命令并准确的返回执行结果的程序，当我给出指定内容时，你会按照我的要求返回指定格式的内容。
-        后续我将会给你提供一个番剧的资源名字，请你根据番剧名字，提取出字幕组名称，类型为string，存储在fansub字段中；番剧的集数，类型为int，存储在episode字段中；番剧的清晰度，类型为string，以"xp"的格式存储在quality字段中，例如"1920x1080"请重命名为"1080p"。最后以YAML的格式返回。YAML具体格式如下：
+        后续我将会给你提供一个番剧的资源名字，请你根据番剧名字，提取出字幕组名称，类型为string，存储在fansub字段中；番剧的季度，类型为int，存储在season字段中，如果是特别篇/总集篇则季度设置为0（总集篇通常集数为浮点数），没有特别标注的默认为第1季；番剧的集数，类型为float，存储在episode字段中；番剧的清晰度，类型为string，以"xp"的格式存储在quality字段中，例如"1920x1080"请重命名为"1080p"。最后以YAML的格式返回。YAML具体格式如下：
         ```yaml
         fansub:
+        season:
         episode:
         quality:
         ```
@@ -42,7 +43,11 @@ class ChatGPT:
                 raise TypeError(
                     f"Chatgpt provide a wrong type of fansub: {data['fansub']}"
                 )
-            elif not isinstance(data["episode"], int):
+            elif not isinstance(data["season"], int):
+                raise TypeError(
+                    f"Chatgpt provide a wrong type of season: {data['season']}"
+                )
+            elif not isinstance(data["episode"], float):
                 raise TypeError(
                     f"Chatgpt provide a wrong type of episode: {data['episode']}"
                 )
@@ -106,3 +111,23 @@ class Regex:
             return {"name": name, "season": season}
         else:
             return {"name": anime_name, "season": 1}
+
+    async def analyse_resource_name(self, resource_name: str):
+        sep_char = ["[", "]", "【", "】", "(", ")", "（", "）"]
+        tmp_str = resource_name
+        for char in sep_char:
+            tmp_str = tmp_str.replace(char, " ")
+        keyw = tmp_str.split()
+        episode = -1
+        for k in reversed(keyw):
+            k_ = k.replace("第", "").replace("话", "").replace("集", "")
+            k_ = re.sub(r"(?<=\d)v\d", "", k_)
+            try:
+                episode = float(k_)
+            except Exception:
+                continue
+            break
+        if episode == -1:
+            raise ValueError(f"Can't find episode number in {resource_name}")
+        data = {"episode": episode}
+        return data
