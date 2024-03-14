@@ -18,9 +18,6 @@ class TestAlist:
     @pytest_asyncio.fixture
     async def alist(self):
         alist = await initializer.init_alist()
-        user_name = config_loader.get("alist.user_name")
-        password = config_loader.get("alist.password")
-        await alist.login(user_name, password)
         return alist
 
     @pytest.mark.asyncio

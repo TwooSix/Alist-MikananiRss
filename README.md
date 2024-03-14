@@ -5,7 +5,7 @@
   从<a href="https://mikanani.me/">蜜柑计划</a>的RSS订阅源中自动获取番剧更新并通过Alist离线下载至对应网盘
 </p>  
 <p align="center">
-  并结合使用ChatGPT分析资源名，将资源重命名为Emby可解析的格式。（现为纯自用脚本分享，代码质量差请见谅）
+  并结合使用ChatGPT分析资源名，将资源重命名为Emby可解析的格式。
 </p>  
 
 ## 重命名效果展示

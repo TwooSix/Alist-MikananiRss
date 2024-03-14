@@ -1,10 +1,8 @@
 import asyncio
 from asyncio import Queue
-from enum import Enum
 
 from loguru import logger
 
-from core.alist import Alist
 from core.bot import NotificationBot, NotificationMsg
 from core.common import initializer
 from core.common.config_loader import ConfigLoader
@@ -36,18 +34,6 @@ async def send_notification(
         await asyncio.sleep(10)
 
 
-async def refresh_token(alist_client: Alist, interval_time: int):
-    while True:
-        try:
-            user_name = config_loader.get("alist.user_name")
-            password = config_loader.get("alist.password")
-            await alist_client.login(user_name, password)
-            logger.debug("Refresh alist token")
-            await asyncio.sleep(interval_time)
-        except Exception as e:
-            logger.error(e)
-
-
 @logger.catch
 async def main():
     # init
@@ -66,7 +52,6 @@ async def main():
     interval_time = config_loader.get("common.interval_time")
 
     tasks = [
-        refresh_token(alist_client, 60 * 60),
         rss_monitor.run(new_res_q, interval_time),
         downloader.run(
             new_res_q, downloading_res_q, config_loader.get("alist.download_path")

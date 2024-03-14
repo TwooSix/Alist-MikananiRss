@@ -35,7 +35,11 @@ async def init_alist():
     # alist init
     base_url = config_loader.get("alist.base_url")
     downloader_type = config_loader.get("alist.downloader")
-    alist_client = await Alist.create(base_url, downloader_type)
+    token = config_loader.get("alist.token")
+    alist_client = Alist(base_url, downloader_type, token)
+    alist_ver = await alist_client.get_alist_ver()
+    if alist_ver < "3.29.0":
+        raise ValueError(f"Unsupported Alist version: {alist_ver}")
     return alist_client
 
 

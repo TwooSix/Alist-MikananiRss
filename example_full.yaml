@@ -7,8 +7,7 @@ common:
 alist:
   base_url: http[s]://www.example.com # alist访问链接
   # base_url: http://127.0.0.1:port
-  user_name: username # 管理员用户名/密码
-  password: password
+  token: alist-xxx # Alist令牌；可在"管理员后台->设置->其他"中找到
   downloader: aria2 # 下载器，可选项为aria2和qBittorrent
   download_path: Onedrive/Anime # 下载路径，相对于alist根目录
 
