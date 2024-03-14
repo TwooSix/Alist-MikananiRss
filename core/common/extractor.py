@@ -1,6 +1,7 @@
 import re
 
 import yaml
+from loguru import logger
 from openai import AsyncOpenAI
 
 
@@ -55,12 +56,14 @@ class ChatGPT:
                 raise TypeError(
                     f"Chatgpt provide a wrong type of quality: {data['quality']}"
                 )
+            # 除掉整数集后的小数点
             data["episode"] = (
                 str(int(data["episode"]))
                 if data["episode"] == int(data["episode"])
                 else str(data["episode"])
             )
             data["quality"] = data["quality"].lower()
+            logger.debug(f"Chatgpt analyse resource name: {resource_name} -> {data}")
             return data
         else:
             raise ValueError(f"Chatgpt provide a wrong format response: {resp}")
@@ -135,4 +138,10 @@ class Regex:
         if episode == -1:
             raise ValueError(f"Can't find episode number in {resource_name}")
         data = {"episode": episode}
+        data["episode"] = (
+            str(int(data["episode"]))
+            if data["episode"] == int(data["episode"])
+            else str(data["episode"])
+        )
+        logger.debug(f"Regex analyse resource name: {resource_name} -> {data}")
         return data

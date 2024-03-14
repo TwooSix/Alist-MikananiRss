@@ -8,18 +8,12 @@ from core.alist import Alist
 from core.bot import NotificationBot, NotificationMsg
 from core.common import initializer
 from core.common.config_loader import ConfigLoader
-from core.downloader import AlistDownloader
 from core.monitor import MikanRSSMonitor
 
 new_res_q = Queue()
 downloading_res_q = Queue()
 success_res_q = Queue()
 config_loader = ConfigLoader("config.yaml")
-
-
-class RunMode(Enum):
-    UpdateMonitor = 0
-    DownloadOldAnime = 1
 
 
 async def send_notification(
@@ -31,6 +25,7 @@ async def send_notification(
             success_resources.append(await success_res_q.get())
         if success_resources:
             msg = NotificationMsg.from_resources(success_resources)
+            logger.debug(f"Send notification\n: {msg}")
             results = await asyncio.gather(
                 *[bot.send_message(msg) for bot in notification_bots],
                 return_exceptions=True,
@@ -47,7 +42,7 @@ async def refresh_token(alist_client: Alist, interval_time: int):
             user_name = config_loader.get("alist.user_name")
             password = config_loader.get("alist.password")
             await alist_client.login(user_name, password)
-            logger.debug("Refresh token")
+            logger.debug("Refresh alist token")
             await asyncio.sleep(interval_time)
         except Exception as e:
             logger.error(e)

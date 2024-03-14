@@ -11,8 +11,7 @@ os.makedirs(db_path, exist_ok=True)
 
 
 class SubscribeDatabase:
-    def __init__(self):
-        db_name = "subscribe_database.db"
+    def __init__(self, db_name="subscribe_database.db"):
         self.db_name = os.path.join(db_path, db_name)
         self.conn = None
         self.cursor = None

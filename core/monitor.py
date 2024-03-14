@@ -132,6 +132,7 @@ class AlistDownloadMonitor:
                 await asyncio.sleep(1)
             while not downloading_res_q.empty():
                 resource = await downloading_res_q.get()
+                logger.debug(f"Start monitor {resource.resource_title}")
                 self.mark_downloading([resource])
                 asyncio.create_task(self.wait_succeed(resource, success_res_q))
             first_run = False
@@ -210,6 +211,7 @@ class MikanRSSMonitor:
                 logger.info("No new resources")
             else:
                 for resource in new_resources:
+                    logger.debug(f"Find new resource: {resource.resource_title}")
                     await new_resources_queue.put(resource)
 
             first_run = False

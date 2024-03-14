@@ -39,6 +39,9 @@ class NotificationMsg:
     def __bool__(self):
         return bool(self._update_info)
 
+    def __str__(self):
+        return self.normal_msg
+
     @property
     def markdown_msg(self):
         if not self._markdown_msg:

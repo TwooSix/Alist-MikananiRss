@@ -42,6 +42,7 @@ class AlistDownloader:
                     logger.error(f"Error when download: {e}")
                     continue
                 for resource in downloading_resources:
+                    logger.info(f"Start to download: {resource.resource_title}")
                     await downloading_res_q.put(resource)
             first_run = False
 
@@ -81,6 +82,5 @@ class AlistDownloader:
                 if resource.torrent_url == task.url:
                     resource.set_download_task(task)
                     success_resources.append(resource)
-                    logger.info(f"Start to download: {resource.resource_title}")
                     break
         return success_resources
