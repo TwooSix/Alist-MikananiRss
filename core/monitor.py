@@ -119,9 +119,7 @@ class AlistDownloadMonitor:
             return None
         if self.use_renamer:
             local_name = transfer_task.file_name
-            asyncio.create_task(
-                asyncio.wait_for(self.renamer.rename(local_name, resource), timeout=30)
-            )
+            asyncio.create_task(self.renamer.rename(local_name, resource))
         return resource
 
     async def wait_succeed(self, resource, success_res_q: Queue):

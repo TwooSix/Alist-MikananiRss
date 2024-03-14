@@ -18,24 +18,22 @@ class Renamer:
         season = resource.season
         episode = resource.episode
         ext = local_title.split(".")[-1]
+        if season == 0:
+            # 总集篇/OVA 则以顺序命名
+            dir_path = os.path.join(self.download_path, name, f"Season {season}")
+            file_list = await self.alist.list_dir(dir_path, per_page=999)
+            episode = len(file_list)
         new_name = f"{name} S{season:02}E{episode:02}.{ext}"
         return new_name
 
     async def rename(self, local_title: str, resource: MikanAnimeResource):
-        while True:
-            name, season = resource.anime_name, resource.season
-            filepath = os.path.join(
-                self.download_path, name, f"Season {season}", local_title
-            )
-            done_flag = True
-            error_flag = False
-            new_name = await self.__build_new_name(resource, local_title)
-            try:
-                await self.alist.rename(filepath, new_name)
-            except Exception as e:
-                logger.error(f"Error when rename {filepath}: {e}")
-                error_flag = True
-            logger.info(f"Rename {filepath} to {new_name}")
-            if done_flag:
-                return not error_flag
-            await asyncio.sleep(1)
+        name, season = resource.anime_name, resource.season
+        filepath = os.path.join(
+            self.download_path, name, f"Season {season}", local_title
+        )
+        new_name = await self.__build_new_name(resource, local_title)
+        try:
+            await self.alist.rename(filepath, new_name)
+        except Exception as e:
+            logger.error(f"Error when rename {filepath}: {e}")
+        logger.info(f"Rename {filepath} to {new_name}")
