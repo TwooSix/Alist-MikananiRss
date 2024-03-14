@@ -6,7 +6,7 @@ from loguru import logger
 from core.alist import Alist
 from core.bot import NotificationBot, TelegramBot
 from core.common.config_loader import ConfigLoader
-from core.common.extractor import ChatGPT
+from core.common.extractor import ChatGPT, Regex
 from core.common.filters import RegexFilter
 from core.downloader import AlistDownloader
 from core.monitor import AlistDownloadMonitor, MikanRSSMonitor
@@ -43,6 +43,26 @@ async def init_alist():
     return alist_client
 
 
+def init_extrator():
+    try:
+        rename_cfg = config_loader.get("rename")
+    except KeyError:
+        return None
+    if "chatgpt" in rename_cfg:
+        chatgpt_cfg = rename_cfg["chatgpt"]
+        chatgpt = ChatGPT(
+            chatgpt_cfg["api_key"],
+            chatgpt_cfg.get("base_url"),
+            chatgpt_cfg.get("model"),
+        )
+        return chatgpt
+    elif "regex" in rename_cfg:
+        regex_extractor = Regex()
+        return regex_extractor
+    else:
+        raise ValueError("Invalid rename config, extractor is required")
+
+
 def init_notification_bots():
     # init notification bot
     notification_bots = []
@@ -69,9 +89,11 @@ def init_regex_filter():
 def init_mikan_rss_monitor(regex_filter: RegexFilter):
     # init rss manager
     subscribe_url = config_loader.get("mikan.subscribe_url")
+    extrator = init_extrator()
     rss_monitor = MikanRSSMonitor(
         subscribe_url,
         filter=regex_filter,
+        extractor=extrator,
     )
     return rss_monitor
 
@@ -103,11 +125,3 @@ def init_alist_downloader(alist_client: Alist):
         use_renamer = True
     downloader = AlistDownloader(alist_client, use_renamer)
     return downloader
-
-
-def init_chatgpt_client():
-    api_key = config_loader.get("rename.chatgpt.api_key")
-    base_url = config_loader.get("rename.chatgpt.base_url")
-    model = config_loader.get("rename.chatgpt.model")
-    chatgpt = ChatGPT(api_key, base_url, model)
-    return chatgpt

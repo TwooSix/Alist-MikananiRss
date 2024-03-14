@@ -11,6 +11,7 @@ from core.monitor import MikanRSSMonitor
 new_res_q = Queue()
 downloading_res_q = Queue()
 success_res_q = Queue()
+rename_q = Queue()
 config_loader = ConfigLoader("config.yaml")
 
 
@@ -44,11 +45,7 @@ async def main():
     notification_bots = initializer.init_notification_bots()
     downloader = initializer.init_alist_downloader(alist_client)
     download_monitor = initializer.init_download_monitor(alist_client)
-    rss_url = config_loader.get("mikan.subscribe_url")
-    rss_monitor = MikanRSSMonitor(
-        rss_url,
-        filter=regex_filter,
-    )
+    rss_monitor = initializer.init_mikan_rss_monitor(regex_filter)
     interval_time = config_loader.get("common.interval_time")
 
     tasks = [

@@ -56,12 +56,12 @@ class ChatGPT:
                 raise TypeError(
                     f"Chatgpt provide a wrong type of quality: {data['quality']}"
                 )
-            # 除掉整数集后的小数点
-            data["episode"] = (
-                str(int(data["episode"]))
-                if data["episode"] == int(data["episode"])
-                else str(data["episode"])
-            )
+            # 是否总集篇(集数为浮点数)
+            is_special = data["episode"] != int(data["episode"])
+            if is_special:
+                data["season"] = 0
+            else:
+                data["episode"] = int(data["episode"])
             data["quality"] = data["quality"].lower()
             logger.debug(f"Chatgpt analyse resource name: {resource_name} -> {data}")
             return data
@@ -138,10 +138,11 @@ class Regex:
         if episode == -1:
             raise ValueError(f"Can't find episode number in {resource_name}")
         data = {"episode": episode}
-        data["episode"] = (
-            str(int(data["episode"]))
-            if data["episode"] == int(data["episode"])
-            else str(data["episode"])
-        )
+        # 是否总集篇(集数为浮点数)
+        is_special = data["episode"] != int(data["episode"])
+        if is_special:
+            data["season"] = 0
+        else:
+            data["episode"] = int(data["episode"])
         logger.debug(f"Regex analyse resource name: {resource_name} -> {data}")
         return data
