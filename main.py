@@ -6,7 +6,6 @@ from loguru import logger
 from core.bot import NotificationBot, NotificationMsg
 from core.common import initializer
 from core.common.config_loader import ConfigLoader
-from core.monitor import MikanRSSMonitor
 
 new_res_q = Queue()
 downloading_res_q = Queue()

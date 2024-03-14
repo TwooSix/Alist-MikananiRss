@@ -4,7 +4,7 @@
 import pytest
 
 from core.common import initializer
-from core.common.extractor import ChatGPT, Regex
+from core.extractor import ChatGPT, Regex
 
 initializer.setup_proxy()
 

@@ -3,8 +3,8 @@ import time
 import aiohttp
 import bs4
 
+from core import extractor
 from core.alist.offline_download import DownloadTask
-from core.common import extractor
 
 
 def get_torrent_url(feed_entry) -> str:

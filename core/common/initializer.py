@@ -6,9 +6,9 @@ from loguru import logger
 from core.alist import Alist
 from core.bot import NotificationBot, TelegramBot
 from core.common.config_loader import ConfigLoader
-from core.common.extractor import ChatGPT, Regex
-from core.common.filters import RegexFilter
 from core.downloader import AlistDownloader
+from core.extractor import ChatGPT, Regex
+from core.filters import RegexFilter
 from core.monitor import AlistDownloadMonitor, MikanRSSMonitor
 
 config_loader = ConfigLoader("config.yaml")

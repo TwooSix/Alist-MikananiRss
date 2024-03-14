@@ -1,6 +1,4 @@
-import asyncio
 import os
-import re
 
 from loguru import logger
 
@@ -15,7 +13,7 @@ class Renamer:
 
     async def __build_new_name(self, resource: MikanAnimeResource, local_title: str):
         name = resource.anime_name
-        season = resource.season
+        season = resource.seasonp
         episode = resource.episode
         ext = local_title.split(".")[-1]
         if season == 0:

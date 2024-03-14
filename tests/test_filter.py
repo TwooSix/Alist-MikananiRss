@@ -2,7 +2,7 @@ from enum import Enum
 
 import pytest
 
-from core.common.filters import RegexFilter
+from core.filters import RegexFilter
 
 
 class ResourceTag(Enum):
