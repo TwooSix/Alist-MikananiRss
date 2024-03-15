@@ -13,7 +13,7 @@ class Renamer:
 
     async def __build_new_name(self, resource: MikanAnimeResource, local_title: str):
         name = resource.anime_name
-        season = resource.seasonp
+        season = resource.season
         episode = resource.episode
         ext = local_title.split(".")[-1]
         if season == 0:
