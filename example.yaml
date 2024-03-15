@@ -1,5 +1,5 @@
 common:
-  interval_time: 300 # 定时执行的间隔时间，单位为秒，0 为只运行一次
+  interval_time: 300 # 定时执行的间隔时间，单位为秒，须>=0
 
 alist:
   base_url: http[s]://www.example.com # alist访问链接

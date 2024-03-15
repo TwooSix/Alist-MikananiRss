@@ -39,6 +39,8 @@ async def main():
     download_monitor = initializer.init_download_monitor(alist_client)
     rss_monitor = initializer.init_mikan_rss_monitor(regex_filter)
     interval_time = config_loader.get("common.interval_time")
+    if interval_time <= 0:
+        raise ValueError("Interval time should be greater than 0")
 
     tasks = [
         rss_monitor.run(interval_time),

@@ -225,6 +225,4 @@ class MikanRSSMonitor:
                             continue
                     logger.debug(f"Find new resource: {resource.resource_title}")
                     await new_res_q.put(resource)
-            if interval_time == 0:
-                break
             first_run = False
