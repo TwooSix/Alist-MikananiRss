@@ -96,6 +96,7 @@ class DownloadTask(Task):
         self.transfer_task_id = set()
         self.is_started_transfer = False
         self.uuid = None
+        self.url = None
         self.__init_url()
 
     def __init_url(self):
@@ -136,13 +137,17 @@ class TaskList:
         else:
             raise TypeError("Operands must be instance of TaskList")
 
-    def __getitem__(self, id: str) -> Task | None:
-        if id not in self.id_task_map:
-            return None
-        return self.id_task_map[id]
+    def __getitem__(self, index: int | str) -> DownloadTask | TransferTask | None:
+        if isinstance(index, int):
+            return self.tasks[index]
+        elif isinstance(index, str):
+            return self.id_task_map.get(index)
 
     def __contains__(self, task: Task):
         return task.tid in self.id_task_map
+
+    def __len__(self):
+        return len(self.tasks)
 
     def __iter__(self):
         return iter(self.tasks)
