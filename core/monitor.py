@@ -8,6 +8,7 @@ from core import extractor
 from core.alist.api import Alist
 from core.alist.offline_download import DownloadTask, TaskStatus, TransferTask
 from core.common.database import SubscribeDatabase
+from core.common.globalvar import downloading_res_q, new_res_q, success_res_q
 from core.filters import RegexFilter
 from core.mikan import MikanAnimeResource
 from core.renamer import Renamer
@@ -129,7 +130,7 @@ class AlistDownloadMonitor:
         else:
             self.remove_failed_resource([resource])
 
-    async def run(self, downloading_res_q: Queue, success_res_q: Queue):
+    async def run(self):
         first_run = True
         while True:
             if not first_run:
@@ -199,7 +200,7 @@ class MikanRSSMonitor:
                 new_resources.append(resource)
         return new_resources
 
-    async def run(self, new_resources_queue: Queue, interval_time):
+    async def run(self, interval_time):
         first_run = True
         while 1:
             if not first_run:
@@ -223,6 +224,6 @@ class MikanRSSMonitor:
                             )
                             continue
                     logger.debug(f"Find new resource: {resource.resource_title}")
-                    await new_resources_queue.put(resource)
+                    await new_res_q.put(resource)
 
             first_run = False

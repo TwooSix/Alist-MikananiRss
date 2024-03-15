@@ -1,11 +1,11 @@
 import asyncio
 import os
-from asyncio import Queue
 
 from loguru import logger
 
 from core.alist import Alist
 from core.alist.offline_download import TaskList
+from core.common.globalvar import downloading_res_q, new_res_q
 from core.mikan import MikanAnimeResource
 
 
@@ -25,7 +25,7 @@ class AlistDownloader:
             resource_group[resource.anime_name][resource.season].append(resource)
         return resource_group
 
-    async def run(self, new_res_q: Queue, downloading_res_q: Queue, download_path: str):
+    async def run(self, download_path: str):
         first_run = True
         while True:
             if not first_run:

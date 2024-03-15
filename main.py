@@ -1,22 +1,13 @@
 import asyncio
-from asyncio import Queue
 
 from loguru import logger
 
 from core.bot import NotificationBot, NotificationMsg
 from core.common import initializer
-from core.common.config_loader import ConfigLoader
-
-new_res_q = Queue()
-downloading_res_q = Queue()
-success_res_q = Queue()
-rename_q = Queue()
-config_loader = ConfigLoader("config.yaml")
+from core.common.globalvar import config_loader, success_res_q
 
 
-async def send_notification(
-    success_res_q: Queue, notification_bots: list[NotificationBot]
-):
+async def send_notification(notification_bots: list[NotificationBot]):
     while True:
         success_resources = []
         while not success_res_q.empty():
@@ -48,12 +39,10 @@ async def main():
     interval_time = config_loader.get("common.interval_time")
 
     tasks = [
-        rss_monitor.run(new_res_q, interval_time),
-        downloader.run(
-            new_res_q, downloading_res_q, config_loader.get("alist.download_path")
-        ),
-        download_monitor.run(downloading_res_q, success_res_q),
-        send_notification(success_res_q, notification_bots),
+        rss_monitor.run(interval_time),
+        downloader.run(config_loader.get("alist.download_path")),
+        download_monitor.run(),
+        send_notification(notification_bots),
     ]
     await asyncio.gather(*tasks)
 
