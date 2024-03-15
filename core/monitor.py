@@ -130,11 +130,11 @@ class AlistDownloadMonitor:
         else:
             self.remove_failed_resource([resource])
 
-    async def run(self):
+    async def run(self, interval_time: int = 1):
         first_run = True
         while True:
             if not first_run:
-                await asyncio.sleep(1)
+                await asyncio.sleep(interval_time)
             while not downloading_res_q.empty():
                 resource: MikanAnimeResource = await downloading_res_q.get()
                 logger.debug(f"Start monitor {resource.resource_title}")
@@ -225,5 +225,6 @@ class MikanRSSMonitor:
                             continue
                     logger.debug(f"Find new resource: {resource.resource_title}")
                     await new_res_q.put(resource)
-
+            if interval_time == 0:
+                break
             first_run = False

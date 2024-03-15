@@ -25,11 +25,11 @@ class AlistDownloader:
             resource_group[resource.anime_name][resource.season].append(resource)
         return resource_group
 
-    async def run(self, download_path: str):
+    async def run(self, download_path: str, interval_time: int = 10):
         first_run = True
         while True:
             if not first_run:
-                await asyncio.sleep(10)
+                await asyncio.sleep(interval_time)
             new_resources = []
             while not new_res_q.empty():
                 new_resources.append(await new_res_q.get())

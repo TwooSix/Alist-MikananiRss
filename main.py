@@ -7,7 +7,9 @@ from core.common import initializer
 from core.common.globalvar import config_loader, success_res_q
 
 
-async def send_notification(notification_bots: list[NotificationBot]):
+async def send_notification(
+    notification_bots: list[NotificationBot], interval_time: int = 10
+):
     while True:
         success_resources = []
         while not success_res_q.empty():
@@ -22,7 +24,7 @@ async def send_notification(notification_bots: list[NotificationBot]):
             for result in results:
                 if isinstance(result, Exception):
                     logger.error(result)
-        await asyncio.sleep(10)
+        await asyncio.sleep(interval_time)
 
 
 @logger.catch
@@ -42,7 +44,7 @@ async def main():
         rss_monitor.run(interval_time),
         downloader.run(config_loader.get("alist.download_path")),
         download_monitor.run(),
-        send_notification(notification_bots),
+        send_notification(notification_bots, interval_time),
     ]
     await asyncio.gather(*tasks)
 
