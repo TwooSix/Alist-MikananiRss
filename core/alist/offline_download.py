@@ -62,6 +62,7 @@ class TransferTask(Task):
         super().__init__(tid, description, status, progress, error_msg)
         self.download_task_id = None
         self.__init_uuid()
+        self.__init_file_name()
 
     def __init_uuid(self):
         start = self.description.find("data/temp/") + len("data/temp/")
@@ -70,7 +71,17 @@ class TransferTask(Task):
         uuid = self.description[start:end]
         self.uuid = uuid
         if uuid is None:
-            print(self.description)
+            logger.error(f"Can't find uuid in task {self.tid}: {self.description}")
+
+    def __init_file_name(self):
+        start = self.description.find("data/temp/") + len("data/temp/")
+        start = self.description.find("/", start) + 1
+        start = self.description.find("/", start) + 1
+        end = self.description.find(" to", start)
+        file_name = self.description[start:end]
+        self.file_name = file_name
+        if file_name is None:
+            logger.error(f"Can't find file name in task {self.tid}: {self.description}")
 
     def set_download_task(self, task: Task):
         self.download_task_id = task.tid
@@ -85,6 +96,7 @@ class DownloadTask(Task):
         self.transfer_task_id = set()
         self.is_started_transfer = False
         self.uuid = None
+        self.url = None
         self.__init_url()
 
     def __init_url(self):
@@ -125,13 +137,17 @@ class TaskList:
         else:
             raise TypeError("Operands must be instance of TaskList")
 
-    def __getitem__(self, id: str) -> Task|None:
-        if id not in self.id_task_map:
-            return None
-        return self.id_task_map[id]
+    def __getitem__(self, index: int | str) -> DownloadTask | TransferTask | None:
+        if isinstance(index, int):
+            return self.tasks[index]
+        elif isinstance(index, str):
+            return self.id_task_map.get(index)
 
     def __contains__(self, task: Task):
         return task.tid in self.id_task_map
+
+    def __len__(self):
+        return len(self.tasks)
 
     def __iter__(self):
         return iter(self.tasks)

@@ -3,8 +3,8 @@ import time
 import aiohttp
 import bs4
 
+from core import extractor
 from core.alist.offline_download import DownloadTask
-from core.common import extractor
 
 
 def get_torrent_url(feed_entry) -> str:
@@ -70,6 +70,12 @@ class MikanAnimeResource:
 
     def set_download_task(self, task: DownloadTask):
         self.download_task = task
+
+    async def extract(self, extractor: extractor.Regex | extractor.ChatGPT):
+        info = await extractor.analyse_resource_name(self.resource_title)
+        self.episode = info["episode"]
+        if "season" in info:
+            self.season = info["season"]
 
     def __repr__(self):
         return (

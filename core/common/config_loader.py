@@ -10,15 +10,15 @@ class ConfigLoader:
         with open(self.config_path, "r", encoding="utf-8") as file:
             return yaml.safe_load(file)
 
-    def get(self, path, default=None):
+    def get(self, path, default=...):
         keys = path.split(".")
         value = self.config
         for key in keys:
             if value.get(key) is None:
-                if default is not None:
+                if default is not ...:
                     return default
                 else:
-                    raise ValueError(
+                    raise KeyError(
                         f"{path} is not found in config file {self.config_path}"
                     )
             value = value[key]

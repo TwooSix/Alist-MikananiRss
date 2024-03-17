@@ -1,5 +1,5 @@
 common:
-  interval_time: 300 # 定时执行的间隔时间，单位为秒，0 为只运行一次
+  interval_time: 300 # 定时执行的间隔时间，单位为秒，须>=0
   proxies: # 代理设置，可选
     http: http://127.0.0.1:7890
     https: http://127.0.0.1:7890
@@ -7,8 +7,7 @@ common:
 alist:
   base_url: http[s]://www.example.com # alist访问链接
   # base_url: http://127.0.0.1:port
-  user_name: username # 管理员用户名/密码
-  password: password
+  token: alist-xxx # Alist令牌；可在"管理员后台->设置->其他"中找到
   downloader: aria2 # 下载器，可选项为aria2和qBittorrent
   download_path: Onedrive/Anime # 下载路径，相对于alist根目录
 
@@ -16,28 +15,32 @@ mikan:
   subscribe_url: https://mikanani.me/RSS/MyBangumi?token=xxx # 蜜柑订阅链接
   regex_pattern: # 自定义正则表达式，可选（以下规则已内置，可通过自定义覆盖）
     简体: "(简体|简中|简日|CHS)"
-    繁体: "(繁体|繁中|繁日|CHT|Baha)",
-    1080p: "(X1080|1080P)",
-    非合集: "^(?!(\d{2}-\d{2}|合集))",
+    繁体: "(繁体|繁中|繁日|CHT|Baha)"
+    1080p: "(X1080|1080P)"
+    非合集: "^(?!.*(\\d{2}-\\d{2}|合集)).*"
   filters: # 表达式名，可选，用于过滤番剧，不符合表达式的番剧将不会被下载(无视大小写匹配)
     - 1080p
     - 非合集
+
     
 notification: # 通知设置，可选
-  telegram: 
+  telegram: # tg通知设置
     bot_token: your_token
     user_id: your_id
-  anpush:
+  anpush: # anpush推送, 目前收费，不建议使用
     token: your_token
     channel: 
       - channel_id1
       - channel_id2
 
 rename: # 重命名设置，可选
-  chatgpt:
+  # gpt和正则二选一，优先使用gpt
+  chatgpt: # 使用chatgpt解析资源名
     api_key: sk-xxx
     base_url: https://example.com/v1
     model: gpt-3.5-turbo
+
+  regex: ~ # 使用正则表达式解析资源名
 
 dev: # 开发设置，可选
   log_level: INFO

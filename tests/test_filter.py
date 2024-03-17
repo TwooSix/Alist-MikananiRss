@@ -2,7 +2,7 @@ from enum import Enum
 
 import pytest
 
-from core.common.filters import RegexFilter
+from core.filters import RegexFilter
 
 
 class ResourceTag(Enum):
@@ -51,6 +51,10 @@ class TestRegexFilter:
             "[GJ.Y] 我内心的糟糕念头 第二季 / Boku no Kokoro no Yabai Yatsu Season 2 - 14 (Baha 1920x1080 AVC AAC MP4)": [
                 ResourceTag.CHT,
                 ResourceTag.P1080,
+            ],
+            "[喵萌奶茶屋&LoliHouse] 僵尸100 ~变成僵尸前想要完成的100件事~ / Zom 100: Zombie ni Naru made ni Shitai 100 no Koto [01-12 精校合集][WebRip 1080p HEVC-10bit AAC][简繁日内封字幕][Fin]": [
+                ResourceTag.P1080,
+                ResourceTag.COLLECTION,
             ],
         }
         return _resources

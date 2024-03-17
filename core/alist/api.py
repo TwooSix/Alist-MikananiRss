@@ -15,27 +15,19 @@ from core.alist.offline_download import (
 
 
 class Alist:
-    def __init__(self, base_url: str, downloader: DownloaderType | str) -> None:
+    def __init__(
+        self, base_url: str, downloader: DownloaderType | str, token: str
+    ) -> None:
         self.base_url = base_url
-        self.is_login = False
         if isinstance(downloader, str):
             downloader = DownloaderType(downloader)
         self.downloader = downloader
+        self.token = token
         self.headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
-                " like Gecko) Chrome/112.0.0.0 Safari/537.36 Edg/112.0.1722.39"
-            ),
+            "User-Agent": "Alist-Mikanirss/v0.0",
             "Content-Type": "application/json",
+            "Authorization": token,
         }
-
-    @classmethod
-    async def create(cls, base_url: str, downloader: DownloaderType | str):
-        """Create Alist client asynchronously"""
-        client = cls(base_url, downloader)
-        await client.__init_alist_ver()
-        assert client.version >= "3.29.0", "Alist version must be greater than 3.29.0"
-        return client
 
     async def __get_json_data(self, response: aiohttp.ClientResponse):
         """Get JSON data from response asynchronously"""
@@ -52,43 +44,21 @@ class Alist:
             )
         return json_data["data"]
 
-    async def __init_alist_ver(self):
+    async def __init_alist_version(self):
         api_url = urllib.parse.urljoin(self.base_url, "/api/public/settings")
         async with aiohttp.ClientSession(trust_env=True) as session:
             async with session.get(api_url) as response:
                 json_data = await self.__get_json_data(response)
                 self.version = json_data["version"][1:]  # 去掉字母v
 
-    async def login(self, username: str, password: str):
-        """Login to Alist and get authorization token asynchronously"""
-        api_url = urllib.parse.urljoin(self.base_url, "api/auth/login")
-        body = {"username": username, "password": password}
-        async with aiohttp.ClientSession(trust_env=True) as session:
-            async with session.post(
-                api_url, headers=self.headers, json=body
-            ) as response:
-                json_data = await self.__get_json_data(response)
-            self.token = json_data["token"]
-            self.headers["Authorization"] = self.token
-            self.is_login = True
-
-            return True
-
-    def check_login(self):
-        """Check if user has logged in"""
-        assert self.is_login, "Please login first"
-
-    async def wait_for_login(self, timeout: int = 30):
-        async def wait_loop():
-            while not self.is_login:
-                await asyncio.sleep(0.1)
-
-        await asyncio.wait_for(wait_loop(), timeout)
+    async def get_alist_ver(self):
+        if not hasattr(self, "version"):
+            await self.__init_alist_version()
+        return self.version
 
     async def add_offline_download_task(
         self, save_path: str, urls: list[str]
     ) -> TaskList:
-        self.check_login()
         api_url = urllib.parse.urljoin(self.base_url, "api/fs/add_offline_download")
         body = {
             "delete_policy": DeletePolicy.DeleteOnUploadSucceed.value,
@@ -104,7 +74,6 @@ class Alist:
         return TaskList([DownloadTask.from_json(task) for task in json_data["tasks"]])
 
     async def upload(self, save_path: str, file_path: str) -> bool:
-        self.check_login()
         api_url = urllib.parse.urljoin(self.base_url, "api/fs/put")
         file_path = os.path.abspath(file_path)
         file_name = os.path.basename(file_path)
@@ -144,8 +113,6 @@ class Alist:
         Returns:
             Tuple[bool, List[str]]: Success flag and a list of files in the dir.
         """
-        self.check_login()
-
         api_url = urllib.parse.urljoin(self.base_url, "api/fs/list")
         body = {
             "path": path,
@@ -175,8 +142,6 @@ class Alist:
         Returns:
             Tuple[bool, List[Task]]: Success flag and a list of Tasks.
         """
-        self.check_login()
-
         # Mapping of type and web pages based on version and downloader.
         web_page_mapping = {
             "download": {
@@ -236,7 +201,6 @@ class Alist:
         return task_list
 
     async def rename(self, path, new_name):
-        self.check_login()
         api = "/api/fs/rename"
         api_url = urllib.parse.urljoin(self.base_url, api)
         body = {

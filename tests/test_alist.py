@@ -1,49 +1,101 @@
 import pytest
-import pytest_asyncio
+from aioresponses import aioresponses
 
-from core.alist import Alist
-from core.common import initializer
-from core.common.config_loader import ConfigLoader
-
-initializer.setup_proxy()
-config_loader = ConfigLoader("config.yaml")
+from core.alist.api import Alist
 
 
-class TestAlist:
-    @pytest.fixture
-    def remote_path(self):
-        remote_path = config_loader.get("alist.download_path")
-        return remote_path
+@pytest.fixture
+def alist_client():
+    # 创建 Alist 实例
+    return Alist(base_url="http://fake-url.com", downloader="aria2", token="fake-token")
 
-    @pytest_asyncio.fixture
-    async def alist(self):
-        alist = await initializer.init_alist()
-        user_name = config_loader.get("alist.user_name")
-        password = config_loader.get("alist.password")
-        await alist.login(user_name, password)
-        return alist
 
-    @pytest.mark.asyncio
-    async def test_add_offline_download_task(self, alist: Alist, remote_path):
-        urls = [
-            "https://releases.ubuntu.com/20.04/ubuntu-20.04.6-live-server-amd64.iso.torrent"
-        ]
-        await alist.add_offline_download_task(remote_path, urls)
+@pytest.fixture
+def mock_aioresponse():
+    with aioresponses() as m:
+        yield m
 
-    @pytest.mark.asyncio
-    async def test_get_offline_download_task(self, alist: Alist):
-        await alist.get_offline_download_task_list()
 
-    @pytest.mark.asyncio
-    async def test_get_offline_transfer_task(self, alist: Alist):
-        await alist.get_offline_transfer_task_list()
+@pytest.mark.asyncio
+async def test_get_alist_ver(alist_client, mock_aioresponse):
+    mock_aioresponse.get(
+        "http://fake-url.com/api/public/settings",
+        payload={"code": 200, "data": {"version": "v1.0.0"}},
+    )
 
-    @pytest.mark.asyncio
-    async def test_upload(self, alist: Alist, remote_path):
-        test_file = "./tests/test_upload.txt"
-        result = await alist.upload(remote_path, test_file)
-        assert result is True
+    version = await alist_client.get_alist_ver()
+    assert version == "1.0.0"
 
-    @pytest.mark.asyncio
-    async def test_list_dir(self, alist: Alist, remote_path):
-        await alist.list_dir(remote_path)
+
+@pytest.mark.asyncio
+async def test_add_offline_download_task(alist_client: Alist, mock_aioresponse):
+    torrent_url = "http://example.com/file"
+    download_path = "/save/path"
+    mock_aioresponse.post(
+        "http://fake-url.com/api/fs/add_offline_download",
+        payload={
+            "code": 200,
+            "data": {
+                "tasks": [
+                    {
+                        "error": "",
+                        "id": "123",
+                        "name": f"download {torrent_url} to ({download_path})",
+                        "progress": 0,
+                        "state": 0,
+                        "status": "",
+                    }
+                ]
+            },
+            "message": "success",
+        },
+    )
+
+    task_list = await alist_client.add_offline_download_task(
+        download_path, [torrent_url]
+    )
+    assert len(task_list) == 1
+    assert task_list[0].tid == "123"
+    assert task_list[0].url == torrent_url
+
+
+@pytest.mark.asyncio
+async def test_list_dir(alist_client: Alist, mock_aioresponse):
+    mock_aioresponse.post(
+        "http://fake-url.com/api/fs/list",
+        payload={
+            "code": 200,
+            "message": "success",
+            "data": {
+                "content": [
+                    {
+                        "name": "m",
+                        "size": 0,
+                        "is_dir": True,
+                        "modified": "2023-07-19T09:48:13.695585868+08:00",
+                        "sign": "",
+                        "thumb": "",
+                        "type": 1,
+                    }
+                ],
+                "total": 1,
+                "readme": "",
+                "write": True,
+                "provider": "unknown",
+            },
+        },
+    )
+
+    file_list = await alist_client.list_dir("/")
+    assert file_list[0] == "m"
+
+
+@pytest.mark.asyncio
+async def test_rename(alist_client: Alist, mock_aioresponse):
+    mock_aioresponse.post(
+        "http://fake-url.com/api/fs/rename",
+        payload={"code": 200, "message": "success", "data": None},
+    )
+
+    res = await alist_client.rename("1", "2")
+    assert res
