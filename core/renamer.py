@@ -11,27 +11,27 @@ class Renamer:
         self.alist = alist
         self.download_path = download_path
 
-    async def __build_new_name(self, resource: MikanAnimeResource, local_title: str):
+    async def __build_new_name(self, resource: MikanAnimeResource, old_filename: str):
         name = resource.anime_name
         season = resource.season
         episode = resource.episode
-        ext = local_title.split(".")[-1]
+        ext = old_filename.split(".")[-1]
         if season == 0:
             # 总集篇/OVA 则以顺序命名
-            dir_path = os.path.join(self.download_path, name, f"Season {season}")
-            file_list = await self.alist.list_dir(dir_path, per_page=999)
+            abs_dir_path = os.path.join(self.download_path, name, f"Season {season}")
+            file_list = await self.alist.list_dir(abs_dir_path, per_page=999)
             episode = len(file_list)
-        new_name = f"{name} S{season:02}E{episode:02}.{ext}"
-        return new_name
+        new_filename = f"{name} S{season:02}E{episode:02}.{ext}"
+        return new_filename
 
-    async def rename(self, local_title: str, resource: MikanAnimeResource):
+    async def rename(self, old_filename: str, resource: MikanAnimeResource):
         name, season = resource.anime_name, resource.season
-        filepath = os.path.join(
-            self.download_path, name, f"Season {season}", local_title
+        abs_filepath = os.path.join(
+            self.download_path, name, f"Season {season}", old_filename
         )
-        new_name = await self.__build_new_name(resource, local_title)
+        new_filename = await self.__build_new_name(resource, old_filename)
         try:
-            await self.alist.rename(filepath, new_name)
+            await self.alist.rename(abs_filepath, new_filename)
         except Exception as e:
-            logger.error(f"Error when rename {filepath}: {e}")
-        logger.info(f"Rename {filepath} to {new_name}")
+            logger.error(f"Error when rename {abs_filepath}: {e}")
+        logger.info(f"Rename {abs_filepath} to {new_filename}")
