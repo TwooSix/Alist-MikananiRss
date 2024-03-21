@@ -37,8 +37,8 @@ rename: # 重命名设置，可选
   # gpt和正则二选一，优先使用gpt
   chatgpt: # 使用chatgpt解析资源名
     api_key: sk-xxx
-    base_url: https://example.com/v1
-    model: gpt-3.5-turbo
+    base_url: https://example.com/v1 # 可选，不填则默认为openai官方
+    model: gpt-3.5-turbo # 可选，不填则默认为gpt-3.5-turbo
 
   regex: ~ # 使用正则表达式解析资源名
 

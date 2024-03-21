@@ -26,11 +26,11 @@ git clone https://github.com/TwooSix/Alist-MikananiRss.git && cd Alist-MikananiR
 ```shell
 pip install -r requirements.txt
 ```
-1. 在目录下新建一个`config.yaml`配置文件，并填写配置文件，简单示例见`example.yaml`，完整功能示例见`example_full.yaml`
+3. 在目录下新建一个`config.yaml`配置文件，并填写配置文件，简单示例见`example.yaml`，完整功能示例见`example_full.yaml`
 
-2. 运行代码：`python main.py`  
+4. 运行代码：`python main.py`  
 
-3. Enjoy
+5. Enjoy
 
 ## 重命名效果展示
 <div align=center>
