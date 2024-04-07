@@ -58,6 +58,7 @@ class ChatGPT:
                 raise TypeError(
                     f"Chatgpt provide a wrong type of quality: {data['quality']}"
                 )
+            data.pop("season")
             # 是否总集篇(集数为浮点数)
             is_special = data["episode"] != int(data["episode"])
             if is_special:
