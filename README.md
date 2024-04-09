@@ -47,8 +47,8 @@
      subscribe_url: https://mikanani.me/RSS/MyBangumi?token=xxx # 修改为你的蜜柑订阅地址
    
    filters:
-    - 1080p
-    - 非合集
+     - 1080p
+     - 非合集
    
    rename:
      regex: ~
