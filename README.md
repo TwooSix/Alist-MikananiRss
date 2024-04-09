@@ -13,6 +13,11 @@
 - telegram更新通知
 - 自动重命名为emby可识别格式
 
+## 重命名效果展示
+<div align=center>
+<img src="https://github.com/TwooSix/Alist-MikananiRss/blob/master/imgs/show_pic1.png"/>
+</div>
+
 ## 准备工作 
 1. 请自行参照[Alist](https://github.com/alist-org/alist)项目文档部署Alist（版本须>=3.29.0），并搭建好Aria2/qBittorrent离线下载
 2. 自行注册蜜柑计划账户，订阅番剧，获取订阅链接
@@ -47,9 +52,8 @@
      subscribe_url: https://mikanani.me/RSS/MyBangumi?token=xxx # 修改为你的蜜柑订阅地址
    
    filters:
-    - 1080p
-    - 非合集
-    - 简体
+     - 1080p
+     - 非合集
    
    rename:
      regex: ~
@@ -57,8 +61,3 @@
 4. 运行代码：`rye run alist-mikananirss`  
 
 5. Enjoy
-
-## 重命名效果展示
-<div align=center>
-<img src="https://github.com/TwooSix/Alist-MikananiRss/blob/master/imgs/show_pic1.png"/>
-</div>
