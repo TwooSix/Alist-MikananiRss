@@ -35,7 +35,7 @@
    ```
 3. 初始化运行环境
    ```shell
-   rye sync
+   rye sync --no-dev
    ```
 3. 在目录下新建一个`config.yaml`配置文件，并填写配置文件如下(完整功能示例详解见`example_full.yaml`)
    ```yaml
