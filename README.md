@@ -49,7 +49,6 @@
    filters:
     - 1080p
     - 非合集
-    - 简体
    
    rename:
      regex: ~
