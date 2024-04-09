@@ -18,17 +18,43 @@
 2. 自行注册蜜柑计划账户，订阅番剧，获取订阅链接
 
 ## 如何使用
-1. 下载源码
-```shell
-git clone https://github.com/TwooSix/Alist-MikananiRss.git && cd Alist-MikananiRss
-```
-2. 安装依赖(Python==3.11)
-```shell
-pip install -r requirements.txt
-```
-3. 在目录下新建一个`config.yaml`配置文件，并填写配置文件，简单示例见`example.yaml`，完整功能示例见`example_full.yaml`
-
-4. 运行代码：`python main.py`  
+1. 参考[官方文档](https://rye-up.com/guide/installation/)安装Rye 
+   - linux:
+   ```shell
+   curl -sSf https://rye-up.com/get | bash
+   ```
+   - windows: [rye-x86_64-windows.exe](https://github.com/astral-sh/rye/releases/latest/download/rye-x86_64-windows.exe) for 64bit Intel Windows
+2. 下载源码
+   ```shell
+   git clone https://github.com/TwooSix/Alist-MikananiRss.git && cd Alist-MikananiRss
+   ```
+3. 初始化运行环境
+   ```shell
+   rye sync
+   ```
+3. 在目录下新建一个`config.yaml`配置文件，并填写配置文件如下(完整功能示例详解见`example_full.yaml`)
+   ```yaml
+   common:
+     interval_time: 300
+   
+   alist:
+     base_url: https://example.com # 修改为你的alist访问地址
+     token: alist-xxx # 修改为你的alist token；可在"管理员后台->设置->其他"中找到
+     downloader: qBittorrent
+     download_path: Onedrive/Anime
+   
+   mikan:
+     subscribe_url: https://mikanani.me/RSS/MyBangumi?token=xxx # 修改为你的蜜柑订阅地址
+   
+   filters:
+    - 1080p
+    - 非合集
+    - 简体
+   
+   rename:
+     regex: ~
+   ```
+4. 运行代码：`rye run alist-mikananirss`  
 
 5. Enjoy
 
