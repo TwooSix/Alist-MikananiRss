@@ -15,13 +15,14 @@ class Renamer:
         name = resource.anime_name
         season = resource.season
         episode = resource.episode
+        fansub = resource.fansub
         ext = old_filename.split(".")[-1]
         if season == 0:
             # 总集篇/OVA 则以顺序命名
             abs_dir_path = os.path.join(self.download_path, name, f"Season {season}")
             file_list = await self.alist.list_dir(abs_dir_path, per_page=999)
             episode = len(file_list)
-        new_filename = f"{name} S{season:02}E{episode:02}.{ext}"
+        new_filename = f"{name} S{season:02}E{episode:02} {fansub}.{ext}"
         return new_filename
 
     async def rename(self, old_filename: str, resource: MikanAnimeResource):

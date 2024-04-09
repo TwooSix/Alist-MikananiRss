@@ -32,6 +32,8 @@ dev-dependencies = [
     "aioresponses>=0.7.6",
     "ruff>=0.3.5",
     "black>=24.3.0",
+    "ipykernel>=6.29.4",
+    "requests>=2.31.0",
 ]
 
 [tool.hatch.metadata]
