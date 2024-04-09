@@ -40,8 +40,8 @@
    alist:
      base_url: https://example.com # 修改为你的alist访问地址
      token: alist-xxx # 修改为你的alist token；可在"管理员后台->设置->其他"中找到
-     downloader: qBittorrent
-     download_path: Onedrive/Anime
+     downloader: qBittorrent # 或者 aria2
+     download_path: Onedrive/Anime # 修改为你的下载路径，相对于alist根目录
    
    mikan:
      subscribe_url: https://mikanani.me/RSS/MyBangumi?token=xxx # 修改为你的蜜柑订阅地址
