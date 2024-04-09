@@ -77,7 +77,7 @@ class TransferTask(Task):
         start = self.description.find("data/temp/") + len("data/temp/")
         start = self.description.find("/", start) + 1
         start = self.description.find("/", start) + 1
-        end = self.description.find(" to", start)
+        end = self.description.find(" to [", start)
         file_name = self.description[start:end]
         self.file_name = file_name
         if file_name is None:

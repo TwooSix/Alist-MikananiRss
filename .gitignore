@@ -13,3 +13,6 @@ wheels/
 data/
 log/
 config.yaml
+
+# debug file
+*.ipynb
