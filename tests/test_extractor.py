@@ -2,10 +2,9 @@
 
 
 import pytest
-
-from core.common import initializer
-from core.common.globalvar import config_loader
-from core.extractor import ChatGPT, Regex
+from alist_mikananirss.common import initializer
+from alist_mikananirss.common.globalvar import config_loader
+from alist_mikananirss.extractor import ChatGPT, Regex
 
 initializer.setup_proxy()
 

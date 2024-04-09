@@ -4,7 +4,7 @@ from datetime import datetime
 
 from loguru import logger
 
-from core.mikan import MikanAnimeResource
+from alist_mikananirss.mikan import MikanAnimeResource
 
 db_path = "data"
 os.makedirs(db_path, exist_ok=True)

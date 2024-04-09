@@ -1,8 +1,7 @@
 from enum import Enum
 
 import pytest
-
-from core.filters import RegexFilter
+from alist_mikananirss.filters import RegexFilter
 
 
 class ResourceTag(Enum):

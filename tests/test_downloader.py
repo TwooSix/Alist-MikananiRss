@@ -2,9 +2,8 @@ import os
 from unittest.mock import MagicMock
 
 import pytest
-
-from core.downloader import AlistDownloader
-from core.mikan import MikanAnimeResource
+from alist_mikananirss.downloader import AlistDownloader
+from alist_mikananirss.mikan import MikanAnimeResource
 
 
 class TestsAlistDonwloader:

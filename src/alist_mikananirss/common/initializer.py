@@ -3,13 +3,13 @@ import sys
 
 from loguru import logger
 
-from core.alist import Alist
-from core.bot import NotificationBot, TelegramBot
-from core.common.config_loader import ConfigLoader
-from core.downloader import AlistDownloader
-from core.extractor import ChatGPT, Regex
-from core.filters import RegexFilter
-from core.monitor import AlistDownloadMonitor, MikanRSSMonitor
+from alist_mikananirss.alist import Alist
+from alist_mikananirss.bot import NotificationBot, TelegramBot
+from alist_mikananirss.common.config_loader import ConfigLoader
+from alist_mikananirss.downloader import AlistDownloader
+from alist_mikananirss.extractor import ChatGPT, Regex
+from alist_mikananirss.filters import RegexFilter
+from alist_mikananirss.monitor import AlistDownloadMonitor, MikanRSSMonitor
 
 config_loader = ConfigLoader("config.yaml")
 

@@ -1,0 +1,41 @@
+[project]
+name = "alist-mikananirss"
+version = "0.1.0"
+description = "Automatically fetch anime updates from the Mikan Project's RSS feed and offline download them to the cloud drive through Alist."
+authors = [
+    { name = "TwoSix", email = "ljj2288@gmail.com" }
+]
+dependencies = [
+    "aiohttp>=3.9.3",
+    "asyncio>=3.4.3",
+    "feedparser>=6.0.11",
+    "beautifulsoup4>=4.12.3",
+    "openai==1.7.0",
+    "pyyaml>=6.0.1",
+    "loguru>=0.7.2",
+]
+readme = "README.md"
+requires-python = ">= 3.11"
+
+[project.scripts]
+"alist-mikananirss" = "alist_mikananirss:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.rye]
+managed = true
+dev-dependencies = [
+    "pytest>=8.1.1",
+    "pytest-asyncio>=0.23.6",
+    "aioresponses>=0.7.6",
+    "ruff>=0.3.5",
+    "black>=24.3.0",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/alist_mikananirss"]

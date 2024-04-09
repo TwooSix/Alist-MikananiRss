@@ -3,10 +3,10 @@ import os
 
 from loguru import logger
 
-from core.alist import Alist
-from core.alist.offline_download import TaskList
-from core.common.globalvar import downloading_res_q, new_res_q
-from core.mikan import MikanAnimeResource
+from alist_mikananirss.alist import Alist
+from alist_mikananirss.alist.offline_download import TaskList
+from alist_mikananirss.common.globalvar import downloading_res_q, new_res_q
+from alist_mikananirss.mikan import MikanAnimeResource
 
 
 class AlistDownloader:

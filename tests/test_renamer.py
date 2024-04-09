@@ -2,9 +2,8 @@ import os
 from unittest.mock import AsyncMock
 
 import pytest
-
-from core.mikan import MikanAnimeResource
-from core.renamer import Renamer
+from alist_mikananirss.mikan import MikanAnimeResource
+from alist_mikananirss.renamer import Renamer
 
 
 @pytest.fixture

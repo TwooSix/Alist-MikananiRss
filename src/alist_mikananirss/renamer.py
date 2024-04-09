@@ -2,8 +2,8 @@ import os
 
 from loguru import logger
 
-from core.alist.api import Alist
-from core.mikan import MikanAnimeResource
+from alist_mikananirss.alist.api import Alist
+from alist_mikananirss.mikan import MikanAnimeResource
 
 
 class Renamer:

@@ -1,7 +1,6 @@
 import pytest
-
-from core.bot import NotificationMsg
-from core.common import initializer
+from alist_mikananirss.bot import NotificationMsg
+from alist_mikananirss.common import initializer
 
 initializer.setup_proxy()
 

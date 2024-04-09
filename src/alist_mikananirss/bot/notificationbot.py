@@ -1,4 +1,4 @@
-from core.mikan import MikanAnimeResource
+from alist_mikananirss.mikan import MikanAnimeResource
 
 from . import BotBase, MsgType
 

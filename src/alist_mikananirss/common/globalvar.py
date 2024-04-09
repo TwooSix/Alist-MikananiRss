@@ -1,6 +1,6 @@
 from asyncio import Queue
 
-from core.common.config_loader import ConfigLoader
+from alist_mikananirss.common.config_loader import ConfigLoader
 
 new_res_q = Queue()
 downloading_res_q = Queue()

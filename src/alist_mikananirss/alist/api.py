@@ -1,11 +1,10 @@
-import asyncio
 import mimetypes
 import os
 import urllib.parse
 
 import aiohttp
 
-from core.alist.offline_download import (
+from alist_mikananirss.alist.offline_download import (
     DeletePolicy,
     DownloaderType,
     DownloadTask,

@@ -2,9 +2,9 @@ import asyncio
 
 from loguru import logger
 
-from core.bot import NotificationBot, NotificationMsg
-from core.common import initializer
-from core.common.globalvar import config_loader, success_res_q
+from alist_mikananirss.bot import NotificationBot, NotificationMsg
+from alist_mikananirss.common import initializer
+from alist_mikananirss.common.globalvar import config_loader, success_res_q
 
 
 async def send_notification(
@@ -28,7 +28,7 @@ async def send_notification(
 
 
 @logger.catch
-async def main():
+async def run():
     # init
     initializer.setup_logger()
     initializer.setup_proxy()
@@ -51,5 +51,5 @@ async def main():
     await asyncio.gather(*tasks)
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+def main():
+    asyncio.run(run())

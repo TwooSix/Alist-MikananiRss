@@ -4,14 +4,22 @@ from asyncio import Queue
 import feedparser
 from loguru import logger
 
-from core import extractor
-from core.alist.api import Alist
-from core.alist.offline_download import DownloadTask, TaskStatus, TransferTask
-from core.common.database import SubscribeDatabase
-from core.common.globalvar import downloading_res_q, new_res_q, success_res_q
-from core.filters import RegexFilter
-from core.mikan import MikanAnimeResource
-from core.renamer import Renamer
+from alist_mikananirss import extractor
+from alist_mikananirss.alist.api import Alist
+from alist_mikananirss.alist.offline_download import (
+    DownloadTask,
+    TaskStatus,
+    TransferTask,
+)
+from alist_mikananirss.common.database import SubscribeDatabase
+from alist_mikananirss.common.globalvar import (
+    downloading_res_q,
+    new_res_q,
+    success_res_q,
+)
+from alist_mikananirss.filters import RegexFilter
+from alist_mikananirss.mikan import MikanAnimeResource
+from alist_mikananirss.renamer import Renamer
 
 
 class TaskMonitor:
