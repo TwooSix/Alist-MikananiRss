@@ -36,14 +36,21 @@ class Renamer:
         )
         return new_filename
 
-    async def rename(self, old_filename: str, resource: MikanAnimeResource):
+    async def rename(
+        self, old_filename: str, resource: MikanAnimeResource, max_retry=3
+    ):
         name, season = resource.anime_name, resource.season
         abs_filepath = os.path.join(
             self.download_path, name, f"Season {season}", old_filename
         )
         new_filename = await self.__build_new_name(resource, old_filename)
-        try:
-            await self.alist.rename(abs_filepath, new_filename)
-        except Exception as e:
-            logger.error(f"Error when rename {abs_filepath}: {e}")
-        logger.info(f"Rename {abs_filepath} to {new_filename}")
+        for i in range(max_retry):
+            try:
+                await self.alist.rename(abs_filepath, new_filename)
+                logger.info(f"Rename {abs_filepath} to {new_filename}")
+                break
+            except Exception as e:
+                if i < max_retry - 1:
+                    logger.warning(f"Failed to rename {abs_filepath}, retrying...: {e}")
+                else:
+                    logger.error(f"Error when rename {abs_filepath}: {e}")
