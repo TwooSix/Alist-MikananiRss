@@ -7,9 +7,18 @@ from alist_mikananirss.mikan import MikanAnimeResource
 
 
 class Renamer:
-    def __init__(self, alist: Alist, download_path: str):
+    def __init__(
+        self,
+        alist: Alist,
+        download_path: str,
+        rename_format: str = None,
+    ):
         self.alist = alist
         self.download_path = download_path
+        if rename_format is None:
+            self.rename_format = "{name} S{season:02d}E{episode:02d}.{ext}"
+        else:
+            self.rename_format = rename_format
 
     async def __build_new_name(self, resource: MikanAnimeResource, old_filename: str):
         name = resource.anime_name
@@ -22,7 +31,9 @@ class Renamer:
             abs_dir_path = os.path.join(self.download_path, name, f"Season {season}")
             file_list = await self.alist.list_dir(abs_dir_path, per_page=999)
             episode = len(file_list)
-        new_filename = f"{name} S{season:02}E{episode:02} {fansub}.{ext}"
+        new_filename = self.rename_format.format(
+            name=name, season=season, episode=episode, ext=ext, fansub=fansub
+        )
         return new_filename
 
     async def rename(self, old_filename: str, resource: MikanAnimeResource):

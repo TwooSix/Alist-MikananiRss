@@ -10,6 +10,7 @@ from alist_mikananirss.downloader import AlistDownloader
 from alist_mikananirss.extractor import ChatGPT, Regex
 from alist_mikananirss.filters import RegexFilter
 from alist_mikananirss.monitor import AlistDownloadMonitor, MikanRSSMonitor
+from alist_mikananirss.renamer import Renamer
 
 config_loader = ConfigLoader("config.yaml")
 
@@ -100,11 +101,14 @@ def init_mikan_rss_monitor(regex_filter: RegexFilter):
 def init_download_monitor(alist_client: Alist):
     download_path = config_loader.get("alist.download_path")
     rename_cfg = config_loader.get("rename", None)
-    use_renamer = False if rename_cfg is None else True
+    renamer = None
+    if rename_cfg is not None:
+        rename_format = config_loader.get("rename.rename_format", None)
+        renamer = Renamer(alist_client, download_path, rename_format)
     download_monitor_thread = AlistDownloadMonitor(
         alist_client,
         download_path,
-        use_renamer,
+        renamer,
     )
     return download_monitor_thread
 

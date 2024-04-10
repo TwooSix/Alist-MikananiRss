@@ -66,15 +66,14 @@ class AlistDownloadMonitor:
         self,
         alist: Alist,
         download_path,
-        use_renamer=False,
+        renamer: Renamer = None,
     ):
         self.alist = alist
         self.download_path = download_path
-        self.use_renamer = use_renamer
         self.transfer_uuid_set = set()
         self.db = SubscribeDatabase()
-        if use_renamer:
-            self.renamer = Renamer(alist, download_path)
+        self.use_renamer = renamer is not None
+        self.renamer = renamer
 
     async def find_transfer_task(self, resource: MikanAnimeResource):
         while True:

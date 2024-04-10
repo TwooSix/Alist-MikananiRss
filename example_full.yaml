@@ -23,7 +23,7 @@ mikan:
     - 非合集
 
     
-notification: # 通知设置，可选
+notification: # [可选]通知设置
   telegram: # tg通知设置
     bot_token: your_token
     user_id: your_id
@@ -33,14 +33,23 @@ notification: # 通知设置，可选
       - channel_id1
       - channel_id2
 
-rename: # 重命名设置，可选
+rename: # [可选]重命名设置
   # gpt和正则二选一，优先使用gpt
   chatgpt: # 使用chatgpt解析资源名
     api_key: sk-xxx
-    base_url: https://example.com/v1 # 可选，不填则默认为openai官方
-    model: gpt-3.5-turbo # 可选，不填则默认为gpt-3.5-turbo
+    base_url: https://example.com/v1 # [可选]不填则默认为openai官方
+    model: gpt-3.5-turbo # [可选]不填则默认为gpt-3.5-turbo
 
   regex: ~ # 使用正则表达式解析资源名
 
-dev: # 开发设置，可选
+  # [可选]自定义重命名格式
+  ## 暂时支持的变量有：
+  ## name：番剧名
+  ## season：季度
+  ## episode：集数
+  ## ext：文件后缀
+  ## fansub：字幕组
+  rename_format: "{name} S{season:02d}E{episode:02d}.{ext}"
+
+dev: # [可选]开发设置
   log_level: INFO
