@@ -15,6 +15,7 @@ class ChatGPT:
         self.model = model
 
     async def analyse_anime_name(self, resource_name: str):
+        """解析番剧名字，返回番剧本名和季度信息"""
         prompt = """
         后续我将会给你提供一个番剧名字，请你根据番剧名字，提取出番剧的原名(即不包含季度信息的名字)；番剧的季度。
         我需要将这段文本解析成一个数据结构，以便初始化我的代码中的一个MikanAnimeResource类。MikanAnimeResource类的定义如下：
@@ -57,6 +58,7 @@ class ChatGPT:
             raise ValueError(f"Chatgpt provide a wrong format response: {resp}")
 
     async def analyse_resource_name(self, resource_name: str):
+        """解析番剧资源名字，返回番剧集数和清晰度信息(若为总集篇则会返回季度)"""
         prompt = """
         后续我将会给你提供一个番剧的资源名字，请你根据资源的名字，提取出番剧的集数；番剧的清晰度，以"xp"的格式存储，例如"1920x1080"请重命名为"1080p"
         我需要将这段文本解析成一个数据结构，以便初始化我的代码中的一个MikanAnimeResource类。MikanAnimeResource类的定义如下：
@@ -145,6 +147,7 @@ class Regex:
         return arabic_num
 
     def analyse_anime_name(self, anime_name: str) -> dict:
+        """解析番剧名字，返回番剧本名和季度信息"""
         # 去除名字中的"第x部分"(因为这种情况一般是分段播出，而非新的一季)
         part_pattern = r"\s*第(.+)部分"
         anime_name = re.sub(part_pattern, "", anime_name)
@@ -171,6 +174,7 @@ class Regex:
         return {"name": anime_name, "season": 1}
 
     async def analyse_resource_name(self, resource_name: str):
+        """解析番剧资源名字，返回番剧集数(若为总集篇则会返回季度)"""
         sep_char = ["[", "]", "【", "】", "(", ")", "（", "）"]
         tmp_str = resource_name
         for char in sep_char:

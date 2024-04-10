@@ -106,6 +106,7 @@ class MikanAnimeResource:
         self.download_task = task
 
     async def extract(self, extractor: extractor.Regex | extractor.ChatGPT):
+        """Use extractor to extract resource info from resource title"""
         info = await extractor.analyse_resource_name(self.resource_title)
         self.episode = info["episode"]
         if "season" in info:

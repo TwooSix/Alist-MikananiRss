@@ -1,5 +1,4 @@
 import asyncio
-from asyncio import Queue
 
 import feedparser
 from loguru import logger
@@ -104,6 +103,14 @@ class AlistDownloadMonitor:
             await asyncio.sleep(1)
 
     async def monitor_one_task(self, resource: MikanAnimeResource):
+        """monitor one task until it succeed
+
+        Args:
+            resource (MikanAnimeResource): resource need to be monitored
+
+        Returns:
+            MikanAnimeResource | None: return the resource if download succeed, else return None
+        """
         download_task = resource.download_task
         download_task_monitor = TaskMonitor(self.alist, download_task)
         status = await download_task_monitor.wait_succeed()
@@ -130,7 +137,8 @@ class AlistDownloadMonitor:
             asyncio.create_task(self.renamer.rename(local_name, resource))
         return resource
 
-    async def wait_succeed(self, resource, success_res_q: Queue):
+    async def wait_finished(self, resource):
+        """Wait until the download task finished and do some work depend on the status"""
         result = await self.monitor_one_task(resource)
         if result is not None:
             await success_res_q.put(result)
@@ -146,7 +154,7 @@ class AlistDownloadMonitor:
                 resource: MikanAnimeResource = await downloading_res_q.get()
                 logger.debug(f"Start monitor {resource.resource_title}")
                 self.mark_downloading([resource])
-                asyncio.create_task(self.wait_succeed(resource, success_res_q))
+                asyncio.create_task(self.wait_finished(resource))
             first_run = False
 
     def mark_downloading(self, resources: list[MikanAnimeResource]):
