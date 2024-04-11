@@ -9,6 +9,7 @@ from .models import AnimeNameInfo, ResourceNameInfo
 
 class ExtractorBase:
     def __init__(self):
+        # 模板类，初始化为空
         pass
 
     async def analyse_anime_name(self, anime_name: str) -> AnimeNameInfo:
@@ -234,7 +235,7 @@ class RegexExtractor(ExtractorBase):
 
 class Extractor:
     def __init__(self, extractor: ExtractorBase) -> None:
-        self.extractor = extractor
+        self._extractor = extractor
         self.tmp_regex_extractor = RegexExtractor()
         self.anime_name = ""
         self.season = -1
@@ -248,7 +249,7 @@ class Extractor:
         anime_name = anime_name_info.anime_name
         season = anime_name_info.season
 
-        resource_name_info = await self.extractor.analyse_resource_name(resource_name)
+        resource_name_info = await self._extractor.analyse_resource_name(resource_name)
         episode = resource_name_info.episode
         if resource_name_info.season:
             season = resource_name_info.season

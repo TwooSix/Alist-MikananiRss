@@ -61,27 +61,18 @@ class TransferTask(Task):
     def __init__(self, tid, description, status, progress, error_msg=None) -> None:
         super().__init__(tid, description, status, progress, error_msg)
         self.download_task_id = None
-        self.__init_uuid()
-        self.__init_file_name()
 
-    def __init_uuid(self):
-        start = self.description.find("data/temp/") + len("data/temp/")
-        start = self.description.find("/", start) + 1
-        end = self.description.find("/", start)
-        uuid = self.description[start:end]
-        self.uuid = uuid
-        if uuid is None:
-            logger.error(f"Can't find uuid in task {self.tid}: {self.description}")
-
-    def __init_file_name(self):
-        start = self.description.find("data/temp/") + len("data/temp/")
-        start = self.description.find("/", start) + 1
-        start = self.description.find("/", start) + 1
-        end = self.description.find(" to [", start)
-        file_name = self.description[start:end]
-        self.file_name = file_name
-        if file_name is None:
-            logger.error(f"Can't find file name in task {self.tid}: {self.description}")
+        pattern = r"transfer (.+?) to \["
+        match = re.search(pattern, self.description)
+        if match:
+            extracted_string = match.group(1)
+            elements = extracted_string.split("/")
+            self.uuid = elements[6]
+            self.file_name = elements[-1]
+        else:
+            logger.error(
+                f"Can't find uuid/filename in task {self.tid}: {self.description}"
+            )
 
     def set_download_task(self, task: Task):
         self.download_task_id = task.tid

@@ -209,12 +209,27 @@ class MikanRSSMonitor:
 
     async def get_new_resource(self) -> list[MikanAnimeResource]:
         """Filter out the new resources from the resource list"""
-        resources = await self.__parse_subscribe()
+        resources = []
+        try:
+            resources = await self.__parse_subscribe()
+        except Exception as e:
+            logger.error(f"Error when parse subscribe: {e}")
         new_resources = []
         for resource in resources:
             if not self.db.is_exist(resource.resource_id):
                 new_resources.append(resource)
         return new_resources
+
+    async def extract_new_resource_info(self, new_resources: MikanAnimeResource):
+        for resource in new_resources:
+            try:
+                await resource.extract(self.extractor)
+            except Exception as e:
+                logger.error(
+                    f"Pass {resource.resource_title}, error occur when extract resource title: {e}"
+                )
+                continue
+            logger.debug(f"Find new resource: {resource.resource_title}")
 
     async def run(self, interval_time):
         first_run = True
@@ -222,23 +237,12 @@ class MikanRSSMonitor:
             if not first_run:
                 await asyncio.sleep(interval_time)
             logger.info("Start update checking")
-            try:
-                new_resources = await self.get_new_resource()
-            except Exception as e:
-                logger.error(e)
-                continue
+            new_resources = await self.get_new_resource()
             if not new_resources:
                 logger.info("No new resources")
             else:
+                if self.extractor:
+                    await self.extract_new_resource_info(new_resources)
                 for resource in new_resources:
-                    if self.extractor:
-                        try:
-                            await resource.extract(self.extractor)
-                        except Exception as e:
-                            logger.error(
-                                f"Pass {resource.resource_title}, error occur when extract resource title: {e}"
-                            )
-                            continue
-                    logger.debug(f"Find new resource: {resource.resource_title}")
                     await new_res_q.put(resource)
             first_run = False
