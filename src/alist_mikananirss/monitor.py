@@ -3,7 +3,6 @@ import asyncio
 import feedparser
 from loguru import logger
 
-from alist_mikananirss import extractor
 from alist_mikananirss.alist.api import Alist
 from alist_mikananirss.alist.offline_download import (
     DownloadTask,
@@ -16,6 +15,7 @@ from alist_mikananirss.common.globalvar import (
     new_res_q,
     success_res_q,
 )
+from alist_mikananirss.extractor import Extractor
 from alist_mikananirss.filters import RegexFilter
 from alist_mikananirss.mikan import MikanAnimeResource
 from alist_mikananirss.renamer import Renamer
@@ -173,7 +173,7 @@ class MikanRSSMonitor:
         self,
         subscribe_url: str,
         filter: RegexFilter,
-        extractor: extractor.Regex | extractor.ChatGPT = None,
+        extractor: Extractor = None,
     ) -> None:
         """The rss feed manager"""
         self.subscribe_url = subscribe_url

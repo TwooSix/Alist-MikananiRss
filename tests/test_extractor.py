@@ -4,7 +4,7 @@
 import pytest
 from alist_mikananirss.common import initializer
 from alist_mikananirss.common.globalvar import config_loader
-from alist_mikananirss.extractor import ChatGPT, Regex
+from alist_mikananirss.extractor.extractor import ChatGPTExtractor, RegexExtractor
 
 initializer.setup_proxy()
 
@@ -15,7 +15,7 @@ class TestChatGpt:
         api_key = config_loader.get("rename.chatgpt.api_key")
         base_url = config_loader.get("rename.chatgpt.base_url")
         model = config_loader.get("rename.chatgpt.model")
-        _chatgpt = ChatGPT(api_key, base_url, model)
+        _chatgpt = ChatGPTExtractor(api_key, base_url, model)
         return _chatgpt
 
     @pytest.fixture
@@ -37,7 +37,9 @@ class TestChatGpt:
         return _resources_info
 
     @pytest.mark.asyncio
-    async def test_analyse_resource_name(self, chatgpt: ChatGPT, resources_info):
+    async def test_analyse_resource_name(
+        self, chatgpt: ChatGPTExtractor, resources_info
+    ):
         for resource_name in resources_info:
             result = await chatgpt.analyse_resource_name(resource_name)
             for k, v in result.items():
@@ -49,7 +51,7 @@ class TestChatGpt:
 class TestRegex:
     @pytest.fixture
     def regex_extractor(self):
-        return Regex()
+        return RegexExtractor()
 
     @pytest.fixture
     def season_info(self):
@@ -75,14 +77,17 @@ class TestRegex:
         }
         return _resources_info
 
-    def test_analyse_season(self, regex_extractor: Regex, season_info):
+    @pytest.mark.asyncio
+    async def test_analyse_season(self, regex_extractor: RegexExtractor, season_info):
         for name in season_info:
-            result = regex_extractor.analyse_anime_name(name)
+            result = await regex_extractor.analyse_anime_name(name)
             for k, v in result.items():
                 assert v == season_info[name][k]
 
     @pytest.mark.asyncio
-    async def test_analyse_resource_name(self, regex_extractor: Regex, resources_info):
+    async def test_analyse_resource_name(
+        self, regex_extractor: RegexExtractor, resources_info
+    ):
         for resource_name in resources_info:
             result = await regex_extractor.analyse_resource_name(resource_name)
             assert result["episode"] == resources_info[resource_name]["episode"]

@@ -7,7 +7,7 @@ from alist_mikananirss.alist import Alist
 from alist_mikananirss.bot import NotificationBot, TelegramBot
 from alist_mikananirss.common.config_loader import ConfigLoader
 from alist_mikananirss.downloader import AlistDownloader
-from alist_mikananirss.extractor import ChatGPT, Regex
+from alist_mikananirss.extractor import ChatGPTExtractor, Extractor, RegexExtractor
 from alist_mikananirss.filters import RegexFilter
 from alist_mikananirss.monitor import AlistDownloadMonitor, MikanRSSMonitor
 from alist_mikananirss.renamer import Renamer
@@ -44,21 +44,23 @@ async def init_alist():
     return alist_client
 
 
-def init_extrator():
+def init_extrator() -> Extractor:
     rename_cfg = config_loader.get("rename", None)
     if rename_cfg is None:
         return None
     if "chatgpt" in rename_cfg:
         chatgpt_cfg = rename_cfg["chatgpt"]
-        chatgpt = ChatGPT(
+        chatgpt = ChatGPTExtractor(
             chatgpt_cfg["api_key"],
             chatgpt_cfg.get("base_url"),
             chatgpt_cfg.get("model"),
         )
-        return chatgpt
+        extractor = Extractor(chatgpt)
+        return extractor
     elif "regex" in rename_cfg:
-        regex_extractor = Regex()
-        return regex_extractor
+        regex_extractor = RegexExtractor()
+        extractor = Extractor(regex_extractor)
+        return extractor
     else:
         raise ValueError("Invalid rename config, extractor is required")
 
@@ -99,11 +101,33 @@ def init_mikan_rss_monitor(regex_filter: RegexFilter):
 
 
 def init_download_monitor(alist_client: Alist):
+    def check_rename_format(rename_format: str):
+        from collections import defaultdict
+
+        test_data = {
+            "name": "test",
+            "season": 1,
+            "episode": 1,
+            "fansub": "fansub",
+            "quality": "1080p",
+            "language": "简体中文",
+            "ext": "mp4",
+        }
+        safe_test_data = defaultdict(lambda: "undefined", test_data)
+        res = rename_format.format_map(safe_test_data)
+        if "undefined" in res:
+            missing_keys = [
+                key for key, value in safe_test_data.items() if value == "undefined"
+            ]
+            raise KeyError(f"Error keys in rename format: {', '.join(missing_keys)}")
+
     download_path = config_loader.get("alist.download_path")
     rename_cfg = config_loader.get("rename", None)
     renamer = None
     if rename_cfg is not None:
         rename_format = config_loader.get("rename.rename_format", None)
+        if rename_format:
+            check_rename_format(rename_format)
         renamer = Renamer(alist_client, download_path, rename_format)
     download_monitor_thread = AlistDownloadMonitor(
         alist_client,

@@ -1,8 +1,8 @@
 import aiohttp
 import bs4
 
-from alist_mikananirss import extractor
 from alist_mikananirss.alist.offline_download import DownloadTask
+from alist_mikananirss.extractor import Extractor
 
 
 class HomePageParser:
@@ -52,24 +52,19 @@ def get_torrent_url(feed_entry) -> str:
             return link["href"]
 
 
-def process_anime_name(anime_name: str) -> dict:
-    """Process the anime name, get the real name and season"""
-    regex_extractor = extractor.Regex()
-    res = regex_extractor.analyse_anime_name(anime_name)
-    return res
-
-
 class MikanAnimeResource:
     def __init__(
         self,
         rid,
         name,
-        season,
         torrent_url,
         published_date,
         resource_title,
+        season=None,
         episode=None,
         fansub=None,
+        quality=None,
+        language=None,
     ) -> None:
         self.resource_id = rid
         self.anime_name = name
@@ -79,6 +74,8 @@ class MikanAnimeResource:
         self.resource_title = resource_title
         self.episode = episode
         self.fansub = fansub
+        self.quality = quality
+        self.language = language
         self.download_task = None
 
     @classmethod
@@ -86,31 +83,30 @@ class MikanAnimeResource:
         hp_parser = HomePageParser(feed_entry.link)
         rid = feed_entry.link.split("/")[-1]
         await hp_parser.fetch_and_parse()
-        tmp_anime_name = hp_parser.get_anime_name()
+        anime_name = hp_parser.get_anime_name()
         fansub = hp_parser.get_fansub()
-        res = process_anime_name(tmp_anime_name)
         resource_title = feed_entry.title
         published_date = feed_entry.published
         torrent_url = get_torrent_url(feed_entry)
         return cls(
-            rid,
-            res["name"],
-            res["season"],
-            torrent_url,
-            published_date,
-            resource_title,
+            rid=rid,
+            name=anime_name,
+            torrent_url=torrent_url,
+            published_date=published_date,
+            resource_title=resource_title,
             fansub=fansub,
         )
 
     def set_download_task(self, task: DownloadTask):
         self.download_task = task
 
-    async def extract(self, extractor: extractor.Regex | extractor.ChatGPT):
+    async def extract(self, extractor: Extractor):
         """Use extractor to extract resource info from resource title"""
-        info = await extractor.analyse_resource_name(self.resource_title)
-        self.episode = info["episode"]
-        if "season" in info:
-            self.season = info["season"]
+        await extractor.extract(self.anime_name, self.resource_title)
+        self.episode = extractor.get_episode()
+        self.season = extractor.get_season()
+        self.quality = extractor.get_quality()
+        self.language = extractor.get_language()
 
     def __repr__(self):
         return (
