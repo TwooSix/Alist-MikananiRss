@@ -6,9 +6,8 @@ from alist_mikananirss.extractor import Extractor
 
 
 class HomePageParser:
-    def __init__(self, url, timeout=5):
+    def __init__(self, url):
         self.url = url
-        self.timeout = timeout
         self.soup = None
         self.anime_name = None
         self.fansub = None
@@ -38,7 +37,7 @@ class HomePageParser:
 
     async def _async_fetch(self, url):
         async with aiohttp.ClientSession(trust_env=True) as session:
-            async with session.get(url, timeout=self.timeout) as response:
+            async with session.get(url) as response:
                 response.raise_for_status()
                 return await response.text()
 

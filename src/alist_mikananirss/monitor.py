@@ -200,6 +200,7 @@ class MikanRSSMonitor:
         for entry in self.__filt_entries(feed):
             try:
                 resource = await MikanAnimeResource.from_feed_entry(entry)
+                asyncio.sleep(1)
                 resources.append(resource)
             except Exception as e:
                 logger.error(f"Pass {entry.title} because of error: {e}")
