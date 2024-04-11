@@ -37,7 +37,7 @@
    ```shell
    rye sync --no-dev
    ```
-3. 在目录下新建一个`config.yaml`配置文件，并填写配置文件如下(完整功能示例详解见`example_full.yaml`)
+3. 在目录下新建一个`config.yaml`配置文件，并填写配置文件如下(完整功能示例详解见[配置说明](https://github.com/TwooSix/Alist-MikananiRss/wiki/%E9%85%8D%E7%BD%AE%E8%AF%B4%E6%98%8E))
    ```yaml
    common:
      interval_time: 300
@@ -52,7 +52,6 @@
      subscribe_url: https://mikanani.me/RSS/MyBangumi?token=xxx # 修改为你的蜜柑订阅地址
    
    filters:
-     - 1080p
      - 非合集
    
    rename:
