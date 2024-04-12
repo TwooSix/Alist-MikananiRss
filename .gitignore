@@ -1,9 +1,18 @@
+# python generated files
 __pycache__/
-*.ipynb
-*.csv
-log/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# venv
+.venv
+
+# userdata
 data/
-.pytest_cache
-.vscode
-config.*
-checkpoint_time.txt
+log/
+config.yaml
+
+# debug file
+*.ipynb

@@ -1,17 +1,24 @@
 import asyncio
-from asyncio import Queue
 
 import feedparser
 from loguru import logger
 
-from core import extractor
-from core.alist.api import Alist
-from core.alist.offline_download import DownloadTask, TaskStatus, TransferTask
-from core.common.database import SubscribeDatabase
-from core.common.globalvar import downloading_res_q, new_res_q, success_res_q
-from core.filters import RegexFilter
-from core.mikan import MikanAnimeResource
-from core.renamer import Renamer
+from alist_mikananirss.alist.api import Alist
+from alist_mikananirss.alist.offline_download import (
+    DownloadTask,
+    TaskStatus,
+    TransferTask,
+)
+from alist_mikananirss.common.database import SubscribeDatabase
+from alist_mikananirss.common.globalvar import (
+    downloading_res_q,
+    new_res_q,
+    success_res_q,
+)
+from alist_mikananirss.extractor import Extractor
+from alist_mikananirss.filters import RegexFilter
+from alist_mikananirss.mikan import MikanAnimeResource
+from alist_mikananirss.renamer import Renamer
 
 
 class TaskMonitor:
@@ -58,15 +65,14 @@ class AlistDownloadMonitor:
         self,
         alist: Alist,
         download_path,
-        use_renamer=False,
+        renamer: Renamer = None,
     ):
         self.alist = alist
         self.download_path = download_path
-        self.use_renamer = use_renamer
         self.transfer_uuid_set = set()
         self.db = SubscribeDatabase()
-        if use_renamer:
-            self.renamer = Renamer(alist, download_path)
+        self.use_renamer = renamer is not None
+        self.renamer = renamer
 
     async def find_transfer_task(self, resource: MikanAnimeResource):
         while True:
@@ -97,6 +103,14 @@ class AlistDownloadMonitor:
             await asyncio.sleep(1)
 
     async def monitor_one_task(self, resource: MikanAnimeResource):
+        """monitor one task until it succeed
+
+        Args:
+            resource (MikanAnimeResource): resource need to be monitored
+
+        Returns:
+            MikanAnimeResource | None: return the resource if download succeed, else return None
+        """
         download_task = resource.download_task
         download_task_monitor = TaskMonitor(self.alist, download_task)
         status = await download_task_monitor.wait_succeed()
@@ -123,7 +137,8 @@ class AlistDownloadMonitor:
             asyncio.create_task(self.renamer.rename(local_name, resource))
         return resource
 
-    async def wait_succeed(self, resource, success_res_q: Queue):
+    async def wait_finished(self, resource):
+        """Wait until the download task finished and do some work depend on the status"""
         result = await self.monitor_one_task(resource)
         if result is not None:
             await success_res_q.put(result)
@@ -139,7 +154,7 @@ class AlistDownloadMonitor:
                 resource: MikanAnimeResource = await downloading_res_q.get()
                 logger.debug(f"Start monitor {resource.resource_title}")
                 self.mark_downloading([resource])
-                asyncio.create_task(self.wait_succeed(resource, success_res_q))
+                asyncio.create_task(self.wait_finished(resource))
             first_run = False
 
     def mark_downloading(self, resources: list[MikanAnimeResource]):
@@ -158,7 +173,7 @@ class MikanRSSMonitor:
         self,
         subscribe_url: str,
         filter: RegexFilter,
-        extractor: extractor.Regex | extractor.ChatGPT = None,
+        extractor: Extractor = None,
     ) -> None:
         """The rss feed manager"""
         self.subscribe_url = subscribe_url
@@ -185,6 +200,7 @@ class MikanRSSMonitor:
         for entry in self.__filt_entries(feed):
             try:
                 resource = await MikanAnimeResource.from_feed_entry(entry)
+                await asyncio.sleep(1)
                 resources.append(resource)
             except Exception as e:
                 logger.error(f"Pass {entry.title} because of error: {e}")
@@ -193,12 +209,27 @@ class MikanRSSMonitor:
 
     async def get_new_resource(self) -> list[MikanAnimeResource]:
         """Filter out the new resources from the resource list"""
-        resources = await self.__parse_subscribe()
+        resources = []
+        try:
+            resources = await self.__parse_subscribe()
+        except Exception as e:
+            logger.error(f"Error when parse subscribe: {e}")
         new_resources = []
         for resource in resources:
             if not self.db.is_exist(resource.resource_id):
                 new_resources.append(resource)
         return new_resources
+
+    async def extract_new_resource_info(self, new_resources: MikanAnimeResource):
+        for resource in new_resources:
+            try:
+                await resource.extract(self.extractor)
+            except Exception as e:
+                logger.error(
+                    f"Pass {resource.resource_title}, error occur when extract resource title: {e}"
+                )
+                continue
+            logger.debug(f"Find new resource: {resource.resource_title}")
 
     async def run(self, interval_time):
         first_run = True
@@ -206,23 +237,12 @@ class MikanRSSMonitor:
             if not first_run:
                 await asyncio.sleep(interval_time)
             logger.info("Start update checking")
-            try:
-                new_resources = await self.get_new_resource()
-            except Exception as e:
-                logger.error(e)
-                continue
+            new_resources = await self.get_new_resource()
             if not new_resources:
                 logger.info("No new resources")
             else:
+                if self.extractor:
+                    await self.extract_new_resource_info(new_resources)
                 for resource in new_resources:
-                    if self.extractor:
-                        try:
-                            await resource.extract(self.extractor)
-                        except Exception as e:
-                            logger.error(
-                                f"Pass {resource.resource_title}, error occur when extract resource title: {e}"
-                            )
-                            continue
-                    logger.debug(f"Find new resource: {resource.resource_title}")
                     await new_res_q.put(resource)
             first_run = False

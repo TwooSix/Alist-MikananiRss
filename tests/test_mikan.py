@@ -1,7 +1,6 @@
 import feedparser
 import pytest_asyncio
-
-from core.mikan import MikanAnimeResource
+from alist_mikananirss.mikan import MikanAnimeResource
 
 
 class TestRssParser:

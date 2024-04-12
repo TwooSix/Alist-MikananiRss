@@ -2,9 +2,8 @@ import os
 from unittest.mock import AsyncMock
 
 import pytest
-
-from core.mikan import MikanAnimeResource
-from core.renamer import Renamer
+from alist_mikananirss.mikan import MikanAnimeResource
+from alist_mikananirss.renamer import Renamer
 
 
 @pytest.fixture
@@ -32,15 +31,32 @@ def resource():
         published_date="2021-01-01",
         resource_title="Fake Resource",
         episode=9,
+        fansub="Fake Fansub",
+        quality="1080p",
+        language="",
     )
 
 
 @pytest.mark.asyncio
-async def test_build_new_name(mock_alist, resource, download_path):
+async def test_build_new_name_1(mock_alist, resource, download_path):
+    # 默认format测试
     renamer = Renamer(mock_alist, download_path)
 
     local_title = "[Fake Anime][09].mp4"
     expected_new_name = "Fake Anime S02E09.mp4"
+    new_name = await renamer._Renamer__build_new_name(resource, local_title)
+    assert new_name == expected_new_name
+
+
+@pytest.mark.asyncio
+async def test_build_new_name_2(mock_alist, resource, download_path):
+    # 自定义format测试
+    rename_format = (
+        "{name} S{season:02d}E{episode:02d} {fansub} {quality} {language}.{ext}"
+    )
+    renamer = Renamer(mock_alist, download_path, rename_format)
+    local_title = "[Fake Anime][09].mp4"
+    expected_new_name = "Fake Anime S02E09 Fake Fansub 1080p .mp4"
     new_name = await renamer._Renamer__build_new_name(resource, local_title)
     assert new_name == expected_new_name
 

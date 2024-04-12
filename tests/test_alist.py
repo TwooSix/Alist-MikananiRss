@@ -1,7 +1,6 @@
 import pytest
 from aioresponses import aioresponses
-
-from core.alist.api import Alist
+from alist_mikananirss.alist.api import Alist
 
 
 @pytest.fixture

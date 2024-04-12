@@ -3,10 +3,10 @@ import os
 
 from loguru import logger
 
-from core.alist import Alist
-from core.alist.offline_download import TaskList
-from core.common.globalvar import downloading_res_q, new_res_q
-from core.mikan import MikanAnimeResource
+from alist_mikananirss.alist import Alist
+from alist_mikananirss.alist.offline_download import TaskList
+from alist_mikananirss.common.globalvar import downloading_res_q, new_res_q
+from alist_mikananirss.mikan import MikanAnimeResource
 
 
 class AlistDownloader:
@@ -47,6 +47,7 @@ class AlistDownloader:
             first_run = False
 
     def __prepare_download(self, new_resources, download_path: str):
+        """Get DownloadPath: [url1, url2, ...] mapping from new_resources"""
         resrouce_group = self.__group_resources(new_resources)
         path_urls = {}
         for anime_name, season_group in resrouce_group.items():
@@ -64,6 +65,15 @@ class AlistDownloader:
     async def download(
         self, new_resources: list[MikanAnimeResource], download_path: str
     ):
+        """Create alist offline download task
+
+        Args:
+            new_resources (list[MikanAnimeResource]): resources list
+            download_path (str): remote path
+
+        Returns:
+            list[MikanAnimeResource]: resources that download task created successfully
+        """
         path_urls = self.__prepare_download(new_resources, download_path)
         task_list = TaskList()
         for _download_path, urls in path_urls.items():
