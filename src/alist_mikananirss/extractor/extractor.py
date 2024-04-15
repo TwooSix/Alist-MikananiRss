@@ -262,7 +262,7 @@ class Extractor:
         self.quality = quality
         self.language = language
 
-    def get_anie_name(self):
+    def get_anime_name(self):
         return self.anime_name
 
     def get_season(self):
