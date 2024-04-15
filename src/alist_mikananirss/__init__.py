@@ -10,6 +10,8 @@ from alist_mikananirss.common.globalvar import config_loader, success_res_q
 async def send_notification(
     notification_bots: list[NotificationBot], interval_time: int = 10
 ):
+    if not notification_bots:
+        return
     while True:
         success_resources = []
         while not success_res_q.empty():
