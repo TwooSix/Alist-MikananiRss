@@ -220,7 +220,7 @@ class MikanRSSMonitor:
                 new_resources.append(resource)
         return new_resources
 
-    async def extract_new_resource_info(self, new_resources: MikanAnimeResource):
+    async def extract_new_resource_info(self, new_resources: list[MikanAnimeResource]):
         for resource in new_resources:
             try:
                 await resource.extract(self.extractor)
