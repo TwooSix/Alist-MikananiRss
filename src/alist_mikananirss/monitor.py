@@ -146,16 +146,14 @@ class AlistDownloadMonitor:
             self.remove_failed_resource([resource])
 
     async def run(self, interval_time: int = 1):
-        first_run = True
+        await asyncio.sleep(interval_time)
         while True:
-            if not first_run:
-                await asyncio.sleep(interval_time)
             while not downloading_res_q.empty():
                 resource: MikanAnimeResource = await downloading_res_q.get()
                 logger.debug(f"Start monitor {resource.resource_title}")
                 self.mark_downloading([resource])
                 asyncio.create_task(self.wait_finished(resource))
-            first_run = False
+            await asyncio.sleep(interval_time)
 
     def mark_downloading(self, resources: list[MikanAnimeResource]):
         # mark resources in db
@@ -233,10 +231,8 @@ class MikanRSSMonitor:
         await new_res_q.put(resource)
 
     async def run(self, interval_time):
-        first_run = True
+        await asyncio.sleep(interval_time)
         while 1:
-            if not first_run:
-                await asyncio.sleep(interval_time)
             logger.info("Start update checking")
             new_resources = await self.get_new_resource()
             if not new_resources:
@@ -246,4 +242,3 @@ class MikanRSSMonitor:
                     *[self.process_resource(resource) for resource in new_resources]
                 )
             await asyncio.sleep(interval_time)
-            first_run = False
