@@ -220,16 +220,17 @@ class MikanRSSMonitor:
                 new_resources.append(resource)
         return new_resources
 
-    async def extract_new_resource_info(self, new_resources: list[MikanAnimeResource]):
-        for resource in new_resources:
+    async def process_resource(self, resource: MikanAnimeResource):
+        if self.extractor:
             try:
                 await resource.extract(self.extractor)
+                logger.debug(f"Find new resource: {resource.resource_title}")
             except Exception as e:
                 logger.error(
                     f"Pass {resource.resource_title}, error occur when extract resource title: {e}"
                 )
-                continue
-            logger.debug(f"Find new resource: {resource.resource_title}")
+                return
+        await new_res_q.put(resource)
 
     async def run(self, interval_time):
         first_run = True
@@ -241,8 +242,7 @@ class MikanRSSMonitor:
             if not new_resources:
                 logger.info("No new resources")
             else:
-                if self.extractor:
-                    await self.extract_new_resource_info(new_resources)
-                for resource in new_resources:
-                    await new_res_q.put(resource)
+                await asyncio.gather(
+                    *[self.process_resource(resource) for resource in new_resources]
+                )
             first_run = False
