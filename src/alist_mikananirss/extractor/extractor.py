@@ -227,7 +227,7 @@ class RegexExtractor(ExtractorBase):
         if is_special:
             info.set_season(0)
         else:
-            info.set_episode(int())
+            info.set_episode(int(episode))
         logger.debug(f"Regex analyse resource name: {resource_name} -> {info}")
 
         return info
@@ -251,7 +251,8 @@ class Extractor:
 
         resource_name_info = await self._extractor.analyse_resource_name(resource_name)
         episode = resource_name_info.episode
-        if resource_name_info.season:
+        # 若为总集篇，resource_name_info会返回season=0，否则为None
+        if resource_name_info.season is not None:
             season = resource_name_info.season
         quality = resource_name_info.quality
         language = resource_name_info.language
