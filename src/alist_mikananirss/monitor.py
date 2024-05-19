@@ -3,6 +3,7 @@ import asyncio
 import feedparser
 from loguru import logger
 
+from alist_mikananirss import utils
 from alist_mikananirss.alist.api import Alist
 from alist_mikananirss.alist.offline_download import (
     DownloadTask,
@@ -86,6 +87,8 @@ class AlistDownloadMonitor:
             # 使用新的未出现过的tempdir名称，即uuid，与下载任务建立关联
             for transfer_task in transfer_task_list:
                 if transfer_task.uuid in self.transfer_uuid_set:
+                    continue
+                if not utils.is_video(transfer_task.file_name):
                     continue
                 if (
                     transfer_task.status in [TaskStatus.Pending, TaskStatus.Running]
