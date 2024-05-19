@@ -77,7 +77,6 @@ class AlistDownloadMonitor:
 
     async def find_transfer_task(self, resource: MikanAnimeResource):
         while True:
-            download_task = resource.download_task
             try:
                 transfer_task_list = await self.alist.get_offline_transfer_task_list()
             except Exception as e:
@@ -86,10 +85,11 @@ class AlistDownloadMonitor:
                 continue
             # 使用新的未出现过的tempdir名称，即uuid，与下载任务建立关联
             for transfer_task in transfer_task_list:
-                if transfer_task.uuid in self.transfer_uuid_set:
+                if transfer_task.uuid in self.transfer_uuid_set or not utils.is_video(
+                    transfer_task.file_name
+                ):
                     continue
-                if not utils.is_video(transfer_task.file_name):
-                    continue
+
                 if (
                     transfer_task.status in [TaskStatus.Pending, TaskStatus.Running]
                     and resource.anime_name in transfer_task.description
@@ -99,10 +99,7 @@ class AlistDownloadMonitor:
                         f"Link {resource.resource_title} to {transfer_task.uuid}"
                     )
                     return transfer_task
-            if not download_task.is_started_transfer:
-                logger.warning(
-                    f"Can't find the transfer task of {resource.resource_title}"
-                )
+            logger.warning(f"Can't find the transfer task of {resource.resource_title}")
             await asyncio.sleep(1)
 
     async def monitor_one_task(self, resource: MikanAnimeResource):
