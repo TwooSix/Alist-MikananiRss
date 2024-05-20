@@ -40,3 +40,22 @@ class AnimeNameInfo:
 
     def __str__(self) -> str:
         return f"Anime Name: {self.anime_name}, Season: {self.season}"
+
+
+class AnimeInfo:
+    def __init__(
+        self,
+        anime_name: str = "",
+        season: int = -1,
+        episode: int | float = -1,
+        quality: str = "",
+        language: str = "",
+    ) -> None:
+        self.anime_name = anime_name
+        self.season = season
+        self.episode = episode
+        self.quality = quality
+        self.language = language
+
+    def __str__(self) -> str:
+        return f"Anime Name: {self.anime_name}, Season: {self.season}, Episode: {self.episode}, Quality: {self.quality}, Language: {self.language}"

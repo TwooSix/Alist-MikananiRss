@@ -101,12 +101,12 @@ class MikanAnimeResource:
 
     async def extract(self, extractor: Extractor):
         """Use extractor to extract resource info from resource title"""
-        await extractor.extract(self.anime_name, self.resource_title)
-        self.anime_name = extractor.get_anime_name()
-        self.episode = extractor.get_episode()
-        self.season = extractor.get_season()
-        self.quality = extractor.get_quality()
-        self.language = extractor.get_language()
+        info = await extractor.extract(self.anime_name, self.resource_title)
+        self.anime_name = info.anime_name
+        self.episode = info.episode
+        self.season = info.season
+        self.quality = info.quality
+        self.language = info.language
 
     def __repr__(self):
         return (
