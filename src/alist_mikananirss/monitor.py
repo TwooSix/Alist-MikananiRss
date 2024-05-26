@@ -75,7 +75,17 @@ class AlistDownloadMonitor:
         self.use_renamer = renamer is not None
         self.renamer = renamer
 
-    async def find_transfer_task(self, resource: MikanAnimeResource):
+    def __mark_downloading(self, resources: list[MikanAnimeResource]):
+        # mark resources in db
+        for resource in resources:
+            self.db.insert_mikan_resource(resource)
+
+    def __remove_failed_resource(self, resources: list[MikanAnimeResource]):
+        # remove failed resources from db
+        for resource in resources:
+            self.db.delete_by_id(resource.resource_id)
+
+    async def __find_transfer_task(self, resource: MikanAnimeResource) -> TransferTask:
         while True:
             try:
                 transfer_task_list = await self.alist.get_offline_transfer_task_list()
@@ -102,7 +112,7 @@ class AlistDownloadMonitor:
             logger.warning(f"Can't find the transfer task of {resource.resource_title}")
             await asyncio.sleep(1)
 
-    async def monitor_one_task(self, resource: MikanAnimeResource):
+    async def __monitor_one_task(self, resource: MikanAnimeResource):
         """monitor one task until it succeed
 
         Args:
@@ -120,7 +130,7 @@ class AlistDownloadMonitor:
         try:
             # 10s内未能找到对应的transfer task，则认为传输失败
             transfer_task = await asyncio.wait_for(
-                self.find_transfer_task(resource), timeout=10
+                self.__find_transfer_task(resource), timeout=10
             )
         except asyncio.TimeoutError:
             logger.error(
@@ -133,17 +143,17 @@ class AlistDownloadMonitor:
             logger.error(f"Error when transfer {resource.resource_title}")
             return None
         if self.use_renamer:
-            local_name = transfer_task.file_name
-            asyncio.create_task(self.renamer.rename(local_name, resource))
+            old_name = transfer_task.file_name
+            asyncio.create_task(self.renamer.rename(old_name, resource))
         return resource
 
-    async def wait_finished(self, resource):
+    async def __wait_finished(self, resource):
         """Wait until the download task finished and do some work depend on the status"""
-        result = await self.monitor_one_task(resource)
+        result = await self.__monitor_one_task(resource)
         if result is not None:
             await success_res_q.put(result)
         else:
-            self.remove_failed_resource([resource])
+            self.__remove_failed_resource([resource])
 
     async def run(self, interval_time: int = 1):
         first_run = True
@@ -153,19 +163,9 @@ class AlistDownloadMonitor:
             while not downloading_res_q.empty():
                 resource: MikanAnimeResource = await downloading_res_q.get()
                 logger.debug(f"Start monitor {resource.resource_title}")
-                self.mark_downloading([resource])
-                asyncio.create_task(self.wait_finished(resource))
+                self.__mark_downloading([resource])
+                asyncio.create_task(self.__wait_finished(resource))
             first_run = False
-
-    def mark_downloading(self, resources: list[MikanAnimeResource]):
-        # mark resources in db
-        for resource in resources:
-            self.db.insert_mikan_resource(resource)
-
-    def remove_failed_resource(self, resources: list[MikanAnimeResource]):
-        # remove failed resources from db
-        for resource in resources:
-            self.db.delete_by_id(resource.resource_id)
 
 
 class MikanRSSMonitor:
