@@ -4,7 +4,7 @@ import re
 from loguru import logger
 from openai import AsyncOpenAI
 
-from .models import AnimeNameInfo, ResourceNameInfo
+from .models import AnimeInfo, AnimeNameInfo, ResourceNameInfo
 
 
 class ExtractorBase:
@@ -52,7 +52,7 @@ class ChatGPTExtractor(ExtractorBase):
             model=self.model,
         )
         resp = chat_completion.choices[0].message.content
-        pattern = r"```json\n(.*?)\n```"
+        pattern = r"(\{.*?\})"
         match = re.search(pattern, resp, re.DOTALL)
         if match:
             json_content = match.group(1)
@@ -99,7 +99,7 @@ class ChatGPTExtractor(ExtractorBase):
             model=self.model,
         )
         resp = chat_completion.choices[0].message.content
-        pattern = r"```json\n(.*?)\n```"
+        pattern = r"(\{.*?\})"
         match = re.search(pattern, resp, re.DOTALL)
         if match:
             json_content = match.group(1)
@@ -236,14 +236,19 @@ class RegexExtractor(ExtractorBase):
 class Extractor:
     def __init__(self, extractor: ExtractorBase) -> None:
         self._extractor = extractor
+        # 因为gpt分析季度不太准，所以固定用正则分析季度
         self.tmp_regex_extractor = RegexExtractor()
-        self.anime_name = ""
-        self.season = -1
-        self.episode = -1
-        self.quality = ""
-        self.language = ""
 
-    async def extract(self, anime_name: str, resource_name: str):
+    async def extract(self, anime_name: str, resource_name: str) -> AnimeInfo:
+        """Use extractor to extract anime info from anime name resource title
+
+        Args:
+            anime_name (str)
+            resource_name (str)
+
+        Returns:
+            AnimeInfo (object)
+        """
         # chatgpt对番剧名分析不稳定，所以固定用正则分析番剧名+季度
         anime_name_info = await self.tmp_regex_extractor.analyse_anime_name(anime_name)
         anime_name = anime_name_info.anime_name
@@ -257,23 +262,11 @@ class Extractor:
         quality = resource_name_info.quality
         language = resource_name_info.language
 
-        self.anime_name = anime_name
-        self.season = season
-        self.episode = episode
-        self.quality = quality
-        self.language = language
-
-    def get_anime_name(self):
-        return self.anime_name
-
-    def get_season(self):
-        return self.season
-
-    def get_episode(self):
-        return self.episode
-
-    def get_quality(self):
-        return self.quality
-
-    def get_language(self):
-        return self.language
+        info = AnimeInfo(
+            anime_name=anime_name,
+            season=season,
+            episode=episode,
+            quality=quality,
+            language=language,
+        )
+        return info
