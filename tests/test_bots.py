@@ -33,7 +33,7 @@ class TestNotificationBot:
         return msg
 
     @pytest.mark.asyncio
-    async def test_telegram_notify_md(self, bots, msg):
+    async def test_notify(self, bots, msg):
         for bot in bots:
             res = await bot.send_message(msg)
             assert res
