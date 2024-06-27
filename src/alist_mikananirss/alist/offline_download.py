@@ -67,7 +67,7 @@ class TransferTask(Task):
         if match:
             extracted_string = match.group(1)
             elements = extracted_string.split("/")
-            self.uuid = elements[6]
+            self.uuid = elements[-2]
             self.file_name = elements[-1]
         else:
             logger.error(

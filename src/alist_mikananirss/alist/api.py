@@ -141,24 +141,14 @@ class Alist:
         Returns:
             Tuple[bool, List[Task]]: Success flag and a list of Tasks.
         """
-        # Mapping of type and web pages based on version and downloader.
+        # Mapping of type and web pages.
         web_page_mapping = {
-            "download": {
-                "new_api": "offline_download",
-                "aria2": "aria2_down",
-                "qBittorrent": "qbit_down",
-            },
-            "transfer": {
-                "new_api": "offline_download_transfer",
-                "aria2": "aria2_transfer",
-                "qBittorrent": "qbit_transfer",
-            },
+            "download": "offline_download",
+            "transfer": "offline_download_transfer",
         }
 
-        # Determine the web page based on type, version, and downloader.
-        web_page = web_page_mapping.get(task_type, {}).get(
-            "new_api" if self.version >= "3.29.0" else self.downloader.value
-        )
+        # Determine the web page based on type.
+        web_page = web_page_mapping.get(task_type)
 
         if not web_page:
             raise ValueError(f"Invalid task type: {task_type}")
