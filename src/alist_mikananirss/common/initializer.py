@@ -4,7 +4,7 @@ import sys
 from loguru import logger
 
 from alist_mikananirss.alist import Alist
-from alist_mikananirss.bot import NotificationBot, TelegramBot
+from alist_mikananirss.bot import NotificationBot, TelegramBot, PushPlusBot
 from alist_mikananirss.common.config_loader import ConfigLoader
 from alist_mikananirss.downloader import AlistDownloader
 from alist_mikananirss.extractor import ChatGPTExtractor, Extractor, RegexExtractor
@@ -73,6 +73,13 @@ def init_notification_bots():
         bot_token = config_loader.get("notification.telegram.bot_token")
         user_id = config_loader.get("notification.telegram.user_id")
         bot = TelegramBot(bot_token, user_id)
+        notification_bots.append(NotificationBot(bot))
+
+    pushplus_config = config_loader.get("notification.pushplus", None)
+    if pushplus_config:
+        user_token = config_loader.get("notification.pushplus.token")
+        channel = config_loader.get("notification.pushplus.channel", None)
+        bot = PushPlusBot(user_token, channel)
         notification_bots.append(NotificationBot(bot))
     return notification_bots
 
