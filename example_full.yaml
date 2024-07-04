@@ -26,11 +26,9 @@ notification:
   telegram:
     bot_token: your_token
     user_id: your_id
-  anpush:
-    token: your_token
-    channel: 
-      - channel_id1
-      - channel_id2
+
+  pushplus: 
+    token: xxxxx
 
 rename: 
   chatgpt: 
