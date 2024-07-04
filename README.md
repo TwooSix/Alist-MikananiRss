@@ -10,13 +10,8 @@
 
 ## 功能
 - 自动获取番剧更新并下载至对应网盘
-- telegram更新通知
+- 通过PushPlus, Telegram等渠道发送更新通知
 - 自动重命名为emby可识别格式
-
-## 重命名效果展示
-<div align=center>
-<img src="https://github.com/TwooSix/Alist-MikananiRss/blob/master/imgs/show_pic1.png"/>
-</div>
 
 ## 准备工作 
 1. 请自行参照[Alist](https://github.com/alist-org/alist)项目文档部署Alist（版本须>=3.29.0），并搭建好Aria2/qBittorrent离线下载
@@ -60,3 +55,8 @@
 4. 运行代码：`rye run alist-mikananirss`  
 
 5. Enjoy
+
+## 重命名效果展示
+<div align=center>
+<img src="https://github.com/TwooSix/Alist-MikananiRss/blob/master/imgs/show_pic1.png"/>
+</div>
