@@ -189,6 +189,20 @@ class Alist:
         task_list = done_task_list + undone_task_list
         return task_list
 
+    async def cancel_doanload_task(self, task: DownloadTask) -> bool:
+        api_url = urllib.parse.urljoin(self.base_url, f"/api/admin/task/offline_download/cancel?tid={task.tid}")
+        async with aiohttp.ClientSession(trust_env=True) as session:
+            async with session.post(api_url, headers=self.headers) as response:
+                await self.__get_json_data(response)
+        return True
+    
+    async def cancel_transfer_task(self, task: TransferTask) -> bool:
+        api_url = urllib.parse.urljoin(self.base_url, f"/api/admin/task/offline_download_transfer/cancel?tid={task.tid}")
+        async with aiohttp.ClientSession(trust_env=True) as session:
+            async with session.post(api_url, headers=self.headers) as response:
+                await self.__get_json_data(response)
+        return True
+
     async def rename(self, path, new_name):
         api = "/api/fs/rename"
         api_url = urllib.parse.urljoin(self.base_url, api)

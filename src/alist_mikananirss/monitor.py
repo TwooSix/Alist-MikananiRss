@@ -123,7 +123,14 @@ class AlistDownloadMonitor:
         """
         download_task = resource.download_task
         download_task_monitor = TaskMonitor(self.alist, download_task)
-        status = await download_task_monitor.wait_succeed()
+        try:
+            # 种子速度一直为0时，导致下载任务一直卡在running状态，导致wait_succeed内死循环
+            # 因此这里设置超时时间为6小时，临时解决方案
+            status = await asyncio.wait_for(download_task_monitor.wait_succeed(), timeout=21600)
+        except asyncio.TimeoutError:
+            self.alist.cancel_doanload_task(download_task)
+            logger.error(f"Timeout to wait the download task of {resource.resource_title} succeed")
+            return None
         if status != TaskStatus.Succeeded:
             logger.error(f"Error when download {resource.resource_title}")
             return None
@@ -138,7 +145,12 @@ class AlistDownloadMonitor:
             )
             return None
         transfer_task_monitor = TaskMonitor(self.alist, transfer_task)
-        status = await transfer_task_monitor.wait_succeed()
+        try:
+            status = await asyncio.wait_for(transfer_task_monitor.wait_succeed(), timeout=21600)
+        except asyncio.TimeoutError:
+            self.alist.cancel_transfer_task(transfer_task)
+            logger.error(f"Timeout to wait the transfer task of {resource.resource_title} succeed")
+            return None
         if status != TaskStatus.Succeeded:
             logger.error(f"Error when transfer {resource.resource_title}")
             return None
