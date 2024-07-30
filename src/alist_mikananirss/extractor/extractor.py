@@ -5,6 +5,7 @@ from loguru import logger
 from openai import AsyncOpenAI
 
 from .models import AnimeInfo, AnimeNameInfo, ResourceNameInfo
+from alist_mikananirss.websites.data import ResourceInfo
 
 
 class ExtractorBase:
@@ -239,7 +240,7 @@ class Extractor:
         # 因为gpt分析季度不太准，所以固定用正则分析季度
         self.tmp_regex_extractor = RegexExtractor()
 
-    async def extract(self, anime_name: str, resource_name: str) -> AnimeInfo:
+    async def process(self, resource_info: ResourceInfo):
         """Use extractor to extract anime info from anime name resource title
 
         Args:
@@ -250,10 +251,12 @@ class Extractor:
             AnimeInfo (object)
         """
         # chatgpt对番剧名分析不稳定，所以固定用正则分析番剧名+季度
+        anime_name = resource_info.anime_name
         anime_name_info = await self.tmp_regex_extractor.analyse_anime_name(anime_name)
         anime_name = anime_name_info.anime_name
         season = anime_name_info.season
 
+        resource_name = resource_info.resource_title
         resource_name_info = await self._extractor.analyse_resource_name(resource_name)
         episode = resource_name_info.episode
         # 若为总集篇，resource_name_info会返回season=0，否则为None
@@ -262,11 +265,8 @@ class Extractor:
         quality = resource_name_info.quality
         language = resource_name_info.language
 
-        info = AnimeInfo(
-            anime_name=anime_name,
-            season=season,
-            episode=episode,
-            quality=quality,
-            language=language,
-        )
-        return info
+        resource_info.anime_name = anime_name
+        resource_info.season = season
+        resource_info.episode = episode
+        resource_info.quality = quality
+        resource_info.language = language

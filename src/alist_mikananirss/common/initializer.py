@@ -3,13 +3,13 @@ import sys
 
 from loguru import logger
 
-from alist_mikananirss.alist import Alist
-from alist_mikananirss.bot import NotificationBot, TelegramBot, PushPlusBot
+from alist_mikananirss.alist import Alist, AlistConfig
+from alist_mikananirss.bot import NotificationBot, PushPlusBot, TelegramBot
 from alist_mikananirss.common.config_loader import ConfigLoader
 from alist_mikananirss.downloader import AlistDownloader
 from alist_mikananirss.extractor import ChatGPTExtractor, Extractor, RegexExtractor
 from alist_mikananirss.filters import RegexFilter
-from alist_mikananirss.monitor import AlistDownloadMonitor, MikanRSSMonitor
+from alist_mikananirss.monitor import AlistDownloadMonitor, RssMonitor
 from alist_mikananirss.renamer import Renamer
 
 config_loader = ConfigLoader("config.yaml")
@@ -37,7 +37,8 @@ async def init_alist():
     base_url = config_loader.get("alist.base_url")
     downloader_type = config_loader.get("alist.downloader")
     token = config_loader.get("alist.token")
-    alist_client = Alist(base_url, downloader_type, token)
+    acfg = AlistConfig(base_url, token, downloader_type)
+    alist_client = Alist(acfg)
     alist_ver = await alist_client.get_alist_ver()
     if alist_ver < "3.29.0":
         raise ValueError(f"Unsupported Alist version: {alist_ver}")
@@ -99,7 +100,7 @@ def init_mikan_rss_monitor(regex_filter: RegexFilter):
     # init rss manager
     subscribe_url = config_loader.get("mikan.subscribe_url")
     extrator = init_extrator()
-    rss_monitor = MikanRSSMonitor(
+    rss_monitor = RssMonitor(
         subscribe_url,
         filter=regex_filter,
         extractor=extrator,

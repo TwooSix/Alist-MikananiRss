@@ -3,7 +3,7 @@ import os
 from loguru import logger
 
 from alist_mikananirss.alist.api import Alist
-from alist_mikananirss.mikan import MikanAnimeResource
+from alist_mikananirss.websites.data import ResourceInfo
 
 
 class Renamer:
@@ -20,7 +20,7 @@ class Renamer:
         else:
             self.rename_format = rename_format
 
-    async def __build_new_name(self, resource: MikanAnimeResource, old_filename: str):
+    async def __build_new_name(self, resource: ResourceInfo, old_filename: str):
         name = resource.anime_name
         season = resource.season
         episode = resource.episode
@@ -45,9 +45,7 @@ class Renamer:
         new_filename = self.rename_format.format_map(data)
         return new_filename
 
-    async def rename(
-        self, old_filename: str, resource: MikanAnimeResource, max_retry=3
-    ):
+    async def rename(self, old_filename: str, resource: ResourceInfo, max_retry=3):
         name, season = resource.anime_name, resource.season
         abs_filepath = os.path.join(
             self.download_path, name, f"Season {season}", old_filename

@@ -9,6 +9,7 @@ alist:
   download_path: Onedrive/Anime # 下载路径，相对于alist根目录
   
 mikan:
-  subscribe_url: https://mikanani.me/RSS/MyBangumi?token=xxx # 蜜柑订阅链接
+  subscribe_url: 
+    - https://mikanani.me/RSS/MyBangumi?token=xxx
   filters:
     - 非合集

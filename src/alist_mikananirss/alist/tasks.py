@@ -5,7 +5,7 @@ from loguru import logger
 
 
 # https://github.com/alist-org/alist/blob/86b35ae5cfec400871072356fec4dea88303195d/pkg/task/task.go#L27
-class TaskStatus(Enum):
+class AlistTaskStatus(Enum):
     Pending = 0
     Running = 1
     Succeeded = 2
@@ -19,25 +19,36 @@ class TaskStatus(Enum):
     UNKNOWN = 10
 
 
-class DownloaderType(Enum):
+class AlistDownloaderType(Enum):
     ARIA = "aria2"
     QBIT = "qBittorrent"
 
 
-class DeletePolicy(Enum):
+class AlistDeletePolicy(Enum):
     DeleteOnUploadSucceed = "delete_on_upload_succeed"
     DeleteOnUploadFailed = "delete_on_upload_failed"
     DeleteNever = "delete_never"
     DeleteAlways = "delete_always"
 
 
-class Task:
+class AlistTaskType(Enum):
+    DOWNLOAD = "offline_download"
+    TRANSFER = "offline_download_transfer"
+
+
+class AlistTaskState(Enum):
+    DONE = "done"
+    UNDONE = "undone"
+
+
+class AlistTask:
     def __init__(self, tid, description, status, progress, error_msg=None) -> None:
         self.tid = tid
         self.description = description
         self.status = status
         self.progress = progress
         self.error_msg = error_msg
+        self.task_type: AlistTaskType = None
 
     @classmethod
     def from_json(cls, json_data):
@@ -47,21 +58,21 @@ class Task:
         progress = json_data["progress"]
         error_str = json_data["error"]
         try:
-            status = TaskStatus(state_str)
+            status = AlistTaskStatus(state_str)
         except ValueError:
             logger.warning(f"Unknown task status {state_str} of task {tid}")
-            status = TaskStatus.UNKNOWN
+            status = AlistTaskStatus.UNKNOWN
         return cls(tid, description, status, progress, error_str)
 
-    def update_status(self, status: TaskStatus):
+    def update_status(self, status: AlistTaskStatus):
         self.status = status
 
 
-class TransferTask(Task):
+class AlistTransferTask(AlistTask):
     def __init__(self, tid, description, status, progress, error_msg=None) -> None:
         super().__init__(tid, description, status, progress, error_msg)
         self.download_task_id = None
-
+        self.task_type = AlistTaskType.TRANSFER
         pattern = r"transfer (.+?) to \["
         match = re.search(pattern, self.description)
         if match:
@@ -74,20 +85,21 @@ class TransferTask(Task):
                 f"Can't find uuid/filename in task {self.tid}: {self.description}"
             )
 
-    def set_download_task(self, task: Task):
+    def set_download_task(self, task: AlistTask):
         self.download_task_id = task.tid
 
     def __repr__(self) -> str:
         return f"<TransferTask {self.tid}>"
 
 
-class DownloadTask(Task):
+class AlistDownloadTask(AlistTask):
     def __init__(self, tid, url, status, progress, error_msg=None) -> None:
         super().__init__(tid, url, status, progress, error_msg)
         self.transfer_task_id = set()
         self.is_started_transfer = False
         self.uuid = None
         self.url = None
+        self.task_type = AlistTaskType.DOWNLOAD
         self.__init_url()
 
     def __init_url(self):
@@ -98,7 +110,7 @@ class DownloadTask(Task):
         else:
             raise ValueError(f"Invalid task name {self.description}")
 
-    def add_transfer_task(self, task: TransferTask):
+    def add_transfer_task(self, task: AlistTransferTask):
         self.transfer_task_id.add(task.tid)
 
     def set_started_transfer(self, uuid: str):
@@ -109,8 +121,10 @@ class DownloadTask(Task):
         return f"<DownloadTask {self.tid}>"
 
 
-class TaskList:
-    def __init__(self, tasks: list[TransferTask | DownloadTask] = None) -> None:
+class AlistTaskList:
+    def __init__(
+        self, tasks: list[AlistTransferTask | AlistDownloadTask] = None
+    ) -> None:
         if tasks is None:
             tasks = []
         self.tasks = tasks
@@ -118,23 +132,25 @@ class TaskList:
         for task in tasks:
             self.id_task_map[task.tid] = task
 
-    def append(self, task: TransferTask | DownloadTask):
+    def append(self, task: AlistTransferTask | AlistDownloadTask):
         self.tasks.append(task)
         self.id_task_map[task.tid] = task
 
     def __add__(self, other):
-        if isinstance(other, TaskList):
-            return TaskList(self.tasks + other.tasks)
+        if isinstance(other, AlistTaskList):
+            return AlistTaskList(self.tasks + other.tasks)
         else:
             raise TypeError("Operands must be instance of TaskList")
 
-    def __getitem__(self, index: int | str) -> DownloadTask | TransferTask | None:
+    def __getitem__(
+        self, index: int | str
+    ) -> AlistDownloadTask | AlistTransferTask | None:
         if isinstance(index, int):
             return self.tasks[index]
         elif isinstance(index, str):
             return self.id_task_map.get(index)
 
-    def __contains__(self, task: Task):
+    def __contains__(self, task: AlistTask):
         return task.tid in self.id_task_map
 
     def __len__(self):

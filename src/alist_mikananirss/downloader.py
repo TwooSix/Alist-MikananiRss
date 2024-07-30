@@ -1,12 +1,24 @@
 import asyncio
 import os
+from dataclasses import dataclass
 
 from loguru import logger
 
 from alist_mikananirss.alist import Alist
-from alist_mikananirss.alist.offline_download import TaskList
+from alist_mikananirss.alist.tasks import (
+    AlistDownloadTask,
+    AlistTaskList,
+    AlistTransferTask,
+)
 from alist_mikananirss.common.globalvar import downloading_res_q, new_res_q
-from alist_mikananirss.mikan import MikanAnimeResource
+from alist_mikananirss.websites.data import ResourceInfo
+
+
+@dataclass
+class AnimeDownloadTask(AlistDownloadTask):
+    resource: ResourceInfo
+    download_task: AlistDownloadTask = None
+    transfer_task: AlistTransferTask = None
 
 
 class AlistDownloader:
@@ -14,9 +26,9 @@ class AlistDownloader:
         self.alist = alist
         self.use_renamer = use_renamer
 
-    def __group_resources(self, resources: list[MikanAnimeResource]):
+    def __group_resources(self, resources: list[ResourceInfo]):
         """group resources by anime name and season"""
-        resource_group: dict[str, dict[str, list[MikanAnimeResource]]] = {}
+        resource_group: dict[str, dict[str, list[ResourceInfo]]] = {}
         for resource in resources:
             if resource.anime_name not in resource_group:
                 resource_group[resource.anime_name] = {}
@@ -26,25 +38,22 @@ class AlistDownloader:
         return resource_group
 
     async def run(self, download_path: str, interval_time: int = 10):
-        first_run = True
         while True:
-            if not first_run:
-                await asyncio.sleep(interval_time)
-            new_resources = []
+            new_resources: list[ResourceInfo] = []
             while not new_res_q.empty():
                 new_resources.append(await new_res_q.get())
             if new_resources:
                 try:
-                    downloading_resources = await self.download(
-                        new_resources, download_path
-                    )
+                    anime_task_list = await self.download(new_resources, download_path)
                 except Exception as e:
                     logger.error(f"Error when download: {e}")
-                    continue
-                for resource in downloading_resources:
-                    logger.info(f"Start to download: {resource.resource_title}")
-                    await downloading_res_q.put(resource)
-            first_run = False
+                else:
+                    for task in anime_task_list:
+                        logger.info(
+                            f"Start to download: {task.resource.resource_title}"
+                        )
+                        await downloading_res_q.put(task)
+            await asyncio.sleep(interval_time)
 
     def __prepare_download(self, new_resources, download_path: str):
         """Get DownloadPath: [url1, url2, ...] mapping from new_resources"""
@@ -63,8 +72,8 @@ class AlistDownloader:
         return path_urls
 
     async def download(
-        self, new_resources: list[MikanAnimeResource], download_path: str
-    ):
+        self, new_resources: list[ResourceInfo], download_path: str
+    ) -> list[AnimeDownloadTask]:
         """Create alist offline download task
 
         Args:
@@ -75,7 +84,7 @@ class AlistDownloader:
             list[MikanAnimeResource]: resources that download task created successfully
         """
         path_urls = self.__prepare_download(new_resources, download_path)
-        task_list = TaskList()
+        task_list = AlistTaskList()
         for _download_path, urls in path_urls.items():
             try:
                 tmp_task_list = await self.alist.add_offline_download_task(
@@ -86,11 +95,13 @@ class AlistDownloader:
                 continue
             task_list = task_list + tmp_task_list
         # link resource with task
-        success_resources = []
+        anime_task_list = []
         for resource in new_resources:
             for task in task_list:
                 if resource.torrent_url == task.url:
-                    resource.set_download_task(task)
-                    success_resources.append(resource)
+                    anime_task = AnimeDownloadTask(
+                        resource=resource, download_task=task
+                    )
+                    anime_task_list.append(anime_task)
                     break
-        return success_resources
+        return anime_task_list
