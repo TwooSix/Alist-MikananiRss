@@ -122,8 +122,10 @@ def init_rss_monitor(regex_filter: RegexFilter):
 
 def init_download_manager(alist_client: Alist):
     download_path = config_loader.get("alist.download_path")
-    use_renamer = False if config_loader.get("rename") is None else True
-    need_notification = False if config_loader.get("notification") is None else True
+    use_renamer = False if config_loader.get("rename", None) is None else True
+    need_notification = (
+        False if config_loader.get("notification", None) is None else True
+    )
     DownloadManager.initialize(
         alist_client, download_path, use_renamer, need_notification
     )
