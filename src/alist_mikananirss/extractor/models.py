@@ -3,8 +3,8 @@ class ResourceNameInfo:
         self,
         episode: int | float = None,
         season: int = None,
-        quality: str = "",
-        language: str = "",
+        quality: str = None,
+        language: str = None,
     ) -> None:
         self.episode = episode
         self.season = season

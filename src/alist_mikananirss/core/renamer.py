@@ -1,5 +1,6 @@
 import asyncio
 import os
+import string
 
 from loguru import logger
 
@@ -29,6 +30,8 @@ class AnimeRenamer:
         name = resource.anime_name
         season = resource.season
         episode = resource.episode
+        if season is None or episode is None:
+            raise ValueError("Season or episode is none when rename")
         fansub = resource.fansub
         quality = resource.quality
         language = resource.language
@@ -49,7 +52,19 @@ class AnimeRenamer:
             "quality": quality,
             "language": language,
         }
-        new_filename = self.rename_format.format_map(data)
+        data = {k: v for k, v in data.items() if v is not None}
+        formatter = string.Formatter()
+        result = []
+        for literal_text, field_name, format_spec, _ in formatter.parse(
+            self.rename_format
+        ):
+            if literal_text:
+                result.append(literal_text)
+            if field_name in data:
+                value = data[field_name]
+                value = format(value, format_spec)
+                result.append(str(value))
+        new_filename = "".join(result).strip()
         return new_filename
 
     @classmethod

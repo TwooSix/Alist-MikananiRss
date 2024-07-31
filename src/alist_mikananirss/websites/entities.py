@@ -12,9 +12,9 @@ class ResourceInfo:
 
     season: Optional[int] = None
     episode: Optional[int] = None
-    fansub: str = ""
-    quality: str = ""
-    language: str = ""
+    fansub: Optional[str] = None
+    quality: Optional[str] = None
+    language: Optional[str] = None
 
     def __hash__(self):
         return hash(self.resource_title)

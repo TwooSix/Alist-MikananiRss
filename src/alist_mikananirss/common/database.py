@@ -134,9 +134,9 @@ class SubscribeDatabase:
         anime_name,
         season=None,
         episode=None,
-        fansub="",
-        quality="",
-        language="",
+        fansub=None,
+        quality=None,
+        language=None,
     ):
         self.connect()
         try:
