@@ -43,7 +43,7 @@ class RssMonitor:
                     feed_entries_filted.append(entry)
 
             for entry in feed_entries_filted:
-                if not self.db.is_exist(entry.rid):
+                if not self.db.is_resource_title_exist(entry.resource_title):
                     resourcec = await website.extract_resource_info(entry)
                     new_resources.append(resourcec)
         return new_resources

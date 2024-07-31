@@ -21,26 +21,179 @@ class SubscribeDatabase:
         self.conn = sqlite3.connect(self.db_name)
         self.cursor = self.conn.cursor()
 
-    def insert(self, id, title, link, published_date, anime_name, downloaded_date):
+    def close(self):
+        if self.conn:
+            self.conn.close()
+
+    def __check(self):
+        if not os.path.exists(self.db_name):
+            self.__create_table()
+        else:
+            self._upgrade_database()
+
+    def __create_table(self):
+        self.connect()
+        self.cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS resource_data (
+                id TEXT PRIMARY KEY,
+                title TEXT,
+                link TEXT,
+                published_date TEXT,
+                downloaded_date TEXT,
+                anime_name TEXT,
+                season INTEGER,
+                episode INTEGER,
+                fansub TEXT,
+                quality TEXT,
+                language TEXT
+            )
+            """
+        )
+        self.cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS db_version (
+                version INTEGER PRIMARY KEY
+            )
+            """
+        )
+        self.cursor.execute("INSERT INTO db_version (version) VALUES (1)")
+        self.conn.commit()
+        self.close()
+
+    def _upgrade_database(self):
+        self.connect()
+        try:
+            self.cursor.execute("SELECT version FROM db_version")
+            version = self.cursor.fetchone()[0]
+        except sqlite3.OperationalError:
+            self.cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS db_version (
+                    version INTEGER PRIMARY KEY
+                )
+            """
+            )
+            version = 0
+
+        if version < 1:
+            try:
+                self.cursor.execute(
+                    """
+                    CREATE TABLE resource_data_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        resource_title TEXT NOT NULL,
+                        torrent_url TEXT UNIQUE,
+                        published_date TEXT,
+                        downloaded_date TEXT,
+                        anime_name TEXT,
+                        season INTEGER,
+                        episode INTEGER,
+                        fansub TEXT,
+                        quality TEXT,
+                        language TEXT
+                    )
+                """
+                )
+                # 迁移数据
+                self.cursor.execute(
+                    """
+                    INSERT INTO resource_data_new (resource_title, torrent_url, published_date, downloaded_date, anime_name)
+                    SELECT title, link, published_date, downloaded_date, anime_name FROM resource_data
+                """
+                )
+                # 删除旧表
+                self.cursor.execute("DROP TABLE resource_data")
+                # 重命名新表
+                self.cursor.execute(
+                    "ALTER TABLE resource_data_new RENAME TO resource_data"
+                )
+                # 创建新的索引
+                self.cursor.execute(
+                    """
+                    CREATE UNIQUE INDEX idx_title
+                    ON resource_data(resource_title)
+                """
+                )
+                self.cursor.execute(
+                    "INSERT OR REPLACE INTO db_version (version) VALUES (1)"
+                )
+                self.conn.commit()
+                logger.info("Database upgraded to version 1")
+            except Exception as e:
+                logger.error(f"Error during database upgrade: {e}")
+                self.conn.rollback()
+        self.close()
+
+    def insert(
+        self,
+        resource_title,
+        torrent_url,
+        published_date,
+        downloaded_date,
+        anime_name,
+        season=None,
+        episode=None,
+        fansub="",
+        quality="",
+        language="",
+    ):
         self.connect()
         try:
             self.cursor.execute(
-                "INSERT INTO resource_data (id, title, link, published_date,"
-                " anime_name, downloaded_date) VALUES (?, ?, ?, ?, ?, ?)",
-                (id, title, link, published_date, anime_name, downloaded_date),
+                """
+                INSERT INTO resource_data 
+                (resource_title, torrent_url, published_date, downloaded_date, anime_name, season, episode, fansub, quality, language)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+                (
+                    resource_title,
+                    torrent_url,
+                    published_date,
+                    downloaded_date,
+                    anime_name,
+                    season,
+                    episode,
+                    fansub,
+                    quality,
+                    language,
+                ),
             )
             self.conn.commit()
-            logger.debug(
-                "Insert new resource data:"
-                f" {id, title, link, published_date, anime_name, downloaded_date}"
-            )
+            logger.debug(f"Insert new resource: {anime_name}, {resource_title}")
         except sqlite3.IntegrityError:
-            logger.debug(
-                "resource data already exists:"
-                f" {id, title, link, published_date, anime_name, downloaded_date}"
-            )
+            logger.debug(f"Resource already exists: {anime_name}, {resource_title}")
         except Exception as e:
-            logger.error(f"Error when insert resource data:\n {e}")
+            logger.error(f"Error when inserting resource: {e}")
+        finally:
+            self.close()
+
+    def insert_resource_info(self, resource: ResourceInfo):
+        downloaded_date = datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
+        self.insert(
+            resource.resource_title,
+            resource.torrent_url,
+            resource.published_date,
+            downloaded_date,
+            resource.anime_name,
+            season=resource.season,
+            episode=resource.episode,
+            fansub=resource.fansub,
+            quality=resource.quality,
+            language=resource.language,
+        )
+
+    def is_resource_title_exist(self, resource_title: str):
+        self.connect()
+        try:
+            self.cursor.execute(
+                "SELECT 1 FROM resource_data WHERE resource_title = ? LIMIT 1",
+                (resource_title,),
+            )
+            return self.cursor.fetchone() is not None
+        except Exception as e:
+            logger.error(f"Error checking resource existence: {e}")
+            return False
         finally:
             self.close()
 
@@ -54,54 +207,3 @@ class SubscribeDatabase:
             logger.error(f"Error when delete resource data:\n {e}")
         finally:
             self.close()
-
-    def insert_mikan_resource(self, resource: ResourceInfo):
-        downloaded_date = datetime.now()
-        downloaded_date = downloaded_date.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
-        self.insert(
-            resource.rid,
-            resource.resource_title,
-            resource.torrent_url,
-            resource.published_date,
-            resource.anime_name,
-            downloaded_date,
-        )
-
-    def is_exist(self, id):
-        self.connect()
-        try:
-            self.cursor.execute("SELECT * FROM resource_data WHERE id=?", (id,))
-        except Exception as e:
-            logger.error(e)
-        data = self.cursor.fetchone()
-        self.close()
-        if data is not None:
-            return True
-        else:
-            return False
-
-    def close(self):
-        if self.conn:
-            self.conn.close()
-
-    def __check(self):
-        if not os.path.exists(self.db_name):
-            self.__create_table()
-
-    def __create_table(self):
-        self.conn = sqlite3.connect(self.db_name)
-        self.cursor = self.conn.cursor()
-        self.cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS resource_data (
-                id TEXT PRIMARY KEY,
-                title TEXT,
-                link TEXT,
-                published_date TEXT,
-                downloaded_date TEXT,
-                anime_name TEXT
-            )
-            """
-        )
-        self.conn.commit()
-        self.conn.close()

@@ -125,7 +125,7 @@ class DownloadManager:
         instance = cls.get_instance()
         info_list: list[AnimeDownloadTaskInfo] = await instance.download(resources)
         for task_info in info_list:
-            instance.db.insert_mikan_resource(task_info.resource)
+            instance.db.insert_resource_info(task_info.resource)
             asyncio.create_task(instance.monitor(task_info))
 
     async def _find_transfer_task(self, resource: ResourceInfo) -> AlistTransferTask:
