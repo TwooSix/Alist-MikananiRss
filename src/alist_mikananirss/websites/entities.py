@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass
@@ -9,8 +10,8 @@ class ResourceInfo:
     torrent_url: str
     published_date: str
 
-    season: int = None
-    episode: float = None
+    season: Optional[int] = None
+    episode: Optional[int] = None
     fansub: str = ""
     quality: str = ""
     language: str = ""

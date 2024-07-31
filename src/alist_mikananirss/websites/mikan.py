@@ -43,7 +43,7 @@ class Mikan(Website):
                 if link["type"] == "application/x-bittorrent":
                     torrent_url = link["href"]
             if not torrent_url:
-                raise Exception("No torrent url found")
+                raise RuntimeError("No torrent url found")
             homepage_url = tmp_entry.link
             published_date = tmp_entry.published
             feed_entry = FeedEntry(

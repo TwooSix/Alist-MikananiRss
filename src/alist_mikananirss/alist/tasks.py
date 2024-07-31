@@ -34,6 +34,7 @@ class AlistDeletePolicy(Enum):
 class AlistTaskType(Enum):
     DOWNLOAD = "offline_download"
     TRANSFER = "offline_download_transfer"
+    UNKNOWN = "unknown"
 
 
 class AlistTaskState(Enum):
@@ -48,7 +49,7 @@ class AlistTask:
         self.status = status
         self.progress = progress
         self.error_msg = error_msg
-        self.task_type: AlistTaskType = None
+        self.task_type: AlistTaskType = AlistTaskType.UNKNOWN
 
     @classmethod
     def from_json(cls, json_data):

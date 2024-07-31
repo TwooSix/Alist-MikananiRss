@@ -25,8 +25,8 @@ from .renamer import AnimeRenamer
 class AnimeDownloadTaskInfo:
     resource: ResourceInfo
     download_path: str
-    download_task: AlistDownloadTask = None
-    transfer_task: AlistTransferTask = None
+    download_task: Optional[AlistDownloadTask] = None
+    transfer_task: Optional[AlistTransferTask] = None
 
 
 class TaskMonitor:
@@ -88,9 +88,8 @@ class TaskMonitor:
 
 class DownloadManager:
     _instance = None
-    task_queue = asyncio.Queue()
-    alist_client: Alist = None
-    base_download_path: str = None
+    alist_client: Alist
+    base_download_path: str
     use_renamer: bool = False
     need_notification: bool = False
     uuid_set: set[str] = set()

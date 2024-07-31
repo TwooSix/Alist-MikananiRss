@@ -41,4 +41,4 @@ class WebsiteFactory:
 
             return Mikan(rss_url)
         else:
-            raise Exception("Unknown website")
+            raise ValueError("Unknown website")
