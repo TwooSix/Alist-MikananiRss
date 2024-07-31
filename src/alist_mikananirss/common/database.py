@@ -207,3 +207,14 @@ class SubscribeDatabase:
             logger.error(f"Error when delete resource data:\n {e}")
         finally:
             self.close()
+
+    def delete_by_torrent_url(self, url: str):
+        self.connect()
+        try:
+            self.cursor.execute("DELETE FROM resource_data WHERE torrent_url=?", (url,))
+            self.conn.commit()
+            logger.debug(f"Delete resource data: {url}")
+        except Exception as e:
+            logger.error(f"Error when delete resource data:\n {e}")
+        finally:
+            self.close()

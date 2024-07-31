@@ -226,7 +226,7 @@ class DownloadManager:
             self._post_process(success_task)
         else:
             # 下载失败，删除数据库记录
-            self.db.delete_by_id(task_info.resource.rid)
+            self.db.delete_by_id(task_info.resource.torrent_url)
 
     async def download(
         self, new_resources: list[ResourceInfo]

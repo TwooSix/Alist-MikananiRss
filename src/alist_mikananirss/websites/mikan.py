@@ -36,7 +36,6 @@ class Mikan(Website):
         feed = await self.parse_feed(self.rss_url)
         feed_entries = set()
         for tmp_entry in feed.entries:
-            rid = tmp_entry.link.split("/")[-1]
             resource_title = tmp_entry.title
             torrent_url = None
             for link in tmp_entry.links:
@@ -47,7 +46,6 @@ class Mikan(Website):
             homepage_url = tmp_entry.link
             published_date = tmp_entry.published
             feed_entry = FeedEntry(
-                rid=rid,
                 resource_title=resource_title,
                 torrent_url=torrent_url,
                 published_date=published_date,
@@ -59,7 +57,6 @@ class Mikan(Website):
     async def extract_resource_info(self, entry: FeedEntry) -> ResourceInfo:
         homepage_info = await self.parse_homepage(entry.homepage_url)
         resource_info = ResourceInfo(
-            rid=entry.rid,
             anime_name=homepage_info.anime_name,
             resource_title=entry.resource_title,
             torrent_url=entry.torrent_url,
