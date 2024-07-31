@@ -12,7 +12,9 @@ alist:
   download_path: Onedrive/Anime
 
 mikan:
-  subscribe_url: https://mikanani.me/RSS/MyBangumi?token=xxx
+  subscribe_url: 
+    - https://mikanani.me/RSS/MyBangumi?token=xxx
+    - https://mikanani.me/RSS/rss2
   regex_pattern:
     简体: "(简体|简中|简日|CHS)"
     繁体: "(繁体|繁中|繁日|CHT|Baha)"

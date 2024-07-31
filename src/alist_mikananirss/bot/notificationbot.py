@@ -1,4 +1,4 @@
-from alist_mikananirss.mikan import MikanAnimeResource
+from alist_mikananirss.websites import ResourceInfo
 
 from . import BotBase
 
@@ -11,17 +11,17 @@ class NotificationMsg:
     def format_message(self):
         if not self._update_info:
             return "暂无番剧更新"
-        
-        msg = '你订阅的番剧'
+
+        msg = "你订阅的番剧"
         for name, titles in self._update_info.items():
-            msg += f'<b>[{name}]</b>, '
-        msg = msg.rstrip(', ') + ' 更新啦：\n'
-        
+            msg += f"<b>[{name}]</b>, "
+        msg = msg.rstrip(", ") + " 更新啦：\n"
+
         for name, titles in self._update_info.items():
-            msg += f'<b>[{name}]</b>:\n'
+            msg += f"<b>[{name}]</b>:\n"
             for title in titles:
-                msg += f'{title}\n'
-            msg += '\n'
+                msg += f"{title}\n"
+            msg += "\n"
         return msg
 
     def __bool__(self):
@@ -46,7 +46,7 @@ class NotificationMsg:
         self.msg = None
 
     @classmethod
-    def from_resources(cls, resources: list[MikanAnimeResource]):
+    def from_resources(cls, resources: list[ResourceInfo]):
         """Generate NotificationMsg from resources
 
         Args:

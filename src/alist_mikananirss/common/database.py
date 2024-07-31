@@ -4,7 +4,7 @@ from datetime import datetime
 
 from loguru import logger
 
-from alist_mikananirss.mikan import MikanAnimeResource
+from alist_mikananirss.websites import ResourceInfo
 
 db_path = "data"
 os.makedirs(db_path, exist_ok=True)
@@ -55,11 +55,11 @@ class SubscribeDatabase:
         finally:
             self.close()
 
-    def insert_mikan_resource(self, resource: MikanAnimeResource):
+    def insert_mikan_resource(self, resource: ResourceInfo):
         downloaded_date = datetime.now()
         downloaded_date = downloaded_date.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
         self.insert(
-            resource.resource_id,
+            resource.rid,
             resource.resource_title,
             resource.torrent_url,
             resource.published_date,
