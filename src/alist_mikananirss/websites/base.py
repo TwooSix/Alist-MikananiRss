@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import feedparser
 
-from alist_mikananirss.websites.data import FeedEntry, ResourceInfo
+from .entities import FeedEntry, ResourceInfo
 
 
 class Website(abc.ABC):
@@ -37,7 +37,7 @@ class WebsiteFactory:
     @staticmethod
     def get_website_parser(rss_url: str) -> Website:
         if "mikan" in rss_url:
-            from alist_mikananirss.websites.mikan import Mikan
+            from alist_mikananirss.websites import Mikan
 
             return Mikan(rss_url)
         else:

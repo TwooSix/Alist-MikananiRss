@@ -4,8 +4,9 @@ import re
 from loguru import logger
 from openai import AsyncOpenAI
 
-from .models import AnimeInfo, AnimeNameInfo, ResourceNameInfo
-from alist_mikananirss.websites.data import ResourceInfo
+from alist_mikananirss.websites import ResourceInfo
+
+from .models import AnimeNameInfo, ResourceNameInfo
 
 
 class ExtractorBase:

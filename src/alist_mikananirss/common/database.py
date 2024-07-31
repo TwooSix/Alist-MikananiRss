@@ -4,7 +4,7 @@ from datetime import datetime
 
 from loguru import logger
 
-from alist_mikananirss.websites.data import ResourceInfo
+from alist_mikananirss.websites import ResourceInfo
 
 db_path = "data"
 os.makedirs(db_path, exist_ok=True)

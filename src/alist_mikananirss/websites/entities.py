@@ -15,6 +15,9 @@ class ResourceInfo:
     quality: str = ""
     language: str = ""
 
+    def __hash__(self):
+        return hash(self.resource_title)
+
 
 @dataclass
 class FeedEntry:

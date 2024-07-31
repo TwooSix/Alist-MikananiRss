@@ -2,12 +2,12 @@ import asyncio
 
 from loguru import logger
 
-from alist_mikananirss.common import globalvar
 from alist_mikananirss.common.database import SubscribeDatabase
 from alist_mikananirss.extractor import Extractor
-from alist_mikananirss.filters import RegexFilter
-from alist_mikananirss.websites.base import WebsiteFactory
-from alist_mikananirss.websites.data import FeedEntry, ResourceInfo
+from alist_mikananirss.websites import FeedEntry, ResourceInfo, WebsiteFactory
+
+from .download_manager import DownloadManager
+from .filters import RegexFilter
 
 
 class RssMonitor:
@@ -27,6 +27,10 @@ class RssMonitor:
         self.filter = filter
         self.extractor = extractor
         self.db = SubscribeDatabase()
+        self.interval_time = 300
+
+    def set_interval_time(self, interval_time: int):
+        self.interval_time = interval_time
 
     async def get_new_resource(self, fileter: RegexFilter):
         new_resources: list[ResourceInfo] = []
@@ -44,7 +48,7 @@ class RssMonitor:
                     new_resources.append(resourcec)
         return new_resources
 
-    async def run(self, interval_time):
+    async def run(self):
         while 1:
             logger.info("Start update checking")
             new_resources = await self.get_new_resource(fileter=self.filter)
@@ -54,5 +58,5 @@ class RssMonitor:
                 for resource in new_resources:
                     if self.extractor:
                         await self.extractor.process(resource)
-                    await globalvar.new_res_q.put(resource)
-            await asyncio.sleep(interval_time)
+                await DownloadManager.add_download_tasks(new_resources)
+            await asyncio.sleep(self.interval_time)

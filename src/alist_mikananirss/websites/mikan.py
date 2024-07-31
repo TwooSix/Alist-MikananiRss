@@ -3,8 +3,7 @@ from dataclasses import dataclass
 import aiohttp
 import bs4
 
-from alist_mikananirss.websites.base import Website
-from alist_mikananirss.websites.data import FeedEntry, ResourceInfo
+from alist_mikananirss.websites import FeedEntry, ResourceInfo, Website
 
 
 @dataclass

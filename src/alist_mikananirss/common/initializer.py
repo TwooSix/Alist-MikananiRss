@@ -3,16 +3,21 @@ import sys
 
 from loguru import logger
 
+from alist_mikananirss import NotificationSender, RssMonitor
 from alist_mikananirss.alist import Alist, AlistConfig
 from alist_mikananirss.bot import NotificationBot, PushPlusBot, TelegramBot
 from alist_mikananirss.common.config_loader import ConfigLoader
-from alist_mikananirss.downloader import AlistDownloader
+from alist_mikananirss.core.download_manager import DownloadManager
+from alist_mikananirss.core.filters import RegexFilter
+from alist_mikananirss.core.renamer import AnimeRenamer
 from alist_mikananirss.extractor import ChatGPTExtractor, Extractor, RegexExtractor
-from alist_mikananirss.filters import RegexFilter
-from alist_mikananirss.monitor import AlistDownloadMonitor, RssMonitor
-from alist_mikananirss.renamer import Renamer
 
-config_loader = ConfigLoader("config.yaml")
+config_loader = None
+
+
+def read_config(cfg_path: str):
+    global config_loader
+    config_loader = ConfigLoader(cfg_path)
 
 
 def setup_logger():
@@ -24,7 +29,6 @@ def setup_logger():
 
 
 def setup_proxy():
-    # proxy init
     proxies = config_loader.get("common.proxies", {})
     if "http" in proxies:
         os.environ["HTTP_PROXY"] = proxies["http"]
@@ -33,7 +37,6 @@ def setup_proxy():
 
 
 async def init_alist():
-    # alist init
     base_url = config_loader.get("alist.base_url")
     downloader_type = config_loader.get("alist.downloader")
     token = config_loader.get("alist.token")
@@ -67,7 +70,6 @@ def init_extrator() -> Extractor:
 
 
 def init_notification_bots():
-    # init notification bot
     notification_bots = []
     tg_config = config_loader.get("notification.telegram", None)
     if tg_config:
@@ -85,8 +87,12 @@ def init_notification_bots():
     return notification_bots
 
 
-def init_regex_filter():
-    # init resource filters
+def init_notification_sender():
+    notification_bots = init_notification_bots()
+    NotificationSender.initialize(notification_bots)
+
+
+def init_resource_filter():
     regex_filter = RegexFilter()
     filters_name = config_loader.get("mikan.filters", [])
     regex_pattern = config_loader.get("mikan.regex_pattern", None)
@@ -96,8 +102,7 @@ def init_regex_filter():
     return regex_filter
 
 
-def init_mikan_rss_monitor(regex_filter: RegexFilter):
-    # init rss manager
+def init_rss_monitor(regex_filter: RegexFilter):
     subscribe_url = config_loader.get("mikan.subscribe_url")
     extrator = init_extrator()
     rss_monitor = RssMonitor(
@@ -105,14 +110,28 @@ def init_mikan_rss_monitor(regex_filter: RegexFilter):
         filter=regex_filter,
         extractor=extrator,
     )
+    interval_time = config_loader.get("common.interval_time", 300)
+    if interval_time < 0:
+        raise ValueError("Invalid interval time")
+    rss_monitor.set_interval_time(interval_time)
     return rss_monitor
 
 
-def init_download_monitor(alist_client: Alist):
+def init_download_manager(alist_client: Alist):
+    download_path = config_loader.get("alist.download_path")
+    use_renamer = False if config_loader.get("rename") is None else True
+    need_notification = False if config_loader.get("notification") is None else True
+    DownloadManager.initialize(
+        alist_client, download_path, use_renamer, need_notification
+    )
+
+
+def init_renamer(alist_client: Alist):
     def check_rename_format(rename_format: str):
+        # Check if there are unknown keys in rename format
         from collections import defaultdict
 
-        test_data = {
+        all_key_test_data = {
             "name": "test",
             "season": 1,
             "episode": 1,
@@ -121,32 +140,17 @@ def init_download_monitor(alist_client: Alist):
             "language": "简体中文",
             "ext": "mp4",
         }
-        safe_test_data = defaultdict(lambda: "undefined", test_data)
-        res = rename_format.format_map(safe_test_data)
+        safe_dict = defaultdict(lambda: "undefined", all_key_test_data)
+        res = rename_format.format_map(safe_dict)
         if "undefined" in res:
-            missing_keys = [
-                key for key, value in safe_test_data.items() if value == "undefined"
+            unknown_keys = [
+                key for key, value in safe_dict.items() if value == "undefined"
             ]
-            raise KeyError(f"Error keys in rename format: {', '.join(missing_keys)}")
+            raise KeyError(f"Error keys in rename format: {', '.join(unknown_keys)}")
 
-    download_path = config_loader.get("alist.download_path")
     rename_cfg = config_loader.get("rename", None)
-    renamer = None
     if rename_cfg is not None:
         rename_format = config_loader.get("rename.rename_format", None)
         if rename_format:
             check_rename_format(rename_format)
-        renamer = Renamer(alist_client, download_path, rename_format)
-    download_monitor_thread = AlistDownloadMonitor(
-        alist_client,
-        download_path,
-        renamer,
-    )
-    return download_monitor_thread
-
-
-def init_alist_downloader(alist_client: Alist):
-    rename_cfg = config_loader.get("rename", None)
-    use_renamer = False if rename_cfg is None else True
-    downloader = AlistDownloader(alist_client, use_renamer)
-    return downloader
+        AnimeRenamer.initialize(alist_client, rename_format)
