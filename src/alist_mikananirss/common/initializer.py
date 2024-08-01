@@ -51,7 +51,7 @@ async def init_alist():
     return alist_client
 
 
-def init_extrator() -> Extractor:
+def init_extrator():
     rename_cfg = config_loader.get("rename", None)
     if rename_cfg is None:
         return None
@@ -62,12 +62,12 @@ def init_extrator() -> Extractor:
             chatgpt_cfg.get("base_url"),
             chatgpt_cfg.get("model"),
         )
-        extractor = Extractor(chatgpt)
-        return extractor
+        Extractor.initialize(chatgpt)
+        return
     elif "regex" in rename_cfg:
         regex_extractor = RegexExtractor()
-        extractor = Extractor(regex_extractor)
-        return extractor
+        Extractor.initialize(regex_extractor)
+        return
     else:
         raise ValueError("Invalid rename config, extractor is required")
 
@@ -109,11 +109,11 @@ def init_resource_filter():
 
 def init_rss_monitor(regex_filter: RegexFilter):
     subscribe_url = config_loader.get("mikan.subscribe_url")
-    extrator = init_extrator()
+    use_extractor = False if config_loader.get("rename", None) is None else True
     rss_monitor = RssMonitor(
         subscribe_url,
         filter=regex_filter,
-        extractor=extrator,
+        use_extractor=use_extractor,
     )
     interval_time = config_loader.get("common.interval_time", 300)
     if interval_time < 0:

@@ -26,8 +26,10 @@ class Website(abc.ABC):
         pass
 
     @abc.abstractmethod
-    async def extract_resource_info(self, entry: FeedEntry) -> ResourceInfo:
-        """从资源条目中提取基本的番剧资源信息"""
+    async def extract_resource_info(
+        self, entry: FeedEntry, use_extractor: bool = False
+    ) -> ResourceInfo:
+        """从资源条目中提取番剧资源信息"""
         pass
 
 

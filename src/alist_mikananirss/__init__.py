@@ -19,6 +19,7 @@ async def run():
     initializer.setup_proxy()
     alist_client = await initializer.init_alist()
     initializer.init_download_manager(alist_client)
+    initializer.init_extrator()
     initializer.init_renamer(alist_client)
     resource_filters = initializer.init_resource_filter()
     rss_monitor = initializer.init_rss_monitor(resource_filters)

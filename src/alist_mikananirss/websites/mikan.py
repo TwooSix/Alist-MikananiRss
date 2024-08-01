@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import aiohttp
 import bs4
 
+from alist_mikananirss.extractor import Extractor
 from alist_mikananirss.websites import FeedEntry, ResourceInfo, Website
 
 
@@ -19,7 +20,7 @@ class Mikan(Website):
     async def parse_homepage(self, home_page_url: str) -> MikanHomePageInfo:
         async with aiohttp.ClientSession(trust_env=True) as session:
             async with session.get(home_page_url) as response:
-                await response.raise_for_status()
+                response.raise_for_status()
                 html = await response.text()
         soup = bs4.BeautifulSoup(html, "html.parser")
         anime_name = soup.find("p", class_="bangumi-title").text.strip()
@@ -54,7 +55,9 @@ class Mikan(Website):
             feed_entries.add(feed_entry)
         return feed_entries
 
-    async def extract_resource_info(self, entry: FeedEntry) -> ResourceInfo:
+    async def extract_resource_info(
+        self, entry: FeedEntry, use_extractor: bool = False
+    ) -> ResourceInfo:
         homepage_info = await self.parse_homepage(entry.homepage_url)
         resource_info = ResourceInfo(
             anime_name=homepage_info.anime_name,
@@ -63,4 +66,6 @@ class Mikan(Website):
             published_date=entry.published_date,
             fansub=homepage_info.fansub,
         )
+        if use_extractor:
+            await Extractor.process(resource_info)
         return resource_info
