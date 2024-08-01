@@ -9,7 +9,11 @@ from alist_mikananirss.websites import ResourceInfo
 async def test_extractor_process():
     mock_chatgpt_extractor = AsyncMock()
     mock_chatgpt_extractor.analyse_resource_name.return_value = ResourceNameInfo(
-        episode=3, quality="720p", language="English"
+        anime_name="Test Anime 第二季",
+        season=2,
+        episode=3,
+        quality="720p",
+        language="English",
     )
 
     Extractor.initialize(mock_chatgpt_extractor)

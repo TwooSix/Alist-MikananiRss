@@ -63,6 +63,9 @@ class Extractor:
         resource_info.quality = quality
         resource_info.language = language
 
+        assert resource_info.anime_name is not None
+        assert resource_info.season is not None
+
 
 # 使用示例
 # Extractor.initialize(SomeExtractor())
