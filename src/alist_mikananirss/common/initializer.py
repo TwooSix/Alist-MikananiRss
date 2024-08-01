@@ -92,7 +92,9 @@ def init_notification_bots():
 
 def init_notification_sender():
     notification_bots = init_notification_bots()
-    NotificationSender.initialize(notification_bots)
+    interval_time = config_loader.get("common.interval_time", 300)
+    interval_time = config_loader.get("notification.interval_time", interval_time)
+    NotificationSender.initialize(notification_bots, interval_time)
 
 
 def init_resource_filter():

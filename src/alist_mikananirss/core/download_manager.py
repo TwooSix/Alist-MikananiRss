@@ -218,7 +218,7 @@ class DownloadManager:
             filepath = os.path.join(task.download_path, task.transfer_task.file_name)
             asyncio.create_task(AnimeRenamer.rename(filepath, task.resource))
         if self.need_notification:
-            asyncio.create_task(NotificationSender.send([task.resource]))
+            asyncio.create_task(NotificationSender.add_resource(task.resource))
 
     async def monitor(self, task_info: AnimeDownloadTaskInfo):
         success_task = await self._wait_finished(task_info)

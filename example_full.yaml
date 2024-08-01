@@ -28,9 +28,9 @@ notification:
   telegram:
     bot_token: your_token
     user_id: your_id
-
   pushplus: 
     token: xxxxx
+  interval_time: 300
 
 rename: 
   chatgpt: 

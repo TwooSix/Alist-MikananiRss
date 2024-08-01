@@ -1,4 +1,5 @@
 import asyncio
+from typing import List
 
 from loguru import logger
 
@@ -8,7 +9,9 @@ from alist_mikananirss.websites import ResourceInfo
 
 class NotificationSender:
     _instance = None
-    notification_bots: list[NotificationBot] = []
+    notification_bots: List[NotificationBot] = []
+    _queue: asyncio.Queue = None
+    _interval: int = 60
 
     def __new__(cls):
         if cls._instance is None:
@@ -22,25 +25,47 @@ class NotificationSender:
         return cls._instance
 
     @classmethod
-    def initialize(cls, notification_bots: list[NotificationBot]):
+    def initialize(cls, notification_bots: List[NotificationBot], interval: int = 60):
         cls._instance = NotificationSender()
         cls._instance.notification_bots = notification_bots
+        cls._instance._queue = asyncio.Queue()
+        cls._instance._interval = interval
+        asyncio.create_task(cls._instance._run())
 
     @classmethod
-    def set_notification_bots(cls, notification_bots: list[NotificationBot]):
+    def set_notification_bots(cls, notification_bots: List[NotificationBot]):
         cls._instance.notification_bots = notification_bots
 
     @classmethod
-    async def send(cls, resources: list[ResourceInfo]):
-        if not cls._instance.notification_bots:
+    async def add_resource(cls, resource: ResourceInfo):
+        await cls._instance._queue.put(resource)
+
+    @classmethod
+    def set_interval(cls, interval: int):
+        cls._instance._interval = interval
+
+    async def _run(self):
+        while True:
+            await asyncio.sleep(self._interval)
+            resources = []
+            while not self._queue.empty():
+                try:
+                    resource = self._queue.get_nowait()
+                    resources.append(resource)
+                except asyncio.QueueEmpty:
+                    break
+            if resources:
+                await self._send(resources)
+
+    async def _send(self, resources: List[ResourceInfo]):
+        if not self.notification_bots:
             return
-        if resources:
-            msg = NotificationMsg.from_resources(resources)
-            logger.debug(f"Send notification\n: {msg}")
-            results = await asyncio.gather(
-                *[bot.send_message(msg) for bot in cls._instance.notification_bots],
-                return_exceptions=True,
-            )
-            for result in results:
-                if isinstance(result, Exception):
-                    logger.error(result)
+        msg = NotificationMsg.from_resources(resources)
+        logger.debug(f"Send notification\n: {msg}")
+        results = await asyncio.gather(
+            *[bot.send_message(msg) for bot in self.notification_bots],
+            return_exceptions=True,
+        )
+        for result in results:
+            if isinstance(result, Exception):
+                logger.error(result)
