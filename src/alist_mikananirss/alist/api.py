@@ -59,7 +59,7 @@ class Alist:
         if custom_headers:
             headers.update(custom_headers)
         async with self.session.request(method, url, headers=headers, **kwargs) as resp:
-            resp.raise_for_status()
+            await resp.raise_for_status()
             data = await resp.json()
             if data["code"] != 200:
                 raise AlistClientError(data.get("message", "Unknown error"))

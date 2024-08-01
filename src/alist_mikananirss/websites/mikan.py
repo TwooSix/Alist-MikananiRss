@@ -19,7 +19,7 @@ class Mikan(Website):
     async def parse_homepage(self, home_page_url: str) -> MikanHomePageInfo:
         async with aiohttp.ClientSession(trust_env=True) as session:
             async with session.get(home_page_url) as response:
-                response.raise_for_status()
+                await response.raise_for_status()
                 html = await response.text()
         soup = bs4.BeautifulSoup(html, "html.parser")
         anime_name = soup.find("p", class_="bangumi-title").text.strip()
