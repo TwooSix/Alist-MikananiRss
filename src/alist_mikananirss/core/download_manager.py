@@ -293,6 +293,9 @@ class DownloadManager:
                         download_task=task,
                         download_path=resource_path_map[resource],
                     )
+                    logger.info(
+                        f"Start to download {resource.resource_title} to {anime_task.download_path}"
+                    )
                     anime_task_list.append(anime_task)
                     break
         return anime_task_list
