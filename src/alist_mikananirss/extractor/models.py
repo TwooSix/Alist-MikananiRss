@@ -3,7 +3,7 @@ from typing import Optional
 
 
 @dataclass
-class ResourceNameInfo:
+class ResourceTitleInfo:
     anime_name: str
     season: int
     episode: int

@@ -1,4 +1,4 @@
-from .models import AnimeNameInfo, ResourceNameInfo
+from .models import AnimeNameInfo, ResourceTitleInfo
 
 
 class ExtractorBase:
@@ -9,5 +9,5 @@ class ExtractorBase:
     async def analyse_anime_name(self, anime_name: str) -> AnimeNameInfo:
         raise NotImplementedError
 
-    async def analyse_resource_name(self, resource_name: str) -> ResourceNameInfo:
+    async def analyse_resource_title(self, resource_title: str) -> ResourceTitleInfo:
         raise NotImplementedError

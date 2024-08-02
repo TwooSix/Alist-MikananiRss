@@ -1,50 +1,57 @@
 from unittest.mock import AsyncMock
 
 import pytest
-from alist_mikananirss.extractor import Extractor, ResourceNameInfo
-from alist_mikananirss.websites import ResourceInfo
+from alist_mikananirss.extractor import Extractor, ExtractorBase, RegexExtractor
+
+
+@pytest.fixture
+def mock_extractor():
+    return AsyncMock(spec=ExtractorBase)
+
+
+@pytest.fixture
+def mock_regex_extractor():
+    return AsyncMock(spec=RegexExtractor)
+
+
+def test_initialize():
+    mock_extractor = AsyncMock(spec=ExtractorBase)
+    Extractor.initialize(mock_extractor)
+    assert Extractor._extractor == mock_extractor
+
+
+def test_get_instance_without_initialization():
+    Extractor._instance = None
+    with pytest.raises(ValueError):
+        Extractor.get_instance()
+
+
+def test_get_instance_after_initialization(mock_extractor):
+    Extractor.initialize(mock_extractor)
+    instance = Extractor.get_instance()
+    assert isinstance(instance, Extractor)
+
+
+def test_multiple_initializations():
+    # Test behavior with multiple initializations
+    mock_extractor1 = AsyncMock(spec=ExtractorBase)
+    mock_extractor2 = AsyncMock(spec=ExtractorBase)
+
+    Extractor.initialize(mock_extractor1)
+    first_instance = Extractor.get_instance()
+
+    Extractor.initialize(mock_extractor2)
+    second_instance = Extractor.get_instance()
+
+    assert first_instance is second_instance
+    assert Extractor._extractor == mock_extractor2
 
 
 @pytest.mark.asyncio
-async def test_extractor_process():
-    mock_chatgpt_extractor = AsyncMock()
-    mock_chatgpt_extractor.analyse_resource_name.return_value = ResourceNameInfo(
-        anime_name="Test Anime 第二季",
-        season=2,
-        episode=3,
-        quality="720p",
-        language="English",
-    )
-
-    Extractor.initialize(mock_chatgpt_extractor)
-
-    test_resource_info = ResourceInfo(
-        anime_name="Test Anime 第二季",
-        resource_title="Test Anime S01E03 720p",
-        torrent_url="https://example.com/test.torrent",
-        published_date="2022-01-01 00:00:00",
-    )
-
-    await Extractor.process(test_resource_info)
-
-    assert test_resource_info.anime_name == "Test Anime"
-    assert test_resource_info.season == 2
-    assert test_resource_info.episode == 3
-    assert test_resource_info.quality == "720p"
-    assert test_resource_info.language == "English"
-
-
-@pytest.mark.asyncio
-async def test_extractor_not_initialized():
+async def test_analyse_resource_title_without_initialization():
+    # Test analyse_resource_title when not initialized
     Extractor._instance = None
     Extractor._extractor = None
 
-    test_resource_info = ResourceInfo(
-        anime_name="Test Anime 第一季",
-        resource_title="Test Anime S01E03 720p",
-        torrent_url="https://example.com/test.torrent",
-        published_date="2022-01-01 00:00:00",
-    )
-
     with pytest.raises(ValueError):
-        await Extractor.process(test_resource_info)
+        await Extractor.analyse_resource_title("Test")

@@ -5,7 +5,7 @@ from loguru import logger
 from openai import AsyncOpenAI
 
 from .base import ExtractorBase
-from .models import AnimeNameInfo, ResourceNameInfo
+from .models import AnimeNameInfo, ResourceTitleInfo
 
 
 class ChatGPTExtractor(ExtractorBase):
@@ -63,7 +63,7 @@ class ChatGPTExtractor(ExtractorBase):
         logger.debug(f"Chatgpt analyse resource name: {resource_name} -> {info}")
         return info
 
-    async def analyse_resource_name(self, resource_name: str) -> ResourceNameInfo:
+    async def analyse_resource_title(self, resource_title: str) -> ResourceTitleInfo:
         """解析番剧资源名字，返回番剧集数和清晰度信息(若为总集篇则会返回季度)"""
         prompt = """
         I will provide you with the torrent name of an anime. Please extract the following information from the torrent name: the name of the anime; the episode number of the anime; the video quality; the fansub's name; and the language of the subtitles. If the episode number is a decimal, it means that it is a special episode. In this case, the season number should be set to 0.
@@ -84,7 +84,7 @@ class ChatGPTExtractor(ExtractorBase):
 
         Based on the anime resource name, please provide a JSON format data structure(output in markdown format) that I can use directly to initialize an instance of the ResourceNameInfo class.
         """
-        resp = await self._get_gpt_response(prompt, resource_name)
+        resp = await self._get_gpt_response(prompt, resource_title)
         data = await self._parse_json_response(resp)
 
         expected_data = {
@@ -103,7 +103,7 @@ class ChatGPTExtractor(ExtractorBase):
             for field_name, field_type in expected_data.items()
         ):
             raise TypeError(f"GPT provide a wrong type data: {data}")
-        info = ResourceNameInfo(
+        info = ResourceTitleInfo(
             anime_name=data["anime_name_cn"],
             season=data["season"],
             episode=data["episode"],
@@ -111,5 +111,5 @@ class ChatGPTExtractor(ExtractorBase):
             fansub=data["fansub"],
             language=data["language"],
         )
-        logger.debug(f"Chatgpt analyse resource name: {resource_name} -> {info}")
+        logger.debug(f"Chatgpt analyse resource name: {resource_title} -> {info}")
         return info

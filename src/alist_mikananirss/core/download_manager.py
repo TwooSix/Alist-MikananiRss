@@ -105,8 +105,8 @@ class DownloadManager:
         cls,
         alist_client: Alist,
         base_download_path: str,
-        use_renamer: bool,
-        need_notification: bool,
+        use_renamer: bool = False,
+        need_notification: bool = False,
     ) -> None:
         cls._instance = cls()
         cls.alist_client = alist_client
@@ -228,6 +228,29 @@ class DownloadManager:
             # 下载失败，删除数据库记录
             self.db.delete_by_id(task_info.resource.torrent_url)
 
+    def _build_download_path(self, resource: ResourceInfo) -> str:
+        """build the download path based on the anime name and season
+        The result looks like this: base_download_path/AnimeName/Season {season} \n
+        if the anime name is not available, use the base download path
+
+        Args:
+            resource (ResourceInfo)
+
+        Returns:
+            str: new download path
+        """
+        download_path = self.base_download_path
+        if resource.anime_name:
+            # Replace illegal characters in the anime_name
+            illegal_chars = ["\\", "/", ":", "*", "?", '"', "<", ">", "|"]
+            anime_name = resource.anime_name
+            for char in illegal_chars:
+                anime_name = anime_name.replace(char, " ")
+            download_path = os.path.join(download_path, anime_name)
+            if resource.season:
+                download_path = os.path.join(download_path, f"Season {resource.season}")
+        return download_path
+
     async def download(
         self, new_resources: list[ResourceInfo]
     ) -> list[AnimeDownloadTaskInfo]:
@@ -238,21 +261,18 @@ class DownloadManager:
             base_download_path (str): remote dir path
 
         Returns:
-            list[MikanAnimeResource]: resources that download task created successfully
+            list[AnimeDownloadTaskInfo]: Successful download task's info
         """
         # Generate a mapping of download paths to resources
         # facilitating batch creation of download tasks and reducing requests to the Alist API
+        ## mapping of {download_path: [torrent_url]}
         path_urls: dict[str, list[str]] = {}
-        resource_path_map = {}
-
+        resource_path_map = {}  # mapping of {ResourceInfo: download_path}
         for resource in new_resources:
-            download_path = os.path.join(self.base_download_path, resource.anime_name)
-            if resource.season:
-                download_path = os.path.join(download_path, f"Season {resource.season}")
-
+            download_path = self._build_download_path(resource)
             path_urls.setdefault(download_path, []).append(resource.torrent_url)
             resource_path_map[resource] = download_path
-
+        # start to request the Alist Download API
         task_list = AlistTaskList()
         for download_path, urls in path_urls.items():
             try:
@@ -263,6 +283,7 @@ class DownloadManager:
                 logger.error(f"Error when add offline download task: {e}")
                 continue
             task_list = task_list + tmp_task_list
+        # Patch the download task with the resource information
         anime_task_list = []
         for task in task_list:
             for resource in new_resources:

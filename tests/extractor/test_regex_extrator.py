@@ -1,5 +1,5 @@
 import pytest
-from alist_mikananirss.extractor import AnimeNameInfo, RegexExtractor, ResourceNameInfo
+from alist_mikananirss.extractor import AnimeNameInfo, RegexExtractor, ResourceTitleInfo
 
 # RegexExtractor tests
 
@@ -26,18 +26,18 @@ async def test_regex_analyse_anime_name():
 async def test_regex_analyse_resource_name():
     extractor = RegexExtractor()
 
-    result = await extractor.analyse_resource_name(
+    result = await extractor.analyse_resource_title(
         "[夜莺家族&YYQ字幕组]New Doraemon 哆啦A梦新番[821][2024.07.27][AVC][1080P][GB_JP]"
     )
-    assert isinstance(result, ResourceNameInfo)
+    assert isinstance(result, ResourceTitleInfo)
     assert result.episode == 821
     assert result.season is None
 
-    result = await extractor.analyse_resource_name(
+    result = await extractor.analyse_resource_title(
         "[ANi] Ore Dake Level Up na Ken / 我独自升级 - 07.5 [1080P][Baha][WEB-DL][AAC AVC][CHT][MP4]"
     )
     assert result.episode == 7.5
     assert result.season == 0  # Special episode
 
     with pytest.raises(ValueError):
-        await extractor.analyse_resource_name("Invalid Resource Name")
+        await extractor.analyse_resource_title("Invalid Resource Name")

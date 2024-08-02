@@ -4,7 +4,7 @@ from functools import lru_cache
 from loguru import logger
 
 from .base import ExtractorBase
-from .models import AnimeNameInfo, ResourceNameInfo
+from .models import AnimeNameInfo, ResourceTitleInfo
 
 
 class RegexExtractor(ExtractorBase):
@@ -70,15 +70,15 @@ class RegexExtractor(ExtractorBase):
         logger.debug(f"Regex analyse anime name: {anime_name} -> {info}")
         return info
 
-    async def analyse_resource_name(self, resource_name: str) -> ResourceNameInfo:
-        clean_name = re.sub(r"[\[\]【】()（）]", " ", resource_name)
+    async def analyse_resource_title(self, resource_title: str) -> ResourceTitleInfo:
+        clean_name = re.sub(r"[\[\]【】()（）]", " ", resource_title)
         match = self.episode_pattern.search(clean_name)
         if not match:
-            raise ValueError(f"Can't find episode number in {resource_name}")
+            raise ValueError(f"Can't find episode number in {resource_title}")
         episode = float(match.group(1))
 
         season = 0 if not episode.is_integer() else None
         episode = int(episode) if episode.is_integer() else episode
-        info = ResourceNameInfo(anime_name="", season=season, episode=episode)
-        logger.debug(f"Regex analyse resource name: {resource_name} -> {info}")
+        info = ResourceTitleInfo(anime_name="", season=season, episode=episode)
+        logger.debug(f"Regex analyse resource name: {resource_title} -> {info}")
         return info

@@ -67,5 +67,21 @@ class Mikan(Website):
             fansub=homepage_info.fansub,
         )
         if use_extractor:
-            await Extractor.process(resource_info)
+            name_extract_result = await Extractor.analyse_anime_name(
+                resource_info.anime_name
+            )
+            rtitle_extract_result = await Extractor.analyse_resource_title(
+                resource_info.resource_title
+            )
+            resource_info = ResourceInfo(
+                anime_name=name_extract_result.anime_name,
+                season=rtitle_extract_result.season,
+                episode=rtitle_extract_result.episode,
+                quality=rtitle_extract_result.quality,
+                language=rtitle_extract_result.language,
+                fansub=resource_info.fansub,
+                resource_title=resource_info.resource_title,
+                torrent_url=resource_info.torrent_url,
+                published_date=resource_info.published_date,
+            )
         return resource_info

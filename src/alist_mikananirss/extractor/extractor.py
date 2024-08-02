@@ -1,6 +1,5 @@
-from alist_mikananirss.websites import ResourceInfo
-
 from .base import ExtractorBase
+from .models import AnimeNameInfo, ResourceTitleInfo
 from .regex import RegexExtractor
 
 
@@ -32,42 +31,12 @@ class Extractor:
         return cls._instance
 
     @classmethod
-    async def process(cls, resource_info: ResourceInfo):
-        """Use extractor to extract anime info from anime name resource title
+    async def analyse_anime_name(cls, anime_name: str) -> AnimeNameInfo:
+        # chatgpt对番剧名分析不稳定，所以固定用正则分析番剧名
+        instance = cls.get_instance()
+        return await instance._tmp_regex_extractor.analyse_anime_name(anime_name)
 
-        Args:
-            resource_info (ResourceInfo)
-        """
-        if cls._extractor is None:
-            raise ValueError(
-                "Extractor not initialized. Please use initialize() first."
-            )
-        # chatgpt对番剧名分析不稳定，所以固定用正则分析番剧名+季度
-        anime_name = resource_info.anime_name
-        anime_name_info = await cls._tmp_regex_extractor.analyse_anime_name(anime_name)
-        anime_name = anime_name_info.anime_name
-        season = anime_name_info.season
-
-        resource_name = resource_info.resource_title
-        resource_name_info = await cls._extractor.analyse_resource_name(resource_name)
-        episode = resource_name_info.episode
-        # 若为总集篇，resource_name_info会返回season=0，否则为None
-        if resource_name_info.season is not None:
-            season = resource_name_info.season
-        quality = resource_name_info.quality
-        language = resource_name_info.language
-
-        resource_info.anime_name = anime_name
-        resource_info.season = season
-        resource_info.episode = episode
-        resource_info.quality = quality
-        resource_info.language = language
-
-        assert resource_info.anime_name is not None
-        assert resource_info.season is not None
-
-
-# 使用示例
-# Extractor.initialize(SomeExtractor())
-# resource_info = ResourceInfo(xx)
-# await Extractor.process(resource_info)
+    @classmethod
+    async def analyse_resource_title(cls, resource_name: str) -> ResourceTitleInfo:
+        instance = cls.get_instance()
+        return await instance._extractor.analyse_resource_title(resource_name)
