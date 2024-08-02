@@ -4,7 +4,7 @@ from functools import lru_cache
 from loguru import logger
 
 from .base import ExtractorBase
-from .models import AnimeNameInfo, ResourceTitleInfo
+from .models import AnimeNameExtractResult, ResourceTitleExtractResult
 
 
 class RegexExtractor(ExtractorBase):
@@ -44,7 +44,7 @@ class RegexExtractor(ExtractorBase):
                 temp = self.num_dict[char]
         return result + temp
 
-    async def analyse_anime_name(self, anime_name: str) -> AnimeNameInfo:
+    async def analyse_anime_name(self, anime_name: str) -> AnimeNameExtractResult:
         # 去除名字中的"第x部分"(因为这种情况一般是分段播出，而非新的一季)
         anime_name = self.part_pattern.sub("", anime_name)
         match = self.season_pattern.search(anime_name)
@@ -66,11 +66,13 @@ class RegexExtractor(ExtractorBase):
                 # 默认为第一季
                 name = anime_name
                 season = 1
-        info = AnimeNameInfo(anime_name=name, season=int(season))
+        info = AnimeNameExtractResult(anime_name=name, season=int(season))
         logger.debug(f"Regex analyse anime name: {anime_name} -> {info}")
         return info
 
-    async def analyse_resource_title(self, resource_title: str) -> ResourceTitleInfo:
+    async def analyse_resource_title(
+        self, resource_title: str
+    ) -> ResourceTitleExtractResult:
         clean_name = re.sub(r"[\[\]【】()（）]", " ", resource_title)
         match = self.episode_pattern.search(clean_name)
         if not match:
@@ -79,6 +81,6 @@ class RegexExtractor(ExtractorBase):
 
         season = 0 if not episode.is_integer() else None
         episode = int(episode) if episode.is_integer() else episode
-        info = ResourceTitleInfo(anime_name="", season=season, episode=episode)
+        info = ResourceTitleExtractResult(anime_name="", season=season, episode=episode)
         logger.debug(f"Regex analyse resource name: {resource_title} -> {info}")
         return info

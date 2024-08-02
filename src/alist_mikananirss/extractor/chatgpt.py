@@ -5,7 +5,7 @@ from loguru import logger
 from openai import AsyncOpenAI
 
 from .base import ExtractorBase
-from .models import AnimeNameInfo, ResourceTitleInfo
+from .models import AnimeNameExtractResult, ResourceTitleExtractResult
 
 
 class ChatGPTExtractor(ExtractorBase):
@@ -31,11 +31,10 @@ class ChatGPTExtractor(ExtractorBase):
     async def _parse_json_response(self, resp):
         match = re.search(r"(\{.*?\})", resp, re.DOTALL)
         if not match:
-            raise ValueError(f"gpt给出了一坨屎一样的回复: {resp}")
+            raise ValueError(f"Can't parse GPT responese as a json:\n {resp}")
         return json.loads(match.group(1))
 
-    async def analyse_anime_name(self, resource_name: str) -> AnimeNameInfo:
-        """解析番剧名字，返回番剧本名和季度信息"""
+    async def analyse_anime_name(self, anime_name: str) -> AnimeNameExtractResult:
         prompt = """
         In the following, I will provide you with an anime name. Please extract the original name of the anime (i.e., the name without season information) and the season number based on the given name.
         I need to parse this text into a data structure to initialize a AnimeNameInfo class in my code. The definition of the AnimeNameInfo class is as follows:
@@ -49,7 +48,7 @@ class ChatGPTExtractor(ExtractorBase):
 
         Based on the resource name of the anime series, please provide a JSON-formatted data structure(output in markdown format) that I can directly use to initialize an instance of the class.
         """
-        resp = await self._get_gpt_response(prompt, resource_name)
+        resp = await self._get_gpt_response(prompt, anime_name)
         data = await self._parse_json_response(resp)
 
         expected_data = {"anime_name": str, "season": int}
@@ -59,12 +58,15 @@ class ChatGPTExtractor(ExtractorBase):
         ):
             raise TypeError(f"GPT provide a wrong type data: {data}")
 
-        info = AnimeNameInfo(anime_name=data["anime_name"], season=data["season"])
-        logger.debug(f"Chatgpt analyse resource name: {resource_name} -> {info}")
+        info = AnimeNameExtractResult(
+            anime_name=data["anime_name"], season=data["season"]
+        )
+        logger.debug(f"Chatgpt analyse resource name: {anime_name} -> {info}")
         return info
 
-    async def analyse_resource_title(self, resource_title: str) -> ResourceTitleInfo:
-        """解析番剧资源名字，返回番剧集数和清晰度信息(若为总集篇则会返回季度)"""
+    async def analyse_resource_title(
+        self, resource_title: str
+    ) -> ResourceTitleExtractResult:
         prompt = """
         I will provide you with the torrent name of an anime. Please extract the following information from the torrent name: the name of the anime; the episode number of the anime; the video quality; the fansub's name; and the language of the subtitles. If the episode number is a decimal, it means that it is a special episode. In this case, the season number should be set to 0.
         I need to parse this text into a data structure to initialize a ResourceNameInfo class in my code. The definition of the ResourceNameInfo class is as follows:
@@ -103,7 +105,7 @@ class ChatGPTExtractor(ExtractorBase):
             for field_name, field_type in expected_data.items()
         ):
             raise TypeError(f"GPT provide a wrong type data: {data}")
-        info = ResourceTitleInfo(
+        info = ResourceTitleExtractResult(
             anime_name=data["anime_name_cn"],
             season=data["season"],
             episode=data["episode"],

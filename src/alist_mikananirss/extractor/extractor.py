@@ -1,5 +1,5 @@
 from .base import ExtractorBase
-from .models import AnimeNameInfo, ResourceTitleInfo
+from .models import AnimeNameExtractResult, ResourceTitleExtractResult
 from .regex import RegexExtractor
 
 
@@ -31,12 +31,14 @@ class Extractor:
         return cls._instance
 
     @classmethod
-    async def analyse_anime_name(cls, anime_name: str) -> AnimeNameInfo:
+    async def analyse_anime_name(cls, anime_name: str) -> AnimeNameExtractResult:
         # chatgpt对番剧名分析不稳定，所以固定用正则分析番剧名
         instance = cls.get_instance()
         return await instance._tmp_regex_extractor.analyse_anime_name(anime_name)
 
     @classmethod
-    async def analyse_resource_title(cls, resource_name: str) -> ResourceTitleInfo:
+    async def analyse_resource_title(
+        cls, resource_name: str
+    ) -> ResourceTitleExtractResult:
         instance = cls.get_instance()
         return await instance._extractor.analyse_resource_title(resource_name)

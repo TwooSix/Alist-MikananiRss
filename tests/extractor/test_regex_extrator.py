@@ -1,5 +1,9 @@
 import pytest
-from alist_mikananirss.extractor import AnimeNameInfo, RegexExtractor, ResourceTitleInfo
+from alist_mikananirss.extractor import (
+    AnimeNameExtractResult,
+    RegexExtractor,
+    ResourceTitleExtractResult,
+)
 
 # RegexExtractor tests
 
@@ -9,7 +13,7 @@ async def test_regex_analyse_anime_name():
     extractor = RegexExtractor()
 
     result = await extractor.analyse_anime_name("赛马娘 第二季")
-    assert isinstance(result, AnimeNameInfo)
+    assert isinstance(result, AnimeNameExtractResult)
     assert result.anime_name == "赛马娘"
     assert result.season == 2
 
@@ -29,7 +33,7 @@ async def test_regex_analyse_resource_name():
     result = await extractor.analyse_resource_title(
         "[夜莺家族&YYQ字幕组]New Doraemon 哆啦A梦新番[821][2024.07.27][AVC][1080P][GB_JP]"
     )
-    assert isinstance(result, ResourceTitleInfo)
+    assert isinstance(result, ResourceTitleExtractResult)
     assert result.episode == 821
     assert result.season is None
 
