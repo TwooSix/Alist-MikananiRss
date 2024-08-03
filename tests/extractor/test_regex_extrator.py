@@ -35,12 +35,14 @@ async def test_regex_analyse_resource_name():
     )
     assert isinstance(result, ResourceTitleExtractResult)
     assert result.episode == 821
+    assert isinstance(result.episode, int)
     assert result.season is None
 
     result = await extractor.analyse_resource_title(
         "[ANi] Ore Dake Level Up na Ken / 我独自升级 - 07.5 [1080P][Baha][WEB-DL][AAC AVC][CHT][MP4]"
     )
-    assert result.episode == 7.5
+    assert result.episode == 0
+    assert isinstance(result.episode, int)
     assert result.season == 0  # Special episode
 
     with pytest.raises(ValueError):

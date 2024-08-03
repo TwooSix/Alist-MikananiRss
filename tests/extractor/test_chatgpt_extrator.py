@@ -84,6 +84,7 @@ async def test_analyse_resource_title_success(chatgpt_extractor):
         assert isinstance(result, ResourceTitleExtractResult)
         assert result.anime_name == "测试番剧"
         assert result.season == 2
+        assert isinstance(result.episode, int)
         assert result.episode == 1
         assert result.quality == "1080p"
         assert result.fansub == "kuonji alice My wife"
@@ -117,7 +118,8 @@ async def test_analyse_resource_title_special_episode(chatgpt_extractor):
         assert isinstance(result, ResourceTitleExtractResult)
         assert result.anime_name == "测试番剧"
         assert result.season == 0
-        assert result.episode == 1.5
+        assert isinstance(result.episode, int)
+        assert result.episode == 0
         assert result.quality == "720p"
         assert result.fansub == "kuonji alice My wife"
         assert result.language == "简体中文"

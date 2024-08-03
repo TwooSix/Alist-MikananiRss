@@ -78,9 +78,9 @@ class RegexExtractor(ExtractorBase):
         if not match:
             raise ValueError(f"Can't find episode number in {resource_title}")
         episode = float(match.group(1))
-
+        # if episode is a decimal, it means that it is a special episode, season = 0
         season = 0 if not episode.is_integer() else None
-        episode = int(episode) if episode.is_integer() else episode
+        episode = int(episode) if episode.is_integer() else 0
         info = ResourceTitleExtractResult(anime_name="", season=season, episode=episode)
         logger.debug(f"Regex analyse resource name: {resource_title} -> {info}")
         return info

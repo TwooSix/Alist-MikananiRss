@@ -108,7 +108,7 @@ class ChatGPTExtractor(ExtractorBase):
         info = ResourceTitleExtractResult(
             anime_name=data["anime_name_cn"],
             season=data["season"],
-            episode=data["episode"],
+            episode=int(data["episode"]) if data["season"] != 0 else 0,
             quality=data["quality"],
             fansub=data["fansub"],
             language=data["language"],
