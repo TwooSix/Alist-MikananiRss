@@ -6,8 +6,8 @@ from typing import Optional
 class ResourceInfo:
     resource_title: str
     torrent_url: str
-    published_date: str
 
+    published_date: Optional[str] = None
     anime_name: Optional[str] = None
     season: Optional[int] = None
     episode: Optional[int] = None
@@ -23,7 +23,7 @@ class ResourceInfo:
 class FeedEntry:
     resource_title: str
     torrent_url: str
-    published_date: str
+    published_date: Optional[str] = None
     homepage_url: Optional[str] = None
 
     def __hash__(self):
