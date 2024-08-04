@@ -70,9 +70,9 @@ class AnimeRenamer:
     @classmethod
     async def rename(cls, old_filepath: str, resource: ResourceInfo, max_retry=3):
         instance = cls()
-        new_filename = await instance._build_new_name(old_filepath, resource)
         for i in range(max_retry):
             try:
+                new_filename = await instance._build_new_name(old_filepath, resource)
                 await instance.alist_client.rename(old_filepath, new_filename)
                 logger.info(f"Rename {old_filepath} to {new_filename}")
                 break
@@ -81,3 +81,4 @@ class AnimeRenamer:
                     logger.warning(f"Failed to rename {old_filepath}, retrying...: {e}")
                 else:
                     logger.error(f"Error when rename {old_filepath}: {e}")
+                await asyncio.sleep(5)
