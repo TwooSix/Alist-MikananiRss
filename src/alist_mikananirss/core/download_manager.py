@@ -247,7 +247,8 @@ class DownloadManager:
             for char in illegal_chars:
                 anime_name = anime_name.replace(char, " ")
             download_path = os.path.join(download_path, anime_name)
-            if resource.season:
+            # Need to compare with None, or when seaon=0 will be ignored
+            if resource.season is not None:
                 download_path = os.path.join(download_path, f"Season {resource.season}")
         return download_path
 

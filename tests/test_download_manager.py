@@ -102,3 +102,16 @@ def test_build_download_path_with_none_anime_name(base_path):
     expected_path = base_path
     test_instance = DownloadManager().get_instance()
     assert test_instance._build_download_path(resource) == expected_path
+
+
+def test_build_download_path_with_special_season(base_path):
+    resource = ResourceInfo(
+        resource_title="Test Resource",
+        torrent_url="http://example.com/torrent",
+        published_date="2023-05-20",
+        anime_name="Test Anime",
+        season=0,
+    )
+    expected_path = os.path.join(base_path, "Test Anime", "Season 0")
+    test_instance = DownloadManager().get_instance()
+    assert test_instance._build_download_path(resource) == expected_path
