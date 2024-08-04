@@ -68,7 +68,7 @@ class ChatGPTExtractor(ExtractorBase):
         self, resource_title: str
     ) -> ResourceTitleExtractResult:
         prompt = """
-        I will provide you with the torrent name of an anime. Please extract the following information from the torrent name: the name of the anime; the episode number of the anime; the video quality; the fansub's name; and the language of the subtitles. If the episode number is a decimal, it means that it is a special episode. In this case, the season number should be set to 0.
+        I will provide you with the torrent name of an anime. Please extract the following information from the torrent name: the name of the anime; the season number of the anime(If this episode is OVA，season set to 0); the episode number of the anime; the video quality; the fansub's name; and the language of the subtitles. 
         I need to parse this text into a data structure to initialize a ResourceNameInfo class in my code. The definition of the ResourceNameInfo class is as follows:
 
         class ResourceNameInfo{
@@ -85,6 +85,12 @@ class ChatGPTExtractor(ExtractorBase):
         }
 
         Based on the anime resource name, please provide a JSON format data structure(output in markdown format) that I can use directly to initialize an instance of the ResourceNameInfo class.
+        ps:
+        1. If the episode number is a decimal, it means that it is a special episode. In this case, the season number should be set to 0.
+        2. Assume season=1 if no special indication is given
+        3. please make a comprehensive judgment based on the values of anime_name_cn, anime_name_jp, and anime_name_en. The meanings of these three should be relatively similar.
+        4. If there are multiple names, please choose just one of them
+        5. anime name should not contains season info
         """
         resp = await self._get_gpt_response(prompt, resource_title)
         data = await self._parse_json_response(resp)
