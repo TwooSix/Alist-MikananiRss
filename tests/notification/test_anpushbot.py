@@ -15,6 +15,7 @@ async def test_pushplus_bot_send_message(mock_post, pushplus_bot):
     mock_response = AsyncMock()
     mock_response.raise_for_status = MagicMock()
     mock_post.return_value.__aenter__.return_value = mock_response
+    mock_response.json = AsyncMock(return_value={"code": 200})
 
     message = "Test message"
     result = await pushplus_bot.send_message(message)
