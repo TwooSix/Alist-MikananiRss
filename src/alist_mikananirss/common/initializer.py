@@ -13,7 +13,7 @@ from alist_mikananirss.core import (
     RegexFilter,
     RssMonitor,
 )
-from alist_mikananirss.extractor import ChatGPTExtractor, Extractor, RegexExtractor
+from alist_mikananirss.extractor import ChatGPTExtractor, Extractor
 
 config_loader = None
 
@@ -63,10 +63,6 @@ def init_extrator():
             chatgpt_cfg.get("model"),
         )
         Extractor.initialize(chatgpt)
-        return
-    elif "regex" in rename_cfg:
-        regex_extractor = RegexExtractor()
-        Extractor.initialize(regex_extractor)
         return
     else:
         raise ValueError("Invalid rename config, extractor is required")
