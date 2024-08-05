@@ -10,12 +10,18 @@ from .models import AnimeNameExtractResult, ResourceTitleExtractResult
 
 class ChatGPTExtractor(ExtractorBase):
     def __init__(self, api_key, base_url=None, model="gpt-3.5-turbo") -> None:
-        self.client = AsyncOpenAI(
-            api_key=api_key,
-        )
-        if base_url:
-            self.client.base_url = base_url
+        self._api_key = api_key
+        self._base_url = base_url
         self.model = model
+        self._client = None
+
+    @property
+    def client(self):
+        if self._client is None:
+            self._client = AsyncOpenAI(api_key=self._api_key)
+            if self._base_url:
+                self._client.base_url = self._base_url
+        return self._client
 
     async def _get_gpt_response(self, prompt, resource_name):
         chat_completion = await self.client.chat.completions.create(

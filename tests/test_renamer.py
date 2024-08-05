@@ -114,7 +114,8 @@ async def test_rename_retry(alist_mock, resource_info):
     alist_mock.rename.side_effect = [Exception("Error"), Exception("Error"), None]
 
     with patch.object(AnimeRenamer, "_build_new_name", return_value="new_file.mp4"):
-        await AnimeRenamer.rename(old_filepath, resource_info)
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            await AnimeRenamer.rename(old_filepath, resource_info)
 
     assert alist_mock.rename.call_count == 3
 
@@ -129,7 +130,8 @@ async def test_rename_max_retry_exceeded(alist_mock, resource_info):
 
     with patch.object(AnimeRenamer, "_build_new_name", return_value="new_file.mp4"):
         with patch.object(logger, "error") as mock_logger_error:
-            await AnimeRenamer.rename(old_filepath, resource_info)
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                await AnimeRenamer.rename(old_filepath, resource_info)
 
     assert alist_mock.rename.call_count == 3
     mock_logger_error.assert_called_once()

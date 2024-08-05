@@ -10,7 +10,8 @@ from alist_mikananirss.extractor import (
 
 @pytest.fixture
 def chatgpt_extractor():
-    return ChatGPTExtractor("fake_api_key")
+    with patch("openai.AsyncOpenAI", new=AsyncMock()):
+        yield ChatGPTExtractor("fake_api_key")
 
 
 @pytest.mark.asyncio
