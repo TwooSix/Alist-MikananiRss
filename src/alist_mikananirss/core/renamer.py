@@ -69,6 +69,13 @@ class AnimeRenamer:
 
     @classmethod
     async def rename(cls, old_filepath: str, resource: ResourceInfo, max_retry=3):
+        if (
+            resource.anime_name is None
+            or resource.season is None
+            or resource.episode is None
+        ):
+            logger.error(f"rename failed due to resource info is invalid: {resource}")
+            return
         instance = cls()
         for i in range(max_retry):
             try:
