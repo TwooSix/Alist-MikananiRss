@@ -25,7 +25,7 @@ from .renamer import AnimeRenamer
 class AnimeDownloadTaskInfo:
     resource: ResourceInfo
     download_path: str
-    download_task: Optional[AlistDownloadTask] = None
+    download_task: AlistDownloadTask
     transfer_task: Optional[AlistTransferTask] = None
 
 

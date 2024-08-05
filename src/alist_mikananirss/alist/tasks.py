@@ -126,7 +126,6 @@ class AlistDownloadTask(AlistTask):
 
     def __post_init__(self):
         self.task_type = AlistTaskType.DOWNLOAD
-        self._parse_description()
 
     def _parse_description(self):
         match = re.match(DOWNLOAD_PATTERN, self.description)
