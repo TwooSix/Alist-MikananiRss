@@ -9,7 +9,7 @@ from loguru import logger
 from alist_mikananirss.alist import Alist
 from alist_mikananirss.alist.tasks import (
     AlistDownloadTask,
-    AlistTaskList,
+    AlistTaskCollection,
     AlistTaskStatus,
     AlistTaskType,
     AlistTransferTask,
@@ -274,7 +274,7 @@ class DownloadManager:
             path_urls.setdefault(download_path, []).append(resource.torrent_url)
             resource_path_map[resource] = download_path
         # start to request the Alist Download API
-        task_list = AlistTaskList()
+        task_list = AlistTaskCollection()
         for download_path, urls in path_urls.items():
             try:
                 tmp_task_list = await self.alist_client.add_offline_download_task(

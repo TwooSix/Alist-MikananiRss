@@ -12,7 +12,7 @@ from alist_mikananirss.alist.tasks import (
     AlistDownloaderType,
     AlistDownloadTask,
     AlistTask,
-    AlistTaskList,
+    AlistTaskCollection,
     AlistTaskState,
     AlistTaskStatus,
     AlistTaskType,
@@ -76,7 +76,7 @@ class Alist:
 
     async def add_offline_download_task(
         self, save_path: str, urls: list[str]
-    ) -> "AlistTaskList":
+    ) -> "AlistTaskCollection":
         response_data = await self._api_call(
             "POST",
             "api/fs/add_offline_download",
@@ -87,7 +87,7 @@ class Alist:
                 "tool": self.config.downloader,
             },
         )
-        return AlistTaskList(
+        return AlistTaskCollection(
             [AlistDownloadTask.from_json(task) for task in response_data["tasks"]]
         )
 
@@ -152,7 +152,7 @@ class Alist:
 
     async def _fetch_tasks(
         self, task_type: AlistTaskType, status: AlistTaskStatus
-    ) -> "AlistTaskList":
+    ) -> "AlistTaskCollection":
         json_data = await self._api_call(
             "GET", f"/api/admin/task/{task_type.value}/{status.value}"
         )
@@ -163,11 +163,11 @@ class Alist:
             task_class = AlistDownloadTask
 
         tasks = [task_class.from_json(task) for task in json_data] if json_data else []
-        return AlistTaskList(tasks)
+        return AlistTaskCollection(tasks)
 
     async def get_task_list(
         self, task_type: AlistTaskType, status: Optional[AlistTaskState] = None
-    ) -> AlistTaskList:
+    ) -> AlistTaskCollection:
         """
         Get Alist task list.
 
