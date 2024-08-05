@@ -34,6 +34,7 @@ dev-dependencies = [
     "black>=24.3.0",
     "ipykernel>=6.29.4",
     "requests>=2.31.0",
+    "coverage>=7.6.1",
 ]
 
 [tool.hatch.metadata]
