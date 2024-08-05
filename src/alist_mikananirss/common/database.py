@@ -218,3 +218,16 @@ class SubscribeDatabase:
             logger.error(f"Error when delete resource data:\n {e}")
         finally:
             self.close()
+
+    def delete_by_resource_title(self, title: str):
+        self.connect()
+        try:
+            self.cursor.execute(
+                "DELETE FROM resource_data WHERE resource_title=?", (title,)
+            )
+            self.conn.commit()
+            logger.debug(f"Delete resource data: {title}")
+        except Exception as e:
+            logger.error(f"Error when delete resource data:\n {e}")
+        finally:
+            self.close()

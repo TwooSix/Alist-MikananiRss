@@ -226,7 +226,7 @@ class DownloadManager:
             self._post_process(success_task)
         else:
             # 下载失败，删除数据库记录
-            self.db.delete_by_torrent_url(task_info.resource.torrent_url)
+            self.db.delete_by_resource_title(task_info.resource.resource_title)
 
     def _build_download_path(self, resource: ResourceInfo) -> str:
         """build the download path based on the anime name and season
