@@ -92,6 +92,12 @@ class Alist:
         )
 
     async def upload(self, save_path: str, file_path: str) -> bool:
+        """upload local file to Alist.
+
+        Args:
+            save_path (str): Alist path
+            file_path (str): local file path
+        """
         file_path = os.path.abspath(file_path)
         file_name = os.path.basename(file_path)
 
@@ -163,14 +169,14 @@ class Alist:
         self, task_type: AlistTaskType, status: Optional[AlistTaskState] = None
     ) -> AlistTaskList:
         """
-        获取任务列表。
+        Get Alist task list.
 
         Args:
-            task_type (TaskType): 任务类型（下载或传输）
-            status (TaskStatus, optional): 任务状态（完成或未完成）。如果为None，则获取所有状态的任务。
+            task_type (TaskType):
+            status (TaskStatus, optional): Undone or Done; If None, return all tasks. Defaults to None.
 
         Returns:
-            TaskList: 包含指定类型和状态的任务列表
+            TaskList: The list contains all query tasks.
         """
         if status is None:
             done_tasks = await self._fetch_tasks(task_type, AlistTaskState.DONE)
@@ -188,7 +194,13 @@ class Alist:
         )
         return True
 
-    async def rename(self, path, new_name):
+    async def rename(self, path: str, new_name: str):
+        """Rename a file or dir.
+
+        Args:
+            path (str): The absolute path of the file or dir of Alist
+            new_name (str): Only name, not include path.
+        """
         await self._api_call(
             "POST", "api/fs/rename", json={"path": path, "name": new_name}
         )

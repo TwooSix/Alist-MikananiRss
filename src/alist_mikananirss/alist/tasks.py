@@ -37,6 +37,7 @@ class AlistTaskType(Enum):
     UNKNOWN = "unknown"
 
 
+# for task related api call
 class AlistTaskState(Enum):
     DONE = "done"
     UNDONE = "undone"
@@ -74,6 +75,7 @@ class AlistTransferTask(AlistTask):
         super().__init__(tid, description, status, progress, error_msg)
         self.download_task_id = None
         self.task_type = AlistTaskType.TRANSFER
+        # Get some basic info by parsing task description
         pattern = r"transfer (.+?) to \["
         match = re.search(pattern, self.description)
         if match:
@@ -110,13 +112,6 @@ class AlistDownloadTask(AlistTask):
             self.url = match.group(1)
         else:
             raise ValueError(f"Invalid task name {self.description}")
-
-    def add_transfer_task(self, task: AlistTransferTask):
-        self.transfer_task_id.add(task.tid)
-
-    def set_started_transfer(self, uuid: str):
-        self.is_started_transfer = True
-        self.uuid = uuid
 
     def __repr__(self) -> str:
         return f"<DownloadTask {self.tid}>"

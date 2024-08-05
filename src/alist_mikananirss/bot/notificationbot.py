@@ -4,6 +4,8 @@ from . import BotBase
 
 
 class NotificationMsg:
+    """The class to generate notification message"""
+
     def __init__(self) -> None:
         self._update_info: dict[str, list] = {}
         self.msg = None
