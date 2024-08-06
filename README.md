@@ -46,6 +46,7 @@
    ```
 4. 运行代码：`python -m alist_mikananirss --config config.yaml`  
 5. Enjoy
+   
 更多的运行方法详见[使用文档](https://github.com/TwooSix/Alist-MikananiRss/wiki/%E5%BF%AB%E9%80%9F%E5%BC%80%E5%A7%8B)
 
 ## 重命名效果展示
