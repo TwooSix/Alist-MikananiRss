@@ -1,2 +1,5 @@
-from .extractor import ChatGPTExtractor, Extractor, RegexExtractor
-from .models import AnimeNameInfo, ResourceNameInfo
+from .base import ExtractorBase
+from .chatgpt import ChatGPTExtractor
+from .extractor import Extractor
+from .models import AnimeNameExtractResult, ResourceTitleExtractResult
+from .regex import RegexExtractor

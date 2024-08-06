@@ -1,6 +1,6 @@
 [project]
 name = "alist-mikananirss"
-version = "0.1.0"
+version = "0.1.1"
 description = "Automatically fetch anime updates from the Mikan Project's RSS feed and offline download them to the cloud drive through Alist."
 authors = [
     { name = "TwoSix", email = "ljj2288@gmail.com" }
@@ -34,6 +34,7 @@ dev-dependencies = [
     "black>=24.3.0",
     "ipykernel>=6.29.4",
     "requests>=2.31.0",
+    "coverage>=7.6.1",
 ]
 
 [tool.hatch.metadata]

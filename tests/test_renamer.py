@@ -1,85 +1,137 @@
-import os
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
-from alist_mikananirss.mikan import MikanAnimeResource
-from alist_mikananirss.renamer import Renamer
+from alist_mikananirss.alist import Alist
+from alist_mikananirss.core import AnimeRenamer
+from alist_mikananirss.websites import ResourceInfo
+from loguru import logger
+
+
+@pytest.fixture(autouse=True)
+def reset_anime_renamer():
+    # 在每个测试之前重置 AnimeRenamer
+    AnimeRenamer._instance = None
+    AnimeRenamer.alist_client = None
+    AnimeRenamer.rename_format = "{name} S{season:02d}E{episode:02d}.{ext}"
+    yield
 
 
 @pytest.fixture
-def mock_alist():
-    # 创建一个模拟的Alist实例
-    alist = AsyncMock()
-    alist.rename = AsyncMock(return_value=True)
-    alist.list_dir = AsyncMock(return_value=[])
-    return alist
+def alist_mock():
+    return AsyncMock(spec=Alist)
 
 
 @pytest.fixture
-def download_path(tmp_path):
-    # 创建一个临时下载路径
-    return str(tmp_path)
-
-
-@pytest.fixture
-def resource():
-    return MikanAnimeResource(
-        rid="123",
-        name="Fake Anime",
-        season=2,
-        torrent_url="http://example.com/file.torrent",
-        published_date="2021-01-01",
-        resource_title="Fake Resource",
-        episode=9,
-        fansub="Fake Fansub",
+def resource_info():
+    return ResourceInfo(
+        resource_title="title",
+        torrent_url="https://test1.torrent",
+        published_date="1",
+        anime_name="Test Anime",
+        season=1,
+        episode=5,
+        fansub="TestSub",
         quality="1080p",
-        language="",
+        language="JP",
     )
 
 
 @pytest.mark.asyncio
-async def test_build_new_name_1(mock_alist, resource, download_path):
-    # 默认format测试
-    renamer = Renamer(mock_alist, download_path)
+async def test_initialize():
+    alist = AsyncMock(spec=Alist)
+    rename_format = "{name} - {season}x{episode}"
 
-    local_title = "[Fake Anime][09].mp4"
-    expected_new_name = "Fake Anime S02E09.mp4"
-    new_name = await renamer._Renamer__build_new_name(resource, local_title)
-    assert new_name == expected_new_name
+    AnimeRenamer.initialize(alist, rename_format)
 
-
-@pytest.mark.asyncio
-async def test_build_new_name_2(mock_alist, resource, download_path):
-    # 自定义format测试
-    rename_format = (
-        "{name} S{season:02d}E{episode:02d} {fansub} {quality} {language}.{ext}"
-    )
-    renamer = Renamer(mock_alist, download_path, rename_format)
-    local_title = "[Fake Anime][09].mp4"
-    expected_new_name = "Fake Anime S02E09 Fake Fansub 1080p .mp4"
-    new_name = await renamer._Renamer__build_new_name(resource, local_title)
-    assert new_name == expected_new_name
+    assert AnimeRenamer._instance.alist_client == alist
+    assert AnimeRenamer._instance.rename_format == rename_format
 
 
 @pytest.mark.asyncio
-async def test_rename(mock_alist, resource, download_path):
-    # 创建一个Renamer实例
-    renamer = Renamer(mock_alist, download_path)
+async def test_initialize_default_rename_format():
+    alist = AsyncMock(spec=Alist)
 
-    # 创建一个模拟的资源
-    local_title = "[Fake Anime][09].mp4"
-    new_name = "Fake Anime S02E09.mp4"
+    AnimeRenamer.initialize(alist)
 
-    # 模拟alist.list_dir返回空列表（代表没有其他文件）
-    mock_alist.list_dir.return_value = []
-
-    # 调用rename方法
-    await renamer.rename(local_title, resource)
-    # 构建期望的文件路径和新名称
-    expected_filepath = os.path.join(
-        download_path, "Fake Anime", "Season 2", local_title
+    assert AnimeRenamer._instance.alist_client == alist
+    assert (
+        AnimeRenamer._instance.rename_format
+        == "{name} S{season:02d}E{episode:02d}.{ext}"
     )
-    expected_new_name = new_name
 
-    # 验证是否调用了alist.rename方法，并检查参数
-    mock_alist.rename.assert_called_once_with(expected_filepath, expected_new_name)
+
+@pytest.mark.asyncio
+async def test_build_new_name(alist_mock, resource_info):
+    AnimeRenamer.initialize(alist_mock)
+
+    old_filepath = "/path/to/old_file.mp4"
+
+    alist_mock.list_dir.return_value = ["file1", "file2", "file3"]
+
+    new_filename = await AnimeRenamer._instance._build_new_name(
+        old_filepath, resource_info
+    )
+
+    expected_filename = "Test Anime S01E05.mp4"
+    assert new_filename == expected_filename
+
+
+@pytest.mark.asyncio
+async def test_build_new_name_ova(alist_mock, resource_info):
+    AnimeRenamer.initialize(alist_mock)
+
+    old_filepath = "/path/to/old_file.mp4"
+    resource_info.season = 0
+
+    alist_mock.list_dir.return_value = ["file1", "file2", "file3"]
+
+    new_filename = await AnimeRenamer._instance._build_new_name(
+        old_filepath, resource_info
+    )
+
+    expected_filename = "Test Anime S00E03.mp4"
+    assert new_filename == expected_filename
+
+
+@pytest.mark.asyncio
+async def test_rename_success(alist_mock, resource_info):
+    AnimeRenamer.initialize(alist_mock)
+
+    old_filepath = "/path/to/old_file.mp4"
+
+    with patch.object(AnimeRenamer, "_build_new_name", return_value="new_file.mp4"):
+        await AnimeRenamer.rename(old_filepath, resource_info)
+
+    alist_mock.rename.assert_called_once_with(old_filepath, "new_file.mp4")
+
+
+@pytest.mark.asyncio
+async def test_rename_retry(alist_mock, resource_info):
+    AnimeRenamer.initialize(alist_mock)
+
+    old_filepath = "/path/to/old_file.mp4"
+
+    alist_mock.rename.side_effect = [Exception("Error"), Exception("Error"), None]
+
+    with patch.object(AnimeRenamer, "_build_new_name", return_value="new_file.mp4"):
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            await AnimeRenamer.rename(old_filepath, resource_info)
+
+    assert alist_mock.rename.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_rename_max_retry_exceeded(alist_mock, resource_info):
+    AnimeRenamer.initialize(alist_mock)
+
+    old_filepath = "/path/to/old_file.mp4"
+
+    alist_mock.rename.side_effect = Exception("Error")
+
+    with patch.object(AnimeRenamer, "_build_new_name", return_value="new_file.mp4"):
+        with patch.object(logger, "error") as mock_logger_error:
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                await AnimeRenamer.rename(old_filepath, resource_info)
+
+    assert alist_mock.rename.call_count == 3
+    mock_logger_error.assert_called_once()
