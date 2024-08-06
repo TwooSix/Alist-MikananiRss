@@ -8,6 +8,9 @@
   并结合使用ChatGPT分析资源名，将资源重命名为Emby可解析的格式。
 </p>  
 
+--- 
+
+[使用文档](https://github.com/TwooSix/Alist-MikananiRss/wiki/%E5%BF%AB%E9%80%9F%E5%BC%80%E5%A7%8B) | [开发文档](https://github.com/TwooSix/Alist-MikananiRss/wiki/%E5%BF%AB%E9%80%9F%E5%BC%80%E5%A7%8B)
 ## 功能
 - 自动获取番剧更新并下载至对应网盘
 - 通过PushPlus, Telegram等渠道发送更新通知
@@ -18,20 +21,8 @@
 2. 自行注册蜜柑计划账户，订阅番剧，获取订阅链接
 
 ## 如何使用
-1. 参考[官方文档](https://rye-up.com/guide/installation/)安装Rye 
-   - linux:
-   ```shell
-   curl -sSf https://rye-up.com/get | bash
-   ```
-   - windows: [rye-x86_64-windows.exe](https://github.com/astral-sh/rye/releases/latest/download/rye-x86_64-windows.exe) for 64bit Intel Windows
-2. 下载源码
-   ```shell
-   git clone https://github.com/TwooSix/Alist-MikananiRss.git && cd Alist-MikananiRss
-   ```
-3. 初始化运行环境
-   ```shell
-   rye sync --no-dev
-   ```
+1. 请确保你的python版本在3.11以上
+2. 使用pip安装: `pip install alist-mikananirss`
 3. 在目录下新建一个`config.yaml`配置文件，并填写配置文件如下(完整功能示例详解见[配置说明](https://github.com/TwooSix/Alist-MikananiRss/wiki/%E9%85%8D%E7%BD%AE%E8%AF%B4%E6%98%8E))
    ```yaml
    common:
@@ -44,7 +35,8 @@
      download_path: Onedrive/Anime # 修改为你的下载路径，相对于alist根目录
    
    mikan:
-     subscribe_url: https://mikanani.me/RSS/MyBangumi?token=xxx # 修改为你的蜜柑订阅地址
+     subscribe_url:
+       - https://mikanani.me/RSS/MyBangumi?token=xxx # 修改为你的蜜柑订阅地址
    
    filters:
      - 非合集
@@ -52,9 +44,9 @@
    rename:
      regex: ~
    ```
-4. 运行代码：`rye run alist-mikananirss`  
-
+4. 运行代码：`python -m alist_mikananirss --config config.yaml`  
 5. Enjoy
+更多的运行方法详见[使用文档](https://github.com/TwooSix/Alist-MikananiRss/wiki/%E5%BF%AB%E9%80%9F%E5%BC%80%E5%A7%8B)
 
 ## 重命名效果展示
 <div align=center>
