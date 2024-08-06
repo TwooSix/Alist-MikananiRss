@@ -31,12 +31,12 @@ class RssMonitor:
     def set_interval_time(self, interval_time: int):
         self.interval_time = interval_time
 
-    async def get_new_resources(self, fileter: RegexFilter) -> list[ResourceInfo]:
+    async def get_new_resources(self, m_filter: RegexFilter) -> list[ResourceInfo]:
         new_resources_set: set[ResourceInfo] = set()
         for website in self.websites:
             feed_entries = await website.get_feed_entries()
             feed_entries_filted = filter(
-                lambda entry: self.filter.filt_single(entry.resource_title),
+                lambda entry: m_filter.filt_single(entry.resource_title),
                 feed_entries,
             )
             for entry in feed_entries_filted:
