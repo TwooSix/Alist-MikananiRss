@@ -57,7 +57,7 @@ class RssMonitor:
     async def run(self):
         while 1:
             logger.info("Start update checking")
-            new_resources = await self.get_new_resources(fileter=self.filter)
+            new_resources = await self.get_new_resources(self.filter)
             if not new_resources:
                 logger.info("No new resources")
             else:
