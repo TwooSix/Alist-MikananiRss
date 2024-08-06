@@ -36,9 +36,9 @@ class SubscribeDatabase:
         self.cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS resource_data (
-                id TEXT PRIMARY KEY,
-                title TEXT,
-                link TEXT,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                resource_title TEXT NOT NULL,
+                torrent_url TEXT UNIQUE,
                 published_date TEXT,
                 downloaded_date TEXT,
                 anime_name TEXT,
