@@ -117,7 +117,31 @@ async def test_run(mock_website, mock_filter, mock_db):
 # 测试异常情况
 @pytest.mark.asyncio
 async def test_get_new_resources_with_exceptions(mock_website, mock_filter, mock_db):
-    mock_website.get_feed_entries.side_effect = Exception("Network error")
+    feed_entries = [
+        FeedEntry("Resource 1", "http://example.com/torrent1"),
+        FeedEntry("Resource 2", "http://example.com/torrent2"),
+    ]
+    mock_website.get_feed_entries.return_value = feed_entries
+    mock_filter.filt_single.side_effect = [True, False]
+    mock_db.is_resource_title_exist.return_value = False
+    mock_website.extract_resource_info.side_effect = Exception("Network error")
+
+    with patch(
+        "alist_mikananirss.websites.WebsiteFactory.get_website_parser",
+        return_value=mock_website,
+    ):
+        monitor = RssMonitor("http://example.com/rss", mock_filter)
+        monitor.db = mock_db
+
+        new_resources = await monitor.get_new_resources(mock_filter)
+
+        assert len(new_resources) == 0
+        mock_website.extract_resource_info.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_get_new_resources_with_non_feed(mock_website, mock_filter, mock_db):
+    mock_website.get_feed_entries.return_value = []
 
     with patch(
         "alist_mikananirss.websites.WebsiteFactory.get_website_parser",

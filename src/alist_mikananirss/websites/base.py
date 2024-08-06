@@ -3,6 +3,7 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
 import feedparser
+from loguru import logger
 
 from .entities import FeedEntry, ResourceInfo
 
@@ -17,11 +18,15 @@ class Website(abc.ABC):
         """使用feedparser库异步解析rss链接"""
         loop = asyncio.get_event_loop()
         with ThreadPoolExecutor() as pool:
-            feed = await loop.run_in_executor(pool, feedparser.parse, url)
-        return feed
+            try:
+                feed = await loop.run_in_executor(pool, feedparser.parse, url)
+                return feed
+            except Exception as e:
+                logger.error(f"Failed to get rss feed: {e}")
+                return None
 
     @abc.abstractmethod
-    async def get_feed_entries(self, rss_url: str) -> set[FeedEntry]:
+    async def get_feed_entries(self, rss_url: str) -> list[FeedEntry]:
         """从rss链接中获取所有的资源条目"""
         pass
 

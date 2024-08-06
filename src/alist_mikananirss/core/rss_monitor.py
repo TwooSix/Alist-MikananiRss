@@ -3,7 +3,7 @@ import asyncio
 from loguru import logger
 
 from alist_mikananirss.common.database import SubscribeDatabase
-from alist_mikananirss.websites import FeedEntry, ResourceInfo, WebsiteFactory
+from alist_mikananirss.websites import ResourceInfo, WebsiteFactory
 
 from .download_manager import DownloadManager
 from .filters import RegexFilter
@@ -32,30 +32,26 @@ class RssMonitor:
         self.interval_time = interval_time
 
     async def get_new_resources(self, fileter: RegexFilter) -> list[ResourceInfo]:
-        new_resources: list[ResourceInfo] = []
+        new_resources_set: set[ResourceInfo] = set()
         for website in self.websites:
-            try:
-                feed_entries = await website.get_feed_entries()
-            except Exception as e:
-                logger.error(f"Failed to get feed entries from {website.rss_url}: {e}")
-                continue
-            feed_entries_filted: list[FeedEntry] = []
-            for entry in feed_entries:
-                flag = fileter.filt_single(entry.resource_title)
-                if flag:
-                    feed_entries_filted.append(entry)
+            feed_entries = await website.get_feed_entries()
+            feed_entries_filted = filter(
+                lambda entry: self.filter.filt_single(entry.resource_title),
+                feed_entries,
+            )
             for entry in feed_entries_filted:
                 if not self.db.is_resource_title_exist(entry.resource_title):
                     try:
                         resource_info = await website.extract_resource_info(
                             entry, self.use_extractor
                         )
-                        new_resources.append(resource_info)
+                        new_resources_set.add(resource_info)
                     except Exception as e:
                         logger.error(
                             f"Pass {entry.resource_title} because of error: {e}"
                         )
                         continue
+        new_resources = list(new_resources_set)
         return new_resources
 
     async def run(self):

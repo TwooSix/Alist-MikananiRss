@@ -33,9 +33,11 @@ class Mikan(Website):
                 break
         return MikanHomePageInfo(anime_name=anime_name, fansub=fansub)
 
-    async def get_feed_entries(self) -> set[FeedEntry]:
+    async def get_feed_entries(self) -> list[FeedEntry]:
         feed = await self.parse_feed(self.rss_url)
-        feed_entries = set()
+        if feed is None:
+            return []
+        feed_entries = []
         for tmp_entry in feed.entries:
             resource_title = tmp_entry.title
             torrent_url = None
@@ -52,7 +54,7 @@ class Mikan(Website):
                 published_date=published_date,
                 homepage_url=homepage_url,
             )
-            feed_entries.add(feed_entry)
+            feed_entries.append(feed_entry)
         return feed_entries
 
     async def extract_resource_info(

@@ -55,7 +55,7 @@ def init_extrator():
     rename_cfg = config_loader.get("rename", None)
     if rename_cfg is None:
         return None
-    if "chatgpt" in rename_cfg:
+    elif "chatgpt" in rename_cfg:
         chatgpt_cfg = rename_cfg["chatgpt"]
         chatgpt = ChatGPTExtractor(
             chatgpt_cfg["api_key"],
@@ -63,7 +63,6 @@ def init_extrator():
             chatgpt_cfg.get("model"),
         )
         Extractor.initialize(chatgpt)
-        return
     else:
         raise ValueError("Invalid rename config, extractor is required")
 

@@ -41,7 +41,7 @@ async def test_get_feed_entries(mikan, mock_rss_data):
     ):
         result = await mikan.get_feed_entries()
 
-    assert isinstance(result, set)
+    assert isinstance(result, list)
     assert len(result) == 1
     entry = result.pop()
     assert isinstance(entry, FeedEntry)

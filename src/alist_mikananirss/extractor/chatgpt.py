@@ -35,7 +35,7 @@ class ChatGPTExtractor(ExtractorBase):
         return chat_completion.choices[0].message.content
 
     async def _parse_json_response(self, resp):
-        match = re.search(r"(\{.*?\})", resp, re.DOTALL)
+        match = re.search(r"(\{[^\}]*\})", resp)
         if not match:
             raise ValueError(f"Can't parse GPT responese as a json:\n {resp}")
         return json.loads(match.group(1))

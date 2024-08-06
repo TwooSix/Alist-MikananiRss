@@ -27,7 +27,7 @@ class RegexExtractor(ExtractorBase):
         self.season_pattern = re.compile(r"(.+) 第(.+)[季期]")
         self.roman_season_pattern = re.compile(r"\s*([ⅠⅡⅢⅣⅤ])\s*")
         self.roman_numerals = {"Ⅰ": 1, "Ⅱ": 2, "Ⅲ": 3, "Ⅳ": 4, "Ⅴ": 5}
-        self.episode_pattern = re.compile(r"[第]?(\d+(?:\.\d+)?)[(?:话|集)]?")
+        self.episode_pattern = re.compile(r"第?(\d+(?:\.\d+)?)[(?:话|集)]?")
 
     @lru_cache(maxsize=128)
     def _chinese_to_arabic(self, chinese_num: str) -> int:
