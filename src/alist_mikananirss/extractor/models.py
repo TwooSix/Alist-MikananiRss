@@ -10,6 +10,7 @@ class ResourceTitleExtractResult:
     quality: Optional[str] = None
     fansub: Optional[str] = None
     language: Optional[str] = None
+    version: int = 1
 
 
 @dataclass

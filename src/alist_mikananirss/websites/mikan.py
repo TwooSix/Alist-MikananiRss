@@ -85,5 +85,6 @@ class Mikan(Website):
                 resource_title=resource_info.resource_title,
                 torrent_url=resource_info.torrent_url,
                 published_date=resource_info.published_date,
+                version=rtitle_extract_result.version,
             )
         return resource_info

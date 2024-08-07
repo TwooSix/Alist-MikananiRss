@@ -42,7 +42,7 @@ rename:
     api_key: sk-xxx
     base_url: https://example.com/v1
     model: gpt-3.5-turbo
-  rename_format: "{name} S{season:02d}E{episode:02d}.{ext}"
+  rename_format: "{name} S{season:02d}E{episode:02d}"
 
 dev:
   log_level: INFO
@@ -152,7 +152,7 @@ def test_init_renamer():
         mock_alist = MagicMock()
         initializer.init_renamer(mock_alist)
         MockAnimeRenamer.initialize.assert_called_once_with(
-            mock_alist, "{name} S{season:02d}E{episode:02d}.{ext}"
+            mock_alist, "{name} S{season:02d}E{episode:02d}"
         )
 
 

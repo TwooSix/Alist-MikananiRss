@@ -140,8 +140,8 @@ def init_renamer(alist_client: Alist):
             "fansub": "fansub",
             "quality": "1080p",
             "language": "简体中文",
-            "ext": "mp4",
         }
+        # if the key in rename_format is not in all_key_test_data, it will be replaced by "undefined"
         safe_dict = defaultdict(lambda: "undefined", all_key_test_data)
         res = rename_format.format_map(safe_dict)
         if "undefined" in res:
