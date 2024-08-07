@@ -64,7 +64,7 @@ async def test_get_new_resources(mock_website, mock_filter, mock_db):
 
     with patch(
         "alist_mikananirss.websites.WebsiteFactory.get_website_parser",
-        return_value=mock_website,
+        side_effect=[mock_website, mock_website],
     ):
         monitor = RssMonitor("http://example.com/rss", mock_filter)
         monitor.db = mock_db

@@ -45,7 +45,7 @@ class TaskMonitor:
         self.alist = alist
         self.task = task
 
-    async def __refresh(self):
+    async def _refresh(self):
         task_list = await self.alist.get_task_list(self.task.task_type)
         task = task_list[self.task.tid]
         if not task:
@@ -59,7 +59,7 @@ class TaskMonitor:
         progress_threshold = 0.01  # 1%
         while True:
             try:
-                await self.__refresh()
+                await self._refresh()
                 current_progress = self.task.progress
             except Exception as e:
                 logger.warning(f"Error when refresh {self.task} status: {e}")
@@ -93,7 +93,7 @@ class DownloadManager:
     use_renamer: bool = False
     need_notification: bool = False
     uuid_set: set[str] = set()
-    db = SubscribeDatabase()
+    db = None
 
     def __new__(cls):
         if cls._instance is None:
@@ -113,6 +113,7 @@ class DownloadManager:
         cls.base_download_path = base_download_path
         cls.use_renamer = use_renamer
         cls.need_notification = need_notification
+        cls.db = SubscribeDatabase()
 
     @classmethod
     def get_instance(cls):
@@ -188,7 +189,9 @@ class DownloadManager:
             )
             return None
         if download_task.status != AlistTaskStatus.Succeeded:
-            logger.error(f"Error when download {task.resource.resource_title}")
+            logger.error(
+                f"Error when download {task.resource.resource_title}: {download_task.error_msg}"
+            )
             return None
 
         try:
@@ -208,7 +211,9 @@ class DownloadManager:
             )
             return None
         if transfer_task.status != AlistTaskStatus.Succeeded:
-            logger.error(f"Error when transfer {task.resource.resource_title}")
+            logger.error(
+                f"Error when transfer {task.resource.resource_title}: {transfer_task.error_msg}"
+            )
             return None
         task.transfer_task = transfer_task
         return task
