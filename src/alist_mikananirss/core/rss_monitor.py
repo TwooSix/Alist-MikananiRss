@@ -32,7 +32,18 @@ class RssMonitor:
         self.interval_time = interval_time
 
     async def get_new_resources(self, m_filter: RegexFilter) -> list[ResourceInfo]:
+        async def process_entry(self, website, entry):
+            try:
+                resource_info = await website.extract_resource_info(
+                    entry, self.use_extractor
+                )
+            except Exception as e:
+                logger.error(f"Pass {entry.resource_title} because of error: {e}")
+                return None
+            return resource_info
+
         new_resources_set: set[ResourceInfo] = set()
+        tasks = []
         for website in self.websites:
             feed_entries = await website.get_feed_entries()
             feed_entries_filted = filter(
@@ -41,16 +52,12 @@ class RssMonitor:
             )
             for entry in feed_entries_filted:
                 if not self.db.is_resource_title_exist(entry.resource_title):
-                    try:
-                        resource_info = await website.extract_resource_info(
-                            entry, self.use_extractor
-                        )
-                        new_resources_set.add(resource_info)
-                    except Exception as e:
-                        logger.error(
-                            f"Pass {entry.resource_title} because of error: {e}"
-                        )
-                        continue
+                    task = asyncio.create_task(process_entry(self, website, entry))
+                    tasks.append(task)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for result in results:
+            if result:
+                new_resources_set.add(result)
         new_resources = list(new_resources_set)
         return new_resources
 
