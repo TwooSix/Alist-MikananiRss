@@ -26,7 +26,7 @@ class Website(abc.ABC):
                 return None
 
     @abc.abstractmethod
-    async def get_feed_entries(self, rss_url: str) -> list[FeedEntry]:
+    async def get_feed_entries(self) -> list[FeedEntry]:
         """从rss链接中获取所有的资源条目"""
         pass
 
