@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import yaml
+from alist_mikananirss.bot import PushPlusBot, TelegramBot
 from alist_mikananirss.common import initializer
 from alist_mikananirss.core import RegexFilter, RssMonitor
 
@@ -105,14 +106,14 @@ def test_init_extrator():
 
 
 def test_init_notification_bots():
-    with (
-        patch("alist_mikananirss.common.initializer.TelegramBot") as MockTelegramBot,
-        patch("alist_mikananirss.common.initializer.PushPlusBot") as MockPushPlusBot,
-    ):
-        result = initializer.init_notification_bots()
-        assert len(result) == 2
-        MockTelegramBot.assert_called_once_with("your_token", "your_id")
-        MockPushPlusBot.assert_called_once_with("xxxxx", None)
+    result = initializer.init_notification_bots()
+    assert len(result) == 2
+    assert isinstance(result[0].bot, TelegramBot)
+    assert result[0].bot.bot_token == "your_token"
+    assert result[0].bot.user_id == "your_id"
+    assert isinstance(result[1].bot, PushPlusBot)
+    assert result[1].bot.user_token == "xxxxx"
+    assert result[1].bot.channel.value == "wechat"
 
 
 def test_init_notification_sender():
