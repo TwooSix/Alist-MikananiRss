@@ -24,7 +24,7 @@ def mock_db():
 
 @pytest.mark.asyncio
 async def test_rss_monitor_initialization():
-    urls = ["http://example.com/rss1", "http://example.com/rss2"]
+    urls = ["https://example.com/rss1", "https://example.com/rss2"]
     filter_mock = MagicMock(spec=RegexFilter)
 
     with patch(
@@ -44,7 +44,7 @@ async def test_rss_monitor_initialization():
 @pytest.mark.asyncio
 async def test_set_interval_time():
     with patch("alist_mikananirss.websites.WebsiteFactory.get_website_parser"):
-        monitor = RssMonitor("http://example.com/rss", MagicMock(spec=RegexFilter))
+        monitor = RssMonitor("https://example.com/rss", MagicMock(spec=RegexFilter))
         monitor.set_interval_time(600)
         assert monitor.interval_time == 600
 
@@ -52,21 +52,21 @@ async def test_set_interval_time():
 @pytest.mark.asyncio
 async def test_get_new_resources(mock_website, mock_filter, mock_db):
     feed_entries = [
-        FeedEntry("Resource 1", "http://example.com/torrent1"),
-        FeedEntry("Resource 2", "http://example.com/torrent2"),
+        FeedEntry("Resource 1", "https://example.com/torrent1"),
+        FeedEntry("Resource 2", "https://example.com/torrent2"),
     ]
     mock_website.get_feed_entries.return_value = feed_entries
     mock_filter.filt_single.side_effect = [True, False]
     mock_db.is_resource_title_exist.return_value = False
 
-    resource_info = ResourceInfo("Resource 1", "http://example.com/torrent1")
+    resource_info = ResourceInfo("Resource 1", "https://example.com/torrent1")
     mock_website.extract_resource_info.return_value = resource_info
 
     with patch(
         "alist_mikananirss.websites.WebsiteFactory.get_website_parser",
         side_effect=[mock_website, mock_website],
     ):
-        monitor = RssMonitor("http://example.com/rss", mock_filter)
+        monitor = RssMonitor("https://example.com/rss", mock_filter)
         monitor.db = mock_db
 
         new_resources = await monitor.get_new_resources(mock_filter)
@@ -97,10 +97,10 @@ async def test_run(mock_website, mock_filter, mock_db):
         ) as mock_add_tasks,
     ):
 
-        monitor = RssMonitor("http://example.com/rss", mock_filter)
+        monitor = RssMonitor("https://example.com/rss", mock_filter)
         monitor.db = mock_db
         monitor.get_new_resources = AsyncMock(
-            return_value=[ResourceInfo("New Resource", "http://example.com/new")]
+            return_value=[ResourceInfo("New Resource", "https://example.com/new")]
         )
 
         # 让run方法在第二次循环后退出
@@ -118,8 +118,8 @@ async def test_run(mock_website, mock_filter, mock_db):
 @pytest.mark.asyncio
 async def test_get_new_resources_with_exceptions(mock_website, mock_filter, mock_db):
     feed_entries = [
-        FeedEntry("Resource 1", "http://example.com/torrent1"),
-        FeedEntry("Resource 2", "http://example.com/torrent2"),
+        FeedEntry("Resource 1", "https://example.com/torrent1"),
+        FeedEntry("Resource 2", "https://example.com/torrent2"),
     ]
     mock_website.get_feed_entries.return_value = feed_entries
     mock_filter.filt_single.side_effect = [True, False]
@@ -130,7 +130,7 @@ async def test_get_new_resources_with_exceptions(mock_website, mock_filter, mock
         "alist_mikananirss.websites.WebsiteFactory.get_website_parser",
         return_value=mock_website,
     ):
-        monitor = RssMonitor("http://example.com/rss", mock_filter)
+        monitor = RssMonitor("https://example.com/rss", mock_filter)
         monitor.db = mock_db
 
         new_resources = await monitor.get_new_resources(mock_filter)
@@ -147,7 +147,7 @@ async def test_get_new_resources_with_non_feed(mock_website, mock_filter, mock_d
         "alist_mikananirss.websites.WebsiteFactory.get_website_parser",
         return_value=mock_website,
     ):
-        monitor = RssMonitor("http://example.com/rss", mock_filter)
+        monitor = RssMonitor("https://example.com/rss", mock_filter)
         monitor.db = mock_db
 
         new_resources = await monitor.get_new_resources(mock_filter)

@@ -22,7 +22,7 @@ async def test_pushplus_bot_send_message(mock_post, pushplus_bot):
 
     assert result is True
     mock_post.assert_called_once_with(
-        "http://www.pushplus.plus/send/test_token",
+        "https://www.pushplus.plus/send/test_token",
         json={
             "title": "Alist MikananiRSS更新推送",
             "content": message,

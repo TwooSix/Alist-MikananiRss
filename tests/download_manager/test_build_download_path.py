@@ -20,7 +20,7 @@ def test_initialize(base_path):
 def test_build_download_path_without_anime_name(base_path):
     resource = ResourceInfo(
         resource_title="Test Resource",
-        torrent_url="http://example.com/torrent",
+        torrent_url="https://example.com/torrent",
         published_date="2023-05-20",
     )
     expected_path = base_path
@@ -31,7 +31,7 @@ def test_build_download_path_without_anime_name(base_path):
 def test_build_download_path_with_anime_name(base_path):
     resource = ResourceInfo(
         resource_title="Test Resource",
-        torrent_url="http://example.com/torrent",
+        torrent_url="https://example.com/torrent",
         published_date="2023-05-20",
         anime_name="Test Anime",
     )
@@ -43,7 +43,7 @@ def test_build_download_path_with_anime_name(base_path):
 def test_build_download_path_with_anime_name_and_season(base_path):
     resource = ResourceInfo(
         resource_title="Test Resource",
-        torrent_url="http://example.com/torrent",
+        torrent_url="https://example.com/torrent",
         published_date="2023-05-20",
         anime_name="Test Anime",
         season=1,
@@ -56,7 +56,7 @@ def test_build_download_path_with_anime_name_and_season(base_path):
 def test_build_download_path_with_season_no_anime_name(base_path):
     resource = ResourceInfo(
         resource_title="Test Resource",
-        torrent_url="http://example.com/torrent",
+        torrent_url="https://example.com/torrent",
         published_date="2023-05-20",
         season=1,
     )
@@ -68,7 +68,7 @@ def test_build_download_path_with_season_no_anime_name(base_path):
 def test_build_download_path_with_special_characters(base_path):
     resource = ResourceInfo(
         resource_title="Test Resource",
-        torrent_url="http://example.com/torrent",
+        torrent_url="https://example.com/torrent",
         published_date="2023-05-20",
         anime_name="Test:Anime!",
         season=2,
@@ -81,7 +81,7 @@ def test_build_download_path_with_special_characters(base_path):
 def test_build_download_path_with_empty_anime_name(base_path):
     resource = ResourceInfo(
         resource_title="Test Resource",
-        torrent_url="http://example.com/torrent",
+        torrent_url="https://example.com/torrent",
         published_date="2023-05-20",
         anime_name="",
         season=3,
@@ -94,7 +94,7 @@ def test_build_download_path_with_empty_anime_name(base_path):
 def test_build_download_path_with_none_anime_name(base_path):
     resource = ResourceInfo(
         resource_title="Test Resource",
-        torrent_url="http://example.com/torrent",
+        torrent_url="https://example.com/torrent",
         published_date="2023-05-20",
         anime_name=None,
         season=4,
@@ -107,7 +107,7 @@ def test_build_download_path_with_none_anime_name(base_path):
 def test_build_download_path_with_special_season(base_path):
     resource = ResourceInfo(
         resource_title="Test Resource",
-        torrent_url="http://example.com/torrent",
+        torrent_url="https://example.com/torrent",
         published_date="2023-05-20",
         anime_name="Test Anime",
         season=0,

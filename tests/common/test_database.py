@@ -27,7 +27,7 @@ def test_create_table(test_db):
 def test_insert_and_check_existence(test_db):
     resource = ResourceInfo(
         resource_title="Test Anime",
-        torrent_url="http://example.com/test.torrent",
+        torrent_url="https://example.com/test.torrent",
         published_date="2023-05-20T12:00:00",
         anime_name="Test Anime",
         season=1,
@@ -45,7 +45,7 @@ def test_insert_and_check_existence(test_db):
 def test_delete_by_id(test_db):
     test_db.insert(
         "Test Delete",
-        "http://example.com/delete.torrent",
+        "https://example.com/delete.torrent",
         "2023-05-20T12:00:00",
         "2023-05-20T12:01:00",
         "Test Anime",
@@ -64,7 +64,7 @@ def test_delete_by_id(test_db):
 
 
 def test_delete_by_torrent_url(test_db):
-    url = "http://example.com/delete_url.torrent"
+    url = "https://example.com/delete_url.torrent"
     test_db.insert(
         "Test Delete URL",
         url,
@@ -82,7 +82,7 @@ def test_delete_by_resource_title(test_db):
     title = "Test Delete Title"
     test_db.insert(
         title,
-        "http://example.com/delete_title.torrent",
+        "https://example.com/delete_title.torrent",
         "2023-05-20T12:00:00",
         "2023-05-20T12:01:00",
         "Test Anime",
@@ -141,7 +141,7 @@ def test_upgrade_database(test_db):
 def test_insert_duplicate(test_db):
     test_db.insert(
         "Duplicate Test",
-        "http://example.com/duplicate.torrent",
+        "https://example.com/duplicate.torrent",
         "2023-05-20T12:00:00",
         "2023-05-20T12:01:00",
         "Test Anime",
@@ -149,7 +149,7 @@ def test_insert_duplicate(test_db):
 
     test_db.insert(
         "Duplicate Test",
-        "http://example.com/duplicate.torrent",
+        "https://example.com/duplicate.torrent",
         "2023-05-20T12:00:00",
         "2023-05-20T12:01:00",
         "Test Anime",

@@ -1,3 +1,4 @@
+import math
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -17,7 +18,7 @@ from alist_mikananirss.alist.tasks import (
 @pytest.fixture
 def alist_config():
     return AlistConfig(
-        base_url="http://example.com",
+        base_url="https://example.com",
         token="test_token",
         downloader=AlistDownloaderType.ARIA,
     )
@@ -30,7 +31,7 @@ def alist(alist_config):
 
 @pytest.mark.asyncio
 async def test_alist_init(alist):
-    assert alist.config.base_url == "http://example.com"
+    assert alist.config.base_url == "https://example.com"
     assert alist.config.token == "test_token"
     assert alist.config.downloader == AlistDownloaderType.ARIA
 
@@ -51,7 +52,7 @@ async def test_add_offline_download_task(alist):
             "tasks": [
                 {
                     "id": "task1",
-                    "name": "download http://example.com/file.zip to /path/to/save",
+                    "name": "download https://example.com/file.zip to /path/to/save",
                     "state": 0,
                     "progress": 0.0,
                     "error": None,
@@ -59,20 +60,20 @@ async def test_add_offline_download_task(alist):
             ]
         }
         tasks = await alist.add_offline_download_task(
-            "/path/to/save", ["http://example.com/file.zip"]
+            "/path/to/save", ["https://example.com/file.zip"]
         )
         assert isinstance(tasks, AlistTaskCollection)
         assert len(tasks) == 1
         assert isinstance(tasks[0], AlistDownloadTask)
         assert tasks[0].tid == "task1"
-        assert tasks[0].url == "http://example.com/file.zip"
+        assert tasks[0].url == "https://example.com/file.zip"
         mock_api_call.assert_called_once_with(
             "POST",
             "api/fs/add_offline_download",
             json={
                 "delete_policy": AlistDeletePolicy.DeleteOnUploadSucceed.value,
                 "path": "/path/to/save",
-                "urls": ["http://example.com/file.zip"],
+                "urls": ["https://example.com/file.zip"],
                 "tool": AlistDownloaderType.ARIA,
             },
         )
@@ -222,7 +223,7 @@ def test_alist_download_task():
     task = AlistDownloadTask.from_json(
         {
             "id": "task1",
-            "name": "download http://example.com/file.zip to /path/to/save",
+            "name": "download https://example.com/file.zip to /path/to/save",
             "state": 1,
             "progress": 0.5,
             "error": None,
@@ -230,11 +231,11 @@ def test_alist_download_task():
     )
 
     assert task.tid == "task1"
-    assert task.description == "download http://example.com/file.zip to /path/to/save"
+    assert task.description == "download https://example.com/file.zip to /path/to/save"
     assert task.status == AlistTaskStatus.Running
-    assert task.progress == 0.5
+    assert math.isclose(task.progress, 0.5, rel_tol=1e-9, abs_tol=1e-9)
     assert task.error_msg is None
-    assert task.url == "http://example.com/file.zip"
+    assert task.url == "https://example.com/file.zip"
     assert task.task_type == AlistTaskType.DOWNLOAD
 
 
@@ -252,7 +253,7 @@ def test_alist_transfer_task():
     assert task.tid == "task1"
     assert task.description == "transfer /download/123456/file.zip to [/path/to/save]"
     assert task.status == AlistTaskStatus.Succeeded
-    assert task.progress == 1.0
+    assert math.isclose(task.progress, 1.0, rel_tol=1e-9, abs_tol=1e-9)
     assert task.error_msg is None
     assert task.uuid == "123456"
     assert task.file_name == "file.zip"

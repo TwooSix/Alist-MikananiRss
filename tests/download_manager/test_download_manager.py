@@ -189,7 +189,7 @@ async def test_find_transfer_task(download_manager):
     resource = ResourceInfo(
         anime_name="Test Anime",
         resource_title="Episode 1",
-        torrent_url="http://example.com/test.torrent",
+        torrent_url="https://example.com/test.torrent",
     )
     transfer_task = AlistTransferTask(
         tid="123",
@@ -214,14 +214,14 @@ async def test_wait_finished_success(download_manager):
     resource = ResourceInfo(
         anime_name="Test Anime",
         resource_title="Episode 1",
-        torrent_url="http://example.com/test.torrent",
+        torrent_url="https://example.com/test.torrent",
     )
     download_task = AlistDownloadTask(
         tid="123",
-        description="download http://example.com/test.torrent to",
+        description="download https://example.com/test.torrent to",
         status=AlistTaskStatus.Running,
         progress=0.5,
-        url="http://example.com/test.torrent",
+        url="https://example.com/test.torrent",
     )
     transfer_task = AlistTransferTask(
         tid="456",
@@ -253,7 +253,7 @@ async def test_wait_finished_success(download_manager):
             description="",
             status=AlistTaskStatus.Succeeded,
             progress=1.0,
-            url="http://example.com/test.torrent",
+            url="https://example.com/test.torrent",
         )
         mock_transfer_task_monitor = MagicMock(spec=TaskMonitor)
         mock_transfer_task_monitor.wait_finished.return_value = AlistTransferTask(
