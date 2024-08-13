@@ -24,7 +24,7 @@ class PushPlusBot(BotBase):
             self.channel = PushPlusChannel.WECHAT
 
     async def send_message(self, message: str) -> bool:
-        api_url = f"http://www.pushplus.plus/send/{self.user_token}"
+        api_url = f"https://www.pushplus.plus/send/{self.user_token}"
         body = {
             "title": "Alist MikananiRSS更新推送",
             "content": message,

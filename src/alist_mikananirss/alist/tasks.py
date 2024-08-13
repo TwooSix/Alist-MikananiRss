@@ -48,9 +48,8 @@ class AlistTaskState(Enum):
     UNDONE = "undone"
 
 
-# Constants
-TRANSFER_PATTERN = r"transfer (.+?) to \["
-DOWNLOAD_PATTERN = r"download\s+(.+?)\s+to"
+DOWNLOAD_DES_PATTERN = re.compile(r"download\s+(.+?)\s+to")
+TRANSFER_DES_PATTERN = re.compile(r"transfer (.+?) to \[")
 
 
 class AlistTaskError(Exception):
@@ -88,63 +87,63 @@ class AlistTask(ABC):
 
 @dataclass
 class AlistTransferTask(AlistTask):
-    uuid: Optional[str] = None
-    file_name: Optional[str] = None
+    uuid: str = ""
+    file_name: str = ""
 
     def __post_init__(self):
         self.task_type = AlistTaskType.TRANSFER
 
-    def _parse_description(self):
-        match = re.search(TRANSFER_PATTERN, self.description)
-        if match:
-            extracted_string = match.group(1)
-            elements = extracted_string.split("/")
-            self.uuid = elements[-2]
-            self.file_name = elements[-1]
-        else:
-            logger.error(
-                f"Can't find uuid/filename in task {self.tid}: {self.description}"
-            )
-
     @classmethod
     def from_json(cls, json_data: dict) -> AlistTransferTask:
         task = super().from_json(json_data)
+        match = re.search(TRANSFER_DES_PATTERN, task.description)
+        if match:
+            extracted_string = match.group(1)
+            elements = extracted_string.split("/")
+            uuid = elements[-2]
+            file_name = elements[-1]
+        else:
+            raise InvalidTaskDescription(
+                f"Failed to get uuid and file name from task description: {task.description}"
+            )
+
         _instance = cls(
             tid=task.tid,
             description=task.description,
             status=task.status,
             progress=task.progress,
             error_msg=task.error_msg,
+            uuid=uuid,
+            file_name=file_name,
         )
-        _instance._parse_description()
         return _instance
 
 
 @dataclass
 class AlistDownloadTask(AlistTask):
-    url: Optional[str] = None
+    url: str = ""
 
     def __post_init__(self):
         self.task_type = AlistTaskType.DOWNLOAD
 
-    def _parse_description(self):
-        match = re.match(DOWNLOAD_PATTERN, self.description)
-        if match:
-            self.url = match.group(1)
-        else:
-            raise InvalidTaskDescription(f"Invalid task name {self.description}")
-
     @classmethod
     def from_json(cls, json_data: dict) -> AlistDownloadTask:
         task = super().from_json(json_data)
+        match = re.match(DOWNLOAD_DES_PATTERN, task.description)
+        if match:
+            url = match.group(1)
+        else:
+            raise InvalidTaskDescription(
+                f"Failed to get url from task description: {task.description}"
+            )
         _instance = cls(
             tid=task.tid,
             description=task.description,
             status=task.status,
             progress=task.progress,
             error_msg=task.error_msg,
+            url=url,
         )
-        _instance._parse_description()
         return _instance
 
 
@@ -161,7 +160,7 @@ class AlistTaskCollection:
 
     def __add__(self, other: "AlistTaskCollection") -> "AlistTaskCollection":
         if not isinstance(other, AlistTaskCollection):
-            raise TypeError("Operand must be an instance of AlistTaskManager")
+            raise TypeError("Operand must be an instance of AlistTaskCollection")
         new_tasks = self.tasks.copy()
         new_tasks.update(other.tasks)
         return AlistTaskCollection(list(new_tasks.values()))

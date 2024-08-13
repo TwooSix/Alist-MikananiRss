@@ -68,7 +68,8 @@ async def test_analyse_resource_title_success(chatgpt_extractor):
         "episode": 1,
         "quality": "1080p",
         "fansub": "kuonji alice My wife",
-        "language": "简体中文"
+        "language": "简体中文",
+        "version": 2
     }
     ```
     """
@@ -90,6 +91,7 @@ async def test_analyse_resource_title_success(chatgpt_extractor):
         assert result.quality == "1080p"
         assert result.fansub == "kuonji alice My wife"
         assert result.language == "简体中文"
+        assert result.version == 2
 
 
 @pytest.mark.asyncio
@@ -103,7 +105,8 @@ async def test_analyse_resource_title_special_episode(chatgpt_extractor):
         "episode": 1.5,
         "quality": "720p",
         "fansub": "kuonji alice My wife",
-        "language": "简体中文"
+        "language": "简体中文",
+        "version": 1
     }
     ```"""
 
@@ -124,6 +127,7 @@ async def test_analyse_resource_title_special_episode(chatgpt_extractor):
         assert result.quality == "720p"
         assert result.fansub == "kuonji alice My wife"
         assert result.language == "简体中文"
+        assert result.version == 1
 
 
 @pytest.mark.asyncio
@@ -152,7 +156,8 @@ async def test_analyse_resource_title_wrong_type(chatgpt_extractor):
         "episode": 1,
         "quality": "1080p",
         "fansub": "kuonji alice My wife",
-        "language": "简体中文"
+        "language": "简体中文",
+        "version": 2
     }
     ```"""
 

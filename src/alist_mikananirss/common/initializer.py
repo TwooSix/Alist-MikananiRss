@@ -4,7 +4,7 @@ import sys
 from loguru import logger
 
 from alist_mikananirss.alist import Alist, AlistConfig
-from alist_mikananirss.bot import NotificationBot, PushPlusBot, TelegramBot
+from alist_mikananirss.bot import BotFactory, BotType, NotificationBot
 from alist_mikananirss.common.config_loader import ConfigLoader
 from alist_mikananirss.core import (
     AnimeRenamer,
@@ -67,20 +67,24 @@ def init_extrator():
         raise ValueError("Invalid rename config, extractor is required")
 
 
-def init_notification_bots():
+def init_notification_bots() -> list[NotificationBot]:
     notification_bots = []
     tg_config = config_loader.get("notification.telegram", None)
     if tg_config:
         bot_token = config_loader.get("notification.telegram.bot_token")
         user_id = config_loader.get("notification.telegram.user_id")
-        bot = TelegramBot(bot_token, user_id)
+        bot = BotFactory.create_bot(
+            BotType.TELEGRAM, bot_token=bot_token, user_id=user_id
+        )
         notification_bots.append(NotificationBot(bot))
 
     pushplus_config = config_loader.get("notification.pushplus", None)
     if pushplus_config:
         user_token = config_loader.get("notification.pushplus.token")
         channel = config_loader.get("notification.pushplus.channel", None)
-        bot = PushPlusBot(user_token, channel)
+        bot = BotFactory.create_bot(
+            BotType.PUSHPLUS, user_token=user_token, channel=channel
+        )
         notification_bots.append(NotificationBot(bot))
     return notification_bots
 
@@ -140,8 +144,8 @@ def init_renamer(alist_client: Alist):
             "fansub": "fansub",
             "quality": "1080p",
             "language": "简体中文",
-            "ext": "mp4",
         }
+        # if the key in rename_format is not in all_key_test_data, it will be replaced by "undefined"
         safe_dict = defaultdict(lambda: "undefined", all_key_test_data)
         res = rename_format.format_map(safe_dict)
         if "undefined" in res:

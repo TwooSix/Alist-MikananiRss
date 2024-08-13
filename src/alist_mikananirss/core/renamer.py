@@ -1,6 +1,5 @@
 import asyncio
 import os
-import string
 
 from loguru import logger
 
@@ -12,7 +11,7 @@ class AnimeRenamer:
     _instance = None
     _lock = asyncio.Lock()
     alist_client: Alist = None
-    rename_format: str = "{name} S{season:02d}E{episode:02d}.{ext}"
+    rename_format: str = "{name} S{season:02d}E{episode:02d}"
 
     def __new__(cls):
         if cls._instance is None:
@@ -43,28 +42,18 @@ class AnimeRenamer:
             # 总集篇/OVA 则以顺序命名
             file_list = await self.alist_client.list_dir(old_filedir, per_page=999)
             episode = len(file_list)
-        data = {
-            "name": name,
-            "season": season,
-            "episode": episode,
-            "ext": file_ext,
-            "fansub": fansub,
-            "quality": quality,
-            "language": language,
-        }
-        data = {k: v for k, v in data.items() if v is not None}
-        formatter = string.Formatter()
-        result = []
-        for literal_text, field_name, format_spec, _ in formatter.parse(
-            self.rename_format
-        ):
-            if literal_text:
-                result.append(literal_text)
-            if field_name in data:
-                value = data[field_name]
-                value = format(value, format_spec)
-                result.append(str(value))
-        new_filename = "".join(result).strip()
+
+        new_filename = self.rename_format.format(
+            name=name,
+            season=season,
+            episode=episode,
+            fansub=fansub,
+            quality=quality,
+            language=language,
+        )
+        if resource.version != 1:
+            new_filename += f" v{resource.version}"
+        new_filename += f".{file_ext}"
         return new_filename
 
     @classmethod

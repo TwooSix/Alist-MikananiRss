@@ -14,6 +14,7 @@ class ResourceInfo:
     fansub: Optional[str] = None
     quality: Optional[str] = None
     language: Optional[str] = None
+    version: int = 1
 
     def __hash__(self):
         return hash(self.resource_title)

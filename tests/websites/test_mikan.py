@@ -16,7 +16,7 @@ def mock_rss_data():
     return """<rss version="2.0">
 <channel>
 <title>Mikan Project - GIRLS BAND CRY</title>
-<link>http://mikanani.me/RSS/Bangumi?bangumiId=3298&subgroupid=382</link>
+<link>https://mikanani.me/RSS/Bangumi?bangumiId=3298&subgroupid=382</link>
 <description>Mikan Project - GIRLS BAND CRY</description>
 <item>
 <guid isPermaLink="false">【喵萌Production】★04月新番★[GIRLS BAND CRY][01-13][1080p][繁日双语][招募翻译时轴]</guid>

@@ -48,7 +48,7 @@ async def test_add_resource(reset_notification_sender):
     resource = ResourceInfo(
         anime_name="test name",
         resource_title="Test",
-        torrent_url="http://test.com",
+        torrent_url="https://test.com",
         published_date="2023-01-01",
     )
 
@@ -76,7 +76,7 @@ async def test_run_method(reset_notification_sender):
     resource = ResourceInfo(
         anime_name="test name",
         resource_title="Test",
-        torrent_url="http://test.com",
+        torrent_url="https://test.com",
         published_date="2023-01-01",
     )
     await NotificationSender.add_resource(resource)
@@ -100,7 +100,7 @@ async def test_send_method_with_exception(reset_notification_sender):
     resource = ResourceInfo(
         anime_name="test name",
         resource_title="Test",
-        torrent_url="http://test.com",
+        torrent_url="https://test.com",
         published_date="2023-01-01",
     )
     await NotificationSender.add_resource(resource)
@@ -117,7 +117,7 @@ async def test_send_method_without_bots(reset_notification_sender):
     resource = ResourceInfo(
         anime_name="test name",
         resource_title="Test",
-        torrent_url="http://test.com",
+        torrent_url="https://test.com",
         published_date="2023-01-01",
     )
     await NotificationSender.add_resource(resource)

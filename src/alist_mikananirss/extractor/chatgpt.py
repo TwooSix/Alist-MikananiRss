@@ -74,7 +74,7 @@ class ChatGPTExtractor(ExtractorBase):
         self, resource_title: str
     ) -> ResourceTitleExtractResult:
         prompt = """
-        I will provide you with the torrent name of an anime. Please extract the following information from the torrent name: the name of the anime; the season number of the anime(If this episode is OVA，season set to 0); the episode number of the anime; the video quality; the fansub's name; and the language of the subtitles. 
+        I will provide you with the torrent name of an anime. Please extract the following information from the torrent name: the name of the anime; the season number of the anime(If this episode is OVA，season set to 0); the episode number of the anime; the video quality; the fansub's name; language of the subtitles; and the version of the subtitle(defualt to 1). 
         I need to parse this text into a data structure to initialize a ResourceNameInfo class in my code. The definition of the ResourceNameInfo class is as follows:
 
         class ResourceNameInfo{
@@ -86,8 +86,9 @@ class ChatGPTExtractor(ExtractorBase):
             string quality;
             string fansub;
             string language;
+            int version;
             
-            ResourceNameInfo(this.anime_name, this.season, this.episode, this.quality, this.fansub, this.language);
+            ResourceNameInfo(this.anime_name, this.season, this.episode, this.quality, this.fansub, this.language, this.version);
         }
 
         Based on the anime resource name, please provide a JSON format data structure(output in markdown format) that I can use directly to initialize an instance of the ResourceNameInfo class.
@@ -110,6 +111,7 @@ class ChatGPTExtractor(ExtractorBase):
             "quality": str,
             "fansub": str,
             "language": str,
+            "version": int,
         }
 
         if not all(
@@ -124,6 +126,7 @@ class ChatGPTExtractor(ExtractorBase):
             quality=data["quality"],
             fansub=data["fansub"],
             language=data["language"],
+            version=data["version"],
         )
         logger.debug(f"Chatgpt analyse resource name: {resource_title} -> {info}")
         return info

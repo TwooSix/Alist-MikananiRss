@@ -9,12 +9,12 @@ def sample_config():
         "common": {
             "interval_time": 300,
             "proxies": {
-                "http": "http://127.0.0.1:7890",
-                "https": "http://127.0.0.1:7890",
+                "http": "https://127.0.0.1:7890",
+                "https": "https://127.0.0.1:7890",
             },
         },
         "alist": {
-            "base_url": "http://www.example.com",
+            "base_url": "https://www.example.com",
             "token": "alist-xxx",
             "downloader": "aria2",
             "download_path": "Onedrive/Anime",
@@ -45,7 +45,7 @@ def test_load_config(config_file, sample_config):
 def test_get_existing_key(config_file):
     loader = ConfigLoader(str(config_file))
     assert loader.get("common.interval_time") == 300
-    assert loader.get("alist.base_url") == "http://www.example.com"
+    assert loader.get("alist.base_url") == "https://www.example.com"
     assert loader.get("mikan.subscribe_url") == [
         "https://mikanani.me/RSS/MyBangumi?token=xxx",
         "https://mikanani.me/RSS/rss2",
@@ -54,7 +54,7 @@ def test_get_existing_key(config_file):
 
 def test_get_nested_key(config_file):
     loader = ConfigLoader(str(config_file))
-    assert loader.get("common.proxies.http") == "http://127.0.0.1:7890"
+    assert loader.get("common.proxies.http") == "https://127.0.0.1:7890"
 
 
 def test_get_non_existent_key_with_default(config_file):

@@ -12,7 +12,7 @@ def reset_anime_renamer():
     # 在每个测试之前重置 AnimeRenamer
     AnimeRenamer._instance = None
     AnimeRenamer.alist_client = None
-    AnimeRenamer.rename_format = "{name} S{season:02d}E{episode:02d}.{ext}"
+    AnimeRenamer.rename_format = "{name} S{season:02d}E{episode:02d}"
     yield
 
 
@@ -54,10 +54,7 @@ async def test_initialize_default_rename_format():
     AnimeRenamer.initialize(alist)
 
     assert AnimeRenamer._instance.alist_client == alist
-    assert (
-        AnimeRenamer._instance.rename_format
-        == "{name} S{season:02d}E{episode:02d}.{ext}"
-    )
+    assert AnimeRenamer._instance.rename_format == "{name} S{season:02d}E{episode:02d}"
 
 
 @pytest.mark.asyncio
@@ -90,6 +87,21 @@ async def test_build_new_name_ova(alist_mock, resource_info):
     )
 
     expected_filename = "Test Anime S00E03.mp4"
+    assert new_filename == expected_filename
+
+
+@pytest.mark.asyncio
+async def test_build_new_name_version(alist_mock, resource_info):
+    AnimeRenamer.initialize(alist_mock)
+
+    old_filepath = "/path/to/old_file.mp4"
+    resource_info.version = 2
+
+    new_filename = await AnimeRenamer._instance._build_new_name(
+        old_filepath, resource_info
+    )
+
+    expected_filename = "Test Anime S01E05 v2.mp4"
     assert new_filename == expected_filename
 
 
