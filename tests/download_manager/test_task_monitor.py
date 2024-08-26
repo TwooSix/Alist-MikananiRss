@@ -105,12 +105,12 @@ async def test_wait_finished_failed(task_monitor):
 
 @pytest.mark.asyncio
 async def test_wait_finished_stalled(task_monitor):
+    async def mock_refresh():
+        task_monitor.task = mock_task
+
     mock_task = MagicMock(
         spec=AlistDownloadTask, tid="123", status=AlistTaskStatus.Running, progress=0.5
     )
-
-    async def mock_refresh():
-        task_monitor.task = mock_task
 
     with (
         patch.object(task_monitor, "_refresh", side_effect=mock_refresh),

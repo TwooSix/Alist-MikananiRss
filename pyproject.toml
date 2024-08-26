@@ -1,6 +1,6 @@
 [project]
 name = "alist-mikananirss"
-version = "0.1.2"
+version = "0.1.4"
 description = "Automatically fetch anime updates from the Mikan Project's RSS feed and offline download them to the cloud drive through Alist."
 authors = [
     { name = "TwoSix", email = "ljj2288@gmail.com" }
