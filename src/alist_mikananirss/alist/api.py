@@ -75,13 +75,16 @@ class Alist:
         return self.version
 
     async def add_offline_download_task(
-        self, save_path: str, urls: list[str]
+        self,
+        save_path: str,
+        urls: list[str],
+        policy: AlistDeletePolicy = AlistDeletePolicy.DeleteAlways,
     ) -> "AlistTaskCollection":
         response_data = await self._api_call(
             "POST",
             "api/fs/add_offline_download",
             json={
-                "delete_policy": AlistDeletePolicy.DeleteOnUploadSucceed.value,
+                "delete_policy": policy.value,
                 "path": save_path,
                 "urls": urls,
                 "tool": self.config.downloader,
