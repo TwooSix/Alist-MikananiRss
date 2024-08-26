@@ -9,6 +9,7 @@ from loguru import logger
 from alist_mikananirss.alist import Alist
 from alist_mikananirss.alist.tasks import (
     AlistDownloadTask,
+    AlistTask,
     AlistTaskCollection,
     AlistTaskStatus,
     AlistTaskType,
@@ -52,15 +53,24 @@ class TaskMonitor:
             raise RuntimeError(f"Can't find the task {self.task.tid}")
         self.task = task
 
-    async def wait_finished(self):
+    async def wait_finished(self) -> AlistTask:
+        """Loop check task tatus until it finished or error
+
+        Raises:
+            TimeoutError: If the download progress remains unchanged for a long time, throw an exception
+
+        Returns:
+            AlistTask: The finished task
+        """
         last_progress = 0
         last_progress_time = time.time()
-        stall_threshold = 300  # 5分钟
+        stall_threshold = 300  # 5min
         progress_threshold = 0.01  # 1%
         while True:
             try:
                 await self._refresh()
                 current_progress = self.task.progress
+                current_status = self.task.status
             except Exception as e:
                 logger.warning(f"Error when refresh {self.task} status: {e}")
                 await asyncio.sleep(1)
@@ -75,8 +85,12 @@ class TaskMonitor:
             current_time = time.time()
             time_elapsed = current_time - last_progress_time
             progress_change = current_progress - last_progress
-            if time_elapsed > stall_threshold and progress_change < progress_threshold:
-                raise RuntimeError(
+            if (
+                time_elapsed > stall_threshold
+                and progress_change < progress_threshold
+                and current_status is AlistTaskStatus.Running
+            ):
+                raise TimeoutError(
                     f"Progress is too slow: {progress_change:.2%} in {time_elapsed:.2f} seconds"
                 )
             if progress_change >= progress_threshold:
@@ -170,20 +184,20 @@ class DownloadManager:
     async def _wait_finished(
         self, task: AnimeDownloadTaskInfo
     ) -> Optional[AnimeDownloadTaskInfo]:
-        """monitor one task until it succeed
+        """monitor one task until it finished
 
         Args:
             resource (MikanAnimeResource): resource need to be monitored
 
         Returns:
-            MikanAnimeResource | None: return the resource if download succeed, else return None
+            MikanAnimeResource | None: return the resource if download finished, else return None
         """
         download_task = task.download_task
         download_task_monitor = TaskMonitor(self.alist_client, download_task)
         try:
             download_task = await download_task_monitor.wait_finished()
-        except RuntimeError:
-            self.alist_client.cancel_task(download_task)
+        except TimeoutError:
+            await self.alist_client.cancel_task(download_task)
             logger.error(
                 f"Timeout to wait the download task of {task.resource.resource_title} succeed"
             )
@@ -204,8 +218,8 @@ class DownloadManager:
         transfer_task_monitor = TaskMonitor(self.alist_client, transfer_task)
         try:
             transfer_task = await transfer_task_monitor.wait_finished()
-        except RuntimeError:
-            self.alist_client.cancel_task(transfer_task)
+        except TimeoutError:
+            await self.alist_client.cancel_task(transfer_task)
             logger.error(
                 f"Timeout to wait the transfer task of {task.resource.resource_title} succeed"
             )
@@ -219,6 +233,7 @@ class DownloadManager:
         return task
 
     def _post_process(self, task: AnimeDownloadTaskInfo):
+        "Something to do after download task success"
         if self.use_renamer:
             filepath = os.path.join(task.download_path, task.transfer_task.file_name)
             asyncio.create_task(AnimeRenamer.rename(filepath, task.resource))

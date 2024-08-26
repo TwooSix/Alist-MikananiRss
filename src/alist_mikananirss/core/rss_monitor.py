@@ -32,7 +32,10 @@ class RssMonitor:
         self.interval_time = interval_time
 
     async def get_new_resources(self, m_filter: RegexFilter) -> list[ResourceInfo]:
+        "Parse all rss url and get the filtered, unique resource info list"
+
         async def process_entry(self, website, entry):
+            "get resource info from feed entry"
             try:
                 resource_info = await website.extract_resource_info(
                     entry, self.use_extractor
