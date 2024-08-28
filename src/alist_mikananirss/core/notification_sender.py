@@ -81,5 +81,5 @@ class NotificationSender:
         try:
             await bot.send_message(msg)
         except Exception as e:
-            logger.warning(f"Attempt failed for bot {bot}: {e}")
+            logger.warning(f"Attempt failed for {type(bot.bot)}: {e}")
             raise

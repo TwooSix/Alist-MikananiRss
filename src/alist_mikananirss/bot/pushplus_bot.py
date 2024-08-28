@@ -36,10 +36,13 @@ class PushPlusBot(BotBase):
                 response.raise_for_status()
                 data = await response.json()
                 if data["code"] != 200:
+                    error_code = data["code"]
+                    error_message = data.get("message") or "Unknown error"
+                    full_error_message = f"Error {error_code}: {error_message}"
                     raise aiohttp.ClientResponseError(
                         response.request_info,
                         response.history,
                         status=data["code"],
-                        message=data.get("message", "Unknown error"),
+                        message=full_error_message,
                     )
         return True
