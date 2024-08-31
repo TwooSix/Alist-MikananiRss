@@ -24,7 +24,7 @@ class PushPlusBot(BotBase):
             self.channel = PushPlusChannel.WECHAT
 
     async def send_message(self, message: str) -> bool:
-        api_url = f"https://www.pushplus.plus/send/{self.user_token}"
+        api_url = f"http://www.pushplus.plus/send/{self.user_token}"
         body = {
             "title": "Alist MikananiRSS更新推送",
             "content": message,
@@ -36,10 +36,13 @@ class PushPlusBot(BotBase):
                 response.raise_for_status()
                 data = await response.json()
                 if data["code"] != 200:
+                    error_code = data["code"]
+                    error_message = data.get("message") or "Unknown error"
+                    full_error_message = f"Error {error_code}: {error_message}"
                     raise aiohttp.ClientResponseError(
                         response.request_info,
                         response.history,
                         status=data["code"],
-                        message=data.get("message", "Unknown error"),
+                        message=full_error_message,
                     )
         return True

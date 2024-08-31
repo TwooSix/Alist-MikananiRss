@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from loguru import logger
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 from alist_mikananirss.alist import Alist
 from alist_mikananirss.alist.tasks import (
@@ -31,12 +32,14 @@ class AnimeDownloadTaskInfo:
 
 
 class TaskMonitor:
-    normal_status = [
+    NORMAL_STATUSES = [
         AlistTaskStatus.Pending,
         AlistTaskStatus.Running,
         AlistTaskStatus.StateBeforeRetry,
         AlistTaskStatus.StateWaitingRetry,
     ]
+    STALL_THRESHOLD = 300  # 5min
+    PROGRESS_THRESHOLD = 0.01  # 1%
 
     def __init__(
         self,
@@ -45,13 +48,41 @@ class TaskMonitor:
     ):
         self.alist = alist
         self.task = task
+        self.last_progress = 0
+        self.last_progress_time = time.time()
 
+    @retry(
+        stop=stop_after_attempt(5),
+        wait=wait_exponential(multiplier=1, min=1, max=15),
+        reraise=True,
+    )
     async def _refresh(self):
         task_list = await self.alist.get_task_list(self.task.task_type)
         task = task_list[self.task.tid]
         if not task:
-            raise RuntimeError(f"Can't find the task {self.task.tid}")
+            logger.warning(f"Can't find the task {self.task.tid}")
+            raise RuntimeError("Task not found")
         self.task = task
+
+    def _is_progress_stalled(self) -> bool:
+        current_progress = self.task.progress
+        current_time = time.time()
+
+        time_elapsed = current_time - self.last_progress_time
+        progress_change = current_progress - self.last_progress
+
+        if (
+            time_elapsed > self.STALL_THRESHOLD
+            and progress_change < self.PROGRESS_THRESHOLD
+            and self.task.status is AlistTaskStatus.Running
+        ):
+            return True
+
+        if progress_change >= self.PROGRESS_THRESHOLD:
+            self.last_progress = current_progress
+            self.last_progress_time = current_time
+
+        return False
 
     async def wait_finished(self) -> AlistTask:
         """Loop check task tatus until it finished or error
@@ -62,40 +93,16 @@ class TaskMonitor:
         Returns:
             AlistTask: The finished task
         """
-        last_progress = 0
-        last_progress_time = time.time()
-        stall_threshold = 300  # 5min
-        progress_threshold = 0.01  # 1%
         while True:
-            try:
-                await self._refresh()
-                current_progress = self.task.progress
-                current_status = self.task.status
-            except Exception as e:
-                logger.warning(f"Error when refresh {self.task} status: {e}")
-                await asyncio.sleep(1)
-                continue
+            await self._refresh()
             logger.debug(
-                f"Checking {self.task} status: {self.task.status} progress: {current_progress:.2f}%"
+                f"Checking {self.task} status: {self.task.status} progress: {self.task.progress:.2f}%"
             )
-            if self.task.status not in self.normal_status:
+            if self.task.status not in self.NORMAL_STATUSES:
                 return self.task
 
-            # 若长时间下载进度没有变化，则抛出异常
-            current_time = time.time()
-            time_elapsed = current_time - last_progress_time
-            progress_change = current_progress - last_progress
-            if (
-                time_elapsed > stall_threshold
-                and progress_change < progress_threshold
-                and current_status is AlistTaskStatus.Running
-            ):
-                raise TimeoutError(
-                    f"Progress is too slow: {progress_change:.2%} in {time_elapsed:.2f} seconds"
-                )
-            if progress_change >= progress_threshold:
-                last_progress = current_progress
-                last_progress_time = current_time
+            if self._is_progress_stalled():
+                raise TimeoutError("Progress is too slow")
 
             await asyncio.sleep(1)
 
@@ -145,11 +152,9 @@ class DownloadManager:
 
     async def _find_transfer_task(self, resource: ResourceInfo) -> AlistTransferTask:
         def is_video(file_name: str) -> bool:
-            video_suffix = [".mp4", ".mkv", ".avi", ".rmvb", ".wmv", ".flv"]
-            for suffix in video_suffix:
-                if file_name.endswith(suffix):
-                    return True
-            return False
+            return file_name.lower().endswith(
+                (".mp4", ".mkv", ".avi", ".rmvb", ".wmv", ".flv")
+            )
 
         async with asyncio.timeout(10):
             while True:
@@ -187,50 +192,39 @@ class DownloadManager:
         """monitor one task until it finished
 
         Args:
-            resource (MikanAnimeResource): resource need to be monitored
+            task (AnimeDownloadTaskInfo): Task which need to be monitored
 
         Returns:
-            MikanAnimeResource | None: return the resource if download finished, else return None
+            AnimeDownloadTaskInfo | None: return the task info if download and transfer finished, else return None
         """
-        download_task = task.download_task
-        download_task_monitor = TaskMonitor(self.alist_client, download_task)
-        try:
-            download_task = await download_task_monitor.wait_finished()
-        except TimeoutError:
-            await self.alist_client.cancel_task(download_task)
-            logger.error(
-                f"Timeout to wait the download task of {task.resource.resource_title} succeed"
-            )
-            return None
-        if download_task.status != AlistTaskStatus.Succeeded:
-            logger.error(
-                f"Error when download {task.resource.resource_title}: {download_task.error_msg}"
-            )
-            return None
+
+        async def wait_task(task_obj):
+            monitor = TaskMonitor(self.alist_client, task_obj)
+            try:
+                finished_task = await monitor.wait_finished()
+                if finished_task.status != AlistTaskStatus.Succeeded:
+                    raise ValueError(
+                        f"Error in {type(task_obj)}: {finished_task.error_msg}"
+                    )
+                return finished_task
+            except TimeoutError:
+                await self.alist_client.cancel_task(task_obj)
+                raise ValueError(
+                    f"Timeout waiting for {type(task_obj)} of {task.resource.resource_title}"
+                )
+            except RuntimeError:
+                raise ValueError(
+                    f"Task not found: {type(task_obj)} of {task.resource.resource_title}"
+                )
 
         try:
+            task.download_task = await wait_task(task.download_task)
             transfer_task = await self._find_transfer_task(task.resource)
-        except asyncio.TimeoutError:
-            logger.error(
-                f"Timeout to find the transfer task of {task.resource.resource_title}"
-            )
+            task.transfer_task = await wait_task(transfer_task)
+            return task
+        except ValueError as e:
+            logger.error(str(e))
             return None
-        transfer_task_monitor = TaskMonitor(self.alist_client, transfer_task)
-        try:
-            transfer_task = await transfer_task_monitor.wait_finished()
-        except TimeoutError:
-            await self.alist_client.cancel_task(transfer_task)
-            logger.error(
-                f"Timeout to wait the transfer task of {task.resource.resource_title} succeed"
-            )
-            return None
-        if transfer_task.status != AlistTaskStatus.Succeeded:
-            logger.error(
-                f"Error when transfer {task.resource.resource_title}: {transfer_task.error_msg}"
-            )
-            return None
-        task.transfer_task = transfer_task
-        return task
 
     def _post_process(self, task: AnimeDownloadTaskInfo):
         "Something to do after download task success"
@@ -297,26 +291,21 @@ class DownloadManager:
         task_list = AlistTaskCollection()
         for download_path, urls in path_urls.items():
             try:
-                tmp_task_list = await self.alist_client.add_offline_download_task(
+                task_list += await self.alist_client.add_offline_download_task(
                     download_path, urls
                 )
             except Exception as e:
                 logger.error(f"Error when add offline download task: {e}")
                 continue
-            task_list = task_list + tmp_task_list
         # Patch the download task with the resource information
-        anime_task_list = []
-        for task in task_list:
-            for resource in new_resources:
-                if resource.torrent_url == task.url:
-                    anime_task = AnimeDownloadTaskInfo(
-                        resource=resource,
-                        download_task=task,
-                        download_path=resource_path_map[resource],
-                    )
-                    logger.info(
-                        f"Start to download {resource.resource_title} to {anime_task.download_path}"
-                    )
-                    anime_task_list.append(anime_task)
-                    break
+        anime_task_list = [
+            AnimeDownloadTaskInfo(
+                resource=resource,
+                download_task=task,
+                download_path=resource_path_map[resource],
+            )
+            for task in task_list
+            for resource in new_resources
+            if resource.torrent_url == task.url
+        ]
         return anime_task_list

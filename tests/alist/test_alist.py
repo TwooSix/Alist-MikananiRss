@@ -71,7 +71,7 @@ async def test_add_offline_download_task(alist):
             "POST",
             "api/fs/add_offline_download",
             json={
-                "delete_policy": AlistDeletePolicy.DeleteOnUploadSucceed.value,
+                "delete_policy": AlistDeletePolicy.DeleteAlways.value,
                 "path": "/path/to/save",
                 "urls": ["https://example.com/file.zip"],
                 "tool": AlistDownloaderType.ARIA,

@@ -2,6 +2,7 @@ import asyncio
 from typing import List
 
 from loguru import logger
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 from alist_mikananirss.bot import NotificationBot, NotificationMsg
 from alist_mikananirss.websites import ResourceInfo
@@ -12,6 +13,7 @@ class NotificationSender:
     notification_bots: List[NotificationBot] = []
     _queue: asyncio.Queue = None
     _interval: int = 60
+    _max_retries = 3
 
     def __new__(cls):
         if cls._instance is None:
@@ -62,10 +64,22 @@ class NotificationSender:
             return
         msg = NotificationMsg.from_resources(resources)
         logger.debug(f"Send notification\n: {msg}")
-        results = await asyncio.gather(
-            *[bot.send_message(msg) for bot in self.notification_bots],
-            return_exceptions=True,
-        )
+
+        tasks = [self._send_with_retry(bot, msg) for bot in self.notification_bots]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
         for result in results:
             if isinstance(result, Exception):
-                logger.error(result)
+                logger.error(f"Failed to send notification after all retries: {result}")
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=3, min=5, max=30),
+        reraise=True,
+    )
+    async def _send_with_retry(self, bot: NotificationBot, msg: NotificationMsg):
+        try:
+            await bot.send_message(msg)
+        except Exception as e:
+            logger.warning(f"Attempt failed for {type(bot.bot)}: {e}")
+            raise

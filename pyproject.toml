@@ -1,6 +1,6 @@
 [project]
 name = "alist-mikananirss"
-version = "0.1.4"
+version = "0.1.5"
 description = "Automatically fetch anime updates from the Mikan Project's RSS feed and offline download them to the cloud drive through Alist."
 authors = [
     { name = "TwoSix", email = "ljj2288@gmail.com" }
@@ -13,6 +13,7 @@ dependencies = [
     "openai==1.7.0",
     "pyyaml>=6.0.1",
     "loguru>=0.7.2",
+    "tenacity>=9.0.0",
 ]
 readme = "README.md"
 requires-python = ">= 3.11"
