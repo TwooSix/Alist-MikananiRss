@@ -10,7 +10,7 @@
 
 --- 
 
-[使用文档](https://github.com/TwooSix/Alist-MikananiRss/wiki/%E5%BF%AB%E9%80%9F%E5%BC%80%E5%A7%8B) | [开发指南](https://github.com/TwooSix/Alist-MikananiRss/wiki/%E5%BC%80%E5%8F%91%E8%80%85%E6%8C%87%E5%8D%97)
+[使用文档](https://github.com/TwooSix/Alist-MikananiRss/wiki/%E5%BF%AB%E9%80%9F%E5%BC%80%E5%A7%8B) | [开发指南](https://github.com/TwooSix/Alist-MikananiRss/wiki/%E8%B4%A1%E7%8C%AE%E6%8C%87%E5%8D%97)
 ## 功能
 - 自动获取番剧更新并下载至对应网盘
 - 通过PushPlus, Telegram等渠道发送更新通知
