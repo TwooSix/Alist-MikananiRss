@@ -1,0 +1,31 @@
+name: Build and Publish to PyPI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types:
+      - closed
+    branches:
+      - master
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    environment: 
+      name: publish
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install a specific version
+      uses: eifinger/setup-rye@v4
+      with:
+        version: 'latest'
+
+    - name: Install dependencies
+      run: |
+        rye sync --no-dev
+
+    - name: Build and publish to PyPI
+      run: |
+        rye build
+        rye publish --token ${{ secrets.PYPI_TOKEN }} --yes
