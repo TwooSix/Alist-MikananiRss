@@ -1,10 +1,12 @@
-FROM python:3.12-slim
+FROM python:3.12-alpine3.20
 
 WORKDIR /
 
-RUN pip install alist-mikananirss
-
-RUN mkdir /data
+RUN apk add --no-cache gcc musl-dev linux-headers rust cargo && \
+    pip install --no-cache-dir alist-mikananirss && \
+    mkdir /data && \
+    apk del gcc musl-dev linux-headers rust cargo && \
+    rm -rf /var/cache/apk/*
 
 ENV CONFIG_PATH /config.yaml
 
