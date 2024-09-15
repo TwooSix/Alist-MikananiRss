@@ -1,6 +1,5 @@
 name: Build and Publish Docker Image
 
-
 on:
   workflow_dispatch:
   pull_request:
@@ -12,6 +11,8 @@ on:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    environment: 
+      name: publish
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -40,6 +41,12 @@ jobs:
         run: |
           echo "Version: ${{ steps.get_version.outputs.version }}"
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
       - name: Log in to Docker Hub
         uses: docker/login-action@v2
         with:
@@ -51,5 +58,8 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
           push: true
-          tags: twosix26/your-image-name:v${{ steps.get_version.outputs.version }}
+          tags: |
+            twosix26/alist-mikananirss:v${{ steps.get_version.outputs.version }}
+            twosix26/alist-mikananirss:latest
