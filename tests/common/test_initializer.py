@@ -130,19 +130,21 @@ def test_init_resource_filter():
     assert len(result.patterns) == 1
 
 
-def test_init_rss_monitor():
+@pytest.mark.asyncio
+async def test_init_rss_monitor():
     regex_filter = RegexFilter()
-    result = initializer.init_rss_monitor(regex_filter)
+    result = await initializer.init_rss_monitor(regex_filter)
     assert isinstance(result, RssMonitor)
     assert result.interval_time == 300
 
 
-def test_init_download_manager():
+@pytest.mark.asyncio
+async def test_init_download_manager():
     with patch(
-        "alist_mikananirss.common.initializer.DownloadManager"
+        "alist_mikananirss.common.initializer.DownloadManager", new_callable=AsyncMock
     ) as MockDownloadManager:
-        mock_alist = MagicMock()
-        initializer.init_download_manager(mock_alist)
+        mock_alist = AsyncMock()
+        await initializer.init_download_manager(mock_alist)
         MockDownloadManager.initialize.assert_called_once_with(
             mock_alist, "Onedrive/Anime", True, True
         )
@@ -150,14 +152,15 @@ def test_init_download_manager():
 
 def test_init_renamer():
     with patch("alist_mikananirss.common.initializer.AnimeRenamer") as MockAnimeRenamer:
-        mock_alist = MagicMock()
+        mock_alist = AsyncMock()
         initializer.init_renamer(mock_alist)
         MockAnimeRenamer.initialize.assert_called_once_with(
             mock_alist, "{name} S{season:02d}E{episode:02d}"
         )
 
 
-def test_missing_optional_configs(temp_config_file):
+@pytest.mark.asyncio
+async def test_missing_optional_configs(temp_config_file):
     yaml_without_optional = yaml.safe_load(MOCK_YAML_CONTENT)
     del yaml_without_optional["notification"]
     del yaml_without_optional["rename"]
@@ -171,10 +174,10 @@ def test_missing_optional_configs(temp_config_file):
     assert len(result) == 0
 
     with patch(
-        "alist_mikananirss.common.initializer.DownloadManager"
+        "alist_mikananirss.common.initializer.DownloadManager", new_callable=AsyncMock
     ) as MockDownloadManager:
-        mock_alist = MagicMock()
-        initializer.init_download_manager(mock_alist)
+        mock_alist = AsyncMock()
+        await initializer.init_download_manager(mock_alist)
         MockDownloadManager.initialize.assert_called_once_with(
             mock_alist, "Onedrive/Anime", False, False
         )
@@ -193,7 +196,8 @@ async def test_missing_required_configs(temp_config_file):
         await initializer.init_alist()
 
 
-def test_invalid_configs(temp_config_file):
+@pytest.mark.asyncio
+async def test_invalid_configs(temp_config_file):
     yaml_with_invalid = yaml.safe_load(MOCK_YAML_CONTENT)
     yaml_with_invalid["common"]["interval_time"] = -1
 
@@ -203,4 +207,4 @@ def test_invalid_configs(temp_config_file):
     initializer.read_config(temp_config_file)
 
     with pytest.raises(ValueError):
-        initializer.init_rss_monitor(RegexFilter())
+        await initializer.init_rss_monitor(RegexFilter())

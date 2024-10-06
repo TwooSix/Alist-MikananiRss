@@ -122,7 +122,7 @@ class DownloadManager:
         return cls._instance
 
     @classmethod
-    def initialize(
+    async def initialize(
         cls,
         alist_client: Alist,
         base_download_path: str,
@@ -135,6 +135,7 @@ class DownloadManager:
         cls.use_renamer = use_renamer
         cls.need_notification = need_notification
         cls.db = SubscribeDatabase()
+        await cls.db.initialize()
 
     @classmethod
     def get_instance(cls):
@@ -147,7 +148,7 @@ class DownloadManager:
         instance = cls.get_instance()
         info_list: list[AnimeDownloadTaskInfo] = await instance.download(resources)
         for task_info in info_list:
-            instance.db.insert_resource_info(task_info.resource)
+            await instance.db.insert_resource_info(task_info.resource)
             asyncio.create_task(instance.monitor(task_info))
 
     async def _find_transfer_task(self, resource: ResourceInfo) -> AlistTransferTask:
@@ -240,7 +241,7 @@ class DownloadManager:
             self._post_process(success_task)
         else:
             # 下载失败，删除数据库记录
-            self.db.delete_by_resource_title(task_info.resource.resource_title)
+            await self.db.delete_by_resource_title(task_info.resource.resource_title)
 
     def _build_download_path(self, resource: ResourceInfo) -> str:
         """build the download path based on the anime name and season

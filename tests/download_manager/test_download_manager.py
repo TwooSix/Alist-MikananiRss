@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import pytest_asyncio
 from alist_mikananirss.alist import Alist
 from alist_mikananirss.alist.tasks import (
     AlistDownloadTask,
@@ -22,12 +23,12 @@ def mock_alist():
 
 @pytest.fixture
 def mock_db():
-    return MagicMock(spec=SubscribeDatabase)
+    return AsyncMock(spec=SubscribeDatabase)
 
 
-@pytest.fixture
-def download_manager(mock_alist, mock_db):
-    DownloadManager.initialize(
+@pytest_asyncio.fixture
+async def download_manager(mock_alist, mock_db):
+    await DownloadManager.initialize(
         mock_alist, "/base/path", use_renamer=True, need_notification=True
     )
     DownloadManager._instance.db = mock_db
@@ -63,15 +64,16 @@ def test_rousources():
     return resources
 
 
-def test_initialize():
+@pytest.mark.asyncio
+async def test_initialize():
     with patch(
         "alist_mikananirss.common.database.SubscribeDatabase"
     ) as MockSubscribeDatabase:
         alist = AsyncMock()
-        db_mock = MagicMock()
+        db_mock = AsyncMock()
         MockSubscribeDatabase.side_effect = db_mock
 
-        DownloadManager.initialize(alist, "test/path", True)
+        await DownloadManager.initialize(alist, "test/path", True)
         assert DownloadManager.get_instance().alist_client == alist
         assert DownloadManager.get_instance().base_download_path == "test/path"
         assert DownloadManager.get_instance().use_renamer
