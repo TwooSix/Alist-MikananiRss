@@ -106,7 +106,7 @@ def init_resource_filter():
     return regex_filter
 
 
-def init_rss_monitor(regex_filter: RegexFilter):
+async def init_rss_monitor(regex_filter: RegexFilter):
     subscribe_url = config_loader.get("mikan.subscribe_url")
     use_extractor = False if config_loader.get("rename", None) is None else True
     rss_monitor = RssMonitor(
@@ -114,6 +114,7 @@ def init_rss_monitor(regex_filter: RegexFilter):
         filter=regex_filter,
         use_extractor=use_extractor,
     )
+    await rss_monitor.initialize()
     interval_time = config_loader.get("common.interval_time", 300)
     if interval_time < 0:
         raise ValueError("Invalid interval time")
@@ -121,13 +122,13 @@ def init_rss_monitor(regex_filter: RegexFilter):
     return rss_monitor
 
 
-def init_download_manager(alist_client: Alist):
+async def init_download_manager(alist_client: Alist):
     download_path = config_loader.get("alist.download_path")
     use_renamer = False if config_loader.get("rename", None) is None else True
     need_notification = (
         False if config_loader.get("notification", None) is None else True
     )
-    DownloadManager.initialize(
+    await DownloadManager.initialize(
         alist_client, download_path, use_renamer, need_notification
     )
 

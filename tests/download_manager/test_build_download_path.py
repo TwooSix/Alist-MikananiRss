@@ -11,9 +11,10 @@ def base_path():
     return "/base/path"
 
 
-def test_initialize(base_path):
+@pytest.mark.asyncio
+async def test_initialize(base_path):
     alist_mock = MagicMock()
-    DownloadManager.initialize(alist_mock, base_path)
+    await DownloadManager.initialize(alist_mock, base_path)
     assert DownloadManager.get_instance().base_download_path == base_path
 
 

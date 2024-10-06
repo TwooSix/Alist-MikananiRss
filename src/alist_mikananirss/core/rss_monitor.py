@@ -25,8 +25,12 @@ class RssMonitor:
         ]
         self.filter = filter
         self.use_extractor = use_extractor
-        self.db = SubscribeDatabase()
+
         self.interval_time = 300
+
+    async def initialize(self):
+        self.db = SubscribeDatabase()
+        await self.db.initialize()
 
     def set_interval_time(self, interval_time: int):
         self.interval_time = interval_time
@@ -54,7 +58,7 @@ class RssMonitor:
                 feed_entries,
             )
             for entry in feed_entries_filted:
-                if not self.db.is_resource_title_exist(entry.resource_title):
+                if not await self.db.is_resource_title_exist(entry.resource_title):
                     task = asyncio.create_task(process_entry(self, website, entry))
                     tasks.append(task)
         results = await asyncio.gather(*tasks, return_exceptions=True)

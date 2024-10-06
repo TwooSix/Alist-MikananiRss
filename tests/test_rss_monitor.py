@@ -32,7 +32,7 @@ async def test_rss_monitor_initialization():
     ) as mock_factory:
         mock_factory.side_effect = [MagicMock(), MagicMock()]
         monitor = RssMonitor(urls, filter_mock)
-
+        await monitor.initialize()
         assert monitor.subscribe_urls == urls
         assert len(monitor.websites) == 2
         assert monitor.filter == filter_mock

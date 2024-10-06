@@ -1,30 +1,39 @@
 import os
 
 import pytest
+import pytest_asyncio
 from alist_mikananirss.common.database import SubscribeDatabase, db_path
 from alist_mikananirss.websites import ResourceInfo
 
 
-@pytest.fixture
-def test_db():
+@pytest_asyncio.fixture
+async def test_db():
     db = SubscribeDatabase("test_subscribe_database.db")
+    db_filepath = os.path.join(db_path, "test_subscribe_database.db")
+    if os.path.exists(db_filepath):
+        os.remove(db_filepath)
+    await db.initialize()
     yield db
     # delete test database every time
-    os.remove(os.path.join(db_path, "test_subscribe_database.db"))
+    os.remove(db_filepath)
 
 
-def test_create_table(test_db):
+@pytest.mark.asyncio
+async def test_create_table(test_db):
     assert os.path.exists(test_db.db_name)
 
-    test_db.connect()
-    test_db.cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-    tables = test_db.cursor.fetchall()
+    await test_db.connect()
+    cursor = await test_db.db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table';"
+    )
+    tables = await cursor.fetchall()
     assert ("resource_data",) in tables
     assert ("db_version",) in tables
-    test_db.close()
+    await test_db.close()
 
 
-def test_insert_and_check_existence(test_db):
+@pytest.mark.asyncio
+async def test_insert_and_check_existence(test_db):
     resource = ResourceInfo(
         resource_title="Test Anime",
         torrent_url="https://example.com/test.torrent",
@@ -37,13 +46,14 @@ def test_insert_and_check_existence(test_db):
         language="Japanese",
     )
 
-    test_db.insert_resource_info(resource)
+    await test_db.insert_resource_info(resource)
 
-    assert test_db.is_resource_title_exist("Test Anime")
+    assert await test_db.is_resource_title_exist("Test Anime")
 
 
-def test_delete_by_id(test_db):
-    test_db.insert(
+@pytest.mark.asyncio
+async def test_delete_by_id(test_db):
+    await test_db.insert(
         "Test Delete",
         "https://example.com/delete.torrent",
         "2023-05-20T12:00:00",
@@ -51,21 +61,23 @@ def test_delete_by_id(test_db):
         "Test Anime",
     )
 
-    test_db.connect()
-    test_db.cursor.execute(
+    await test_db.connect()
+    cursor = await test_db.db.execute(
         "SELECT id FROM resource_data WHERE resource_title=?", ("Test Delete",)
     )
-    id_to_delete = test_db.cursor.fetchone()[0]
-    test_db.close()
+    id_to_delete = await cursor.fetchone()
+    id_to_delete = id_to_delete[0]
+    await test_db.close()
 
-    test_db.delete_by_id(id_to_delete)
+    await test_db.delete_by_id(id_to_delete)
 
-    assert not test_db.is_resource_title_exist("Test Delete")
+    assert not await test_db.is_resource_title_exist("Test Delete")
 
 
-def test_delete_by_torrent_url(test_db):
+@pytest.mark.asyncio
+async def test_delete_by_torrent_url(test_db):
     url = "https://example.com/delete_url.torrent"
-    test_db.insert(
+    await test_db.insert(
         "Test Delete URL",
         url,
         "2023-05-20T12:00:00",
@@ -73,14 +85,15 @@ def test_delete_by_torrent_url(test_db):
         "Test Anime",
     )
 
-    test_db.delete_by_torrent_url(url)
+    await test_db.delete_by_torrent_url(url)
 
-    assert not test_db.is_resource_title_exist("Test Delete URL")
+    assert not await test_db.is_resource_title_exist("Test Delete URL")
 
 
-def test_delete_by_resource_title(test_db):
+@pytest.mark.asyncio
+async def test_delete_by_resource_title(test_db):
     title = "Test Delete Title"
-    test_db.insert(
+    await test_db.insert(
         title,
         "https://example.com/delete_title.torrent",
         "2023-05-20T12:00:00",
@@ -88,16 +101,17 @@ def test_delete_by_resource_title(test_db):
         "Test Anime",
     )
 
-    test_db.delete_by_resource_title(title)
+    await test_db.delete_by_resource_title(title)
 
-    assert not test_db.is_resource_title_exist(title)
+    assert not await test_db.is_resource_title_exist(title)
 
 
-def test_upgrade_database(test_db):
-    test_db.connect()
-    test_db.cursor.execute("DROP TABLE IF EXISTS resource_data")
-    test_db.cursor.execute("DROP TABLE IF EXISTS db_version")
-    test_db.cursor.execute(
+@pytest.mark.asyncio
+async def test_upgrade_database(test_db):
+    await test_db.connect()
+    await test_db.db.execute("DROP TABLE IF EXISTS resource_data")
+    await test_db.db.execute("DROP TABLE IF EXISTS db_version")
+    await test_db.db.execute(
         """
         CREATE TABLE resource_data (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -109,18 +123,19 @@ def test_upgrade_database(test_db):
         )
     """
     )
-    test_db.conn.commit()
-    test_db.close()
+    await test_db.db.commit()
+    await test_db.close()
 
-    test_db._upgrade_database()
+    await test_db._upgrade_database()
 
-    test_db.connect()
-    test_db.cursor.execute("SELECT version FROM db_version")
-    version = test_db.cursor.fetchone()[0]
+    await test_db.connect()
+    cursor = await test_db.db.execute("SELECT version FROM db_version")
+    version = await cursor.fetchone()
+    version = version[0]
     assert version == 1
 
-    test_db.cursor.execute("PRAGMA table_info(resource_data)")
-    columns = [info[1] for info in test_db.cursor.fetchall()]
+    cursor = await test_db.db.execute("PRAGMA table_info(resource_data)")
+    columns = [info[1] for info in await cursor.fetchall()]
     expected_columns = [
         "id",
         "resource_title",
@@ -135,11 +150,12 @@ def test_upgrade_database(test_db):
         "language",
     ]
     assert all(column in columns for column in expected_columns)
-    test_db.close()
+    await test_db.close()
 
 
-def test_insert_duplicate(test_db):
-    test_db.insert(
+@pytest.mark.asyncio
+async def test_insert_duplicate(test_db):
+    await test_db.insert(
         "Duplicate Test",
         "https://example.com/duplicate.torrent",
         "2023-05-20T12:00:00",
@@ -147,7 +163,7 @@ def test_insert_duplicate(test_db):
         "Test Anime",
     )
 
-    test_db.insert(
+    await test_db.insert(
         "Duplicate Test",
         "https://example.com/duplicate.torrent",
         "2023-05-20T12:00:00",
@@ -155,10 +171,11 @@ def test_insert_duplicate(test_db):
         "Test Anime",
     )
 
-    test_db.connect()
-    test_db.cursor.execute(
+    await test_db.connect()
+    cursor = await test_db.db.execute(
         "SELECT COUNT(*) FROM resource_data WHERE resource_title=?", ("Duplicate Test",)
     )
-    count = test_db.cursor.fetchone()[0]
-    test_db.close()
+    count = await cursor.fetchone()
+    count = count[0]
+    await test_db.close()
     assert count == 1
