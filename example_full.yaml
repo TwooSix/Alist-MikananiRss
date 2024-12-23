@@ -38,6 +38,9 @@ rename:
     base_url: https://example.com/v1
     model: gpt-3.5-turbo
   rename_format: "{name} S{season:02d}E{episode:02d}.{ext}"
+  remap: 
+    enable: true
+    cfg_path: "remap.yaml"
 
 dev:
   log_level: INFO

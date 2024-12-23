@@ -24,6 +24,7 @@ async def run():
     resource_filters = initializer.init_resource_filter()
     rss_monitor = await initializer.init_rss_monitor(resource_filters)
     initializer.init_notification_sender()
+    initializer.init_remappers()
 
     task = asyncio.create_task(rss_monitor.run())
     await task

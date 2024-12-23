@@ -14,6 +14,7 @@ wheels/
 data/
 log/
 config.yaml
+remap.yaml
 
 # debug file
 *.ipynb
