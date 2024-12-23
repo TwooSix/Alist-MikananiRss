@@ -3,7 +3,10 @@ import asyncio
 from loguru import logger
 
 from alist_mikananirss.common.database import SubscribeDatabase
-from alist_mikananirss.websites import ResourceInfo, WebsiteFactory
+from alist_mikananirss.core import (
+    RemapperManager,
+)
+from alist_mikananirss.websites import ResourceInfo, Website, WebsiteFactory
 
 from .download_manager import DownloadManager
 from .filters import RegexFilter
@@ -38,12 +41,15 @@ class RssMonitor:
     async def get_new_resources(self, m_filter: RegexFilter) -> list[ResourceInfo]:
         "Parse all rss url and get the filtered, unique resource info list"
 
-        async def process_entry(self, website, entry):
+        async def process_entry(self, website: Website, entry):
             "get resource info from feed entry"
             try:
                 resource_info = await website.extract_resource_info(
                     entry, self.use_extractor
                 )
+                remapper = RemapperManager.match(resource_info)
+                if remapper:
+                    remapper.remap(resource_info)
             except Exception as e:
                 logger.error(f"Pass {entry.resource_title} because of error: {e}")
                 return None

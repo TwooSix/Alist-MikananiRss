@@ -11,6 +11,7 @@ from alist_mikananirss.core import (
     DownloadManager,
     NotificationSender,
     RegexFilter,
+    RemapperManager,
     RssMonitor,
 )
 from alist_mikananirss.extractor import ChatGPTExtractor, Extractor
@@ -161,3 +162,14 @@ def init_renamer(alist_client: Alist):
         if rename_format:
             check_rename_format(rename_format)
         AnimeRenamer.initialize(alist_client, rename_format)
+
+
+def init_remappers():
+    if config_loader.get("rename.remap.enable", False):
+        cfg_path = config_loader.get("rename.remap.cfg_path", "remap.yaml")
+        remap_config = ConfigLoader(cfg_path)
+        cfgs = remap_config.get("remap")
+        for cfg in cfgs:
+            from_cfg = cfg["from"]
+            to_cfg = cfg["to"]
+            RemapperManager.add_remapper(from_cfg, to_cfg)
