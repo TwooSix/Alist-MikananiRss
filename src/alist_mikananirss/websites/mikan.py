@@ -77,7 +77,7 @@ class Mikan(Website):
             )
             resource_info = ResourceInfo(
                 anime_name=name_extract_result.anime_name,
-                season=rtitle_extract_result.season,
+                season=name_extract_result.season,
                 episode=rtitle_extract_result.episode,
                 quality=rtitle_extract_result.quality,
                 language=rtitle_extract_result.language,
