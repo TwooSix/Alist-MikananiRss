@@ -1,2 +1,2 @@
-from .api import Alist, AlistConfig  # noqa
+from .api import Alist  # noqa
 from .tasks import AlistDownloadTask, AlistTransferTask

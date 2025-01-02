@@ -6,24 +6,19 @@ from loguru import logger
 from alist_mikananirss.alist import Alist
 from alist_mikananirss.websites import ResourceInfo
 
+from ..utils import Singleton
 
-class AnimeRenamer:
-    _instance = None
+
+class AnimeRenamer(metaclass=Singleton):
     _lock = asyncio.Lock()
-    alist_client: Alist = None
-    rename_format: str = "{name} S{season:02d}E{episode:02d}"
 
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(AnimeRenamer, cls).__new__(cls)
-        return cls._instance
+    def __init__(self, alist: Alist, rename_format: str):
+        self.alist_client = alist
+        self.rename_format = rename_format
 
     @classmethod
-    def initialize(cls, alist: Alist, rename_format: str = None):
-        instance = cls()
-        instance.alist_client = alist
-        if rename_format is not None:
-            instance.rename_format = rename_format
+    def initialize(cls, alist: Alist, rename_format: str):
+        cls(alist, rename_format)
 
     async def _build_new_name(self, old_filepath: str, resource: ResourceInfo):
         name = resource.anime_name

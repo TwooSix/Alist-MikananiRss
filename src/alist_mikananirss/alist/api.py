@@ -2,7 +2,6 @@ import asyncio
 import mimetypes
 import os
 import urllib.parse
-from dataclasses import dataclass
 from typing import Optional
 
 import aiohttp
@@ -20,20 +19,15 @@ from alist_mikananirss.alist.tasks import (
 )
 
 
-@dataclass
-class AlistConfig:
-    base_url: str
-    token: str
-    downloader: AlistDownloaderType
-
-
 class AlistClientError(Exception):
     pass
 
 
 class Alist:
-    def __init__(self, config: AlistConfig):
-        self.config = config
+    def __init__(self, base_url: str, token: str, downloader: AlistDownloaderType):
+        self.base_url = base_url
+        self.token = token
+        self.downloader = downloader
         self.session = None
         self._session_lock = asyncio.Lock()
 
@@ -50,9 +44,9 @@ class Alist:
         **kwargs,
     ):
         await self._ensure_session()
-        url = urllib.parse.urljoin(self.config.base_url, endpoint)
+        url = urllib.parse.urljoin(self.base_url, endpoint)
         headers = {
-            "Authorization": self.config.token,
+            "Authorization": self.token,
             "Content-Type": "application/json",
             "User-Agent": "Alist-Mikanirss",
         }
@@ -87,7 +81,7 @@ class Alist:
                 "delete_policy": policy.value,
                 "path": save_path,
                 "urls": urls,
-                "tool": self.config.downloader,
+                "tool": self.downloader.value,
             },
         )
         return AlistTaskCollection(

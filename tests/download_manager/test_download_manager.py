@@ -1,7 +1,8 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-import pytest_asyncio
+from loguru import logger
+
 from alist_mikananirss.alist import Alist
 from alist_mikananirss.alist.tasks import (
     AlistDownloadTask,
@@ -13,26 +14,6 @@ from alist_mikananirss.common.database import SubscribeDatabase
 from alist_mikananirss.core import DownloadManager
 from alist_mikananirss.core.download_manager import AnimeDownloadTaskInfo, TaskMonitor
 from alist_mikananirss.websites import ResourceInfo
-from loguru import logger
-
-
-@pytest.fixture
-def mock_alist():
-    return AsyncMock(spec=Alist)
-
-
-@pytest.fixture
-def mock_db():
-    return AsyncMock(spec=SubscribeDatabase)
-
-
-@pytest_asyncio.fixture
-async def download_manager(mock_alist, mock_db):
-    await DownloadManager.initialize(
-        mock_alist, "/base/path", use_renamer=True, need_notification=True
-    )
-    DownloadManager._instance.db = mock_db
-    return DownloadManager.get_instance()
 
 
 @pytest.fixture
@@ -64,25 +45,19 @@ def test_rousources():
     return resources
 
 
-@pytest.mark.asyncio
-async def test_initialize():
-    with patch(
-        "alist_mikananirss.common.database.SubscribeDatabase"
-    ) as MockSubscribeDatabase:
-        alist = AsyncMock()
-        db_mock = AsyncMock()
-        MockSubscribeDatabase.side_effect = db_mock
-
-        await DownloadManager.initialize(alist, "test/path", True)
-        assert DownloadManager.get_instance().alist_client == alist
-        assert DownloadManager.get_instance().base_download_path == "test/path"
-        assert DownloadManager.get_instance().use_renamer
-        assert not DownloadManager.get_instance().need_notification
+@pytest.fixture
+def download_manager():
+    mock_alist = AsyncMock(spec=Alist)
+    mock_db = AsyncMock(spec=SubscribeDatabase)
+    DownloadManager.initialize(
+        mock_alist, "/base/path", use_renamer=True, need_notification=True, db=mock_db
+    )
+    return DownloadManager()
 
 
 @pytest.mark.asyncio
-async def test_download(download_manager, mock_alist, test_rousources):
-    mock_alist.add_offline_download_task.side_effect = [
+async def test_download(download_manager, test_rousources):
+    download_manager.alist_client.add_offline_download_task.side_effect = [
         AlistTaskCollection(
             [
                 AlistDownloadTask(
@@ -99,14 +74,13 @@ async def test_download(download_manager, mock_alist, test_rousources):
     ]
     with patch.object(logger, "error") as logger_error_mock:
         success_task_info = await download_manager.download(test_rousources)
+        logger_error_mock.assert_called_once()
         assert len(success_task_info) == 1
         assert success_task_info[0].resource == test_rousources[0]
-        logger_error_mock.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_monitor_success(download_manager, mock_db):
-
+async def test_monitor_success(download_manager):
     test_task = AnimeDownloadTaskInfo(
         resource=ResourceInfo(
             resource_title="title",
@@ -122,6 +96,7 @@ async def test_monitor_success(download_manager, mock_db):
         download_path="test/path",
         download_task=MagicMock(),
     )
+
     with (
         patch.object(download_manager, "_wait_finished") as wait_finished_mock,
         patch.object(download_manager, "_post_process") as post_process_mock,
@@ -130,11 +105,11 @@ async def test_monitor_success(download_manager, mock_db):
         await download_manager.monitor(test_task)
         wait_finished_mock.assert_awaited_once_with(test_task)
         post_process_mock.assert_called_once()
-        assert mock_db.delete_by_resource_title.call_count == 0
+        assert download_manager.db.delete_by_resource_title.call_count == 0
 
 
 @pytest.mark.asyncio
-async def test_monitor_failed(download_manager, mock_db):
+async def test_monitor_failed(download_manager):
     test_task = AnimeDownloadTaskInfo(
         resource=ResourceInfo(
             resource_title="title",
@@ -150,6 +125,7 @@ async def test_monitor_failed(download_manager, mock_db):
         download_path="test/path",
         download_task=MagicMock(),
     )
+
     with (
         patch.object(download_manager, "_wait_finished") as wait_finished_mock,
         patch.object(download_manager, "_post_process") as post_process_mock,
@@ -158,13 +134,13 @@ async def test_monitor_failed(download_manager, mock_db):
         await download_manager.monitor(test_task)
         wait_finished_mock.assert_awaited_once_with(test_task)
         assert post_process_mock.call_count == 0
-        mock_db.delete_by_resource_title.assert_called_once_with(
+        download_manager.db.delete_by_resource_title.assert_called_once_with(
             test_task.resource.resource_title
         )
 
 
 @pytest.mark.asyncio
-async def test_add_download_task(download_manager, mock_db, test_rousources):
+async def test_add_download_task(download_manager, test_rousources):
     download_tasks_info = [
         AnimeDownloadTaskInfo(
             resource=test_rousources[0],
@@ -177,12 +153,13 @@ async def test_add_download_task(download_manager, mock_db, test_rousources):
             download_task=MagicMock(),
         ),
     ]
+
     with patch.object(download_manager, "download") as download_mock:
         with patch.object(download_manager, "monitor") as monitor_mock:
             download_mock.return_value = download_tasks_info
             await DownloadManager.add_download_tasks(test_rousources)
             download_mock.assert_called_once()
-            assert mock_db.insert_resource_info.call_count == 2
+            assert download_manager.db.insert_resource_info.call_count == 2
             assert monitor_mock.call_count == 2
 
 
@@ -239,6 +216,7 @@ async def test_wait_finished_success(download_manager):
         download_path="/base/path/Test Anime",
         download_task=download_task,
     )
+
     with (
         patch(
             "alist_mikananirss.core.download_manager.TaskMonitor"

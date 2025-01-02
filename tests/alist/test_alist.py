@@ -2,7 +2,8 @@ import math
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from alist_mikananirss.alist.api import Alist, AlistConfig
+
+from alist_mikananirss.alist.api import Alist
 from alist_mikananirss.alist.tasks import (
     AlistDeletePolicy,
     AlistDownloaderType,
@@ -16,24 +17,19 @@ from alist_mikananirss.alist.tasks import (
 
 
 @pytest.fixture
-def alist_config():
-    return AlistConfig(
+def alist():
+    return Alist(
         base_url="https://example.com",
         token="test_token",
         downloader=AlistDownloaderType.ARIA,
     )
 
 
-@pytest.fixture
-def alist(alist_config):
-    return Alist(alist_config)
-
-
 @pytest.mark.asyncio
 async def test_alist_init(alist):
-    assert alist.config.base_url == "https://example.com"
-    assert alist.config.token == "test_token"
-    assert alist.config.downloader == AlistDownloaderType.ARIA
+    assert alist.base_url == "https://example.com"
+    assert alist.token == "test_token"
+    assert alist.downloader == AlistDownloaderType.ARIA
 
 
 @pytest.mark.asyncio

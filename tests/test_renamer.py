@@ -1,19 +1,18 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from loguru import logger
+
 from alist_mikananirss.alist import Alist
 from alist_mikananirss.core import AnimeRenamer
 from alist_mikananirss.websites import ResourceInfo
-from loguru import logger
 
 
 @pytest.fixture(autouse=True)
 def reset_anime_renamer():
-    # 在每个测试之前重置 AnimeRenamer
-    AnimeRenamer._instance = None
-    AnimeRenamer.alist_client = None
-    AnimeRenamer.rename_format = "{name} S{season:02d}E{episode:02d}"
+    AnimeRenamer._instances.pop(AnimeRenamer, None)
     yield
+    AnimeRenamer._instances.pop(AnimeRenamer, None)
 
 
 @pytest.fixture
@@ -43,31 +42,19 @@ async def test_initialize():
 
     AnimeRenamer.initialize(alist, rename_format)
 
-    assert AnimeRenamer._instance.alist_client == alist
-    assert AnimeRenamer._instance.rename_format == rename_format
-
-
-@pytest.mark.asyncio
-async def test_initialize_default_rename_format():
-    alist = AsyncMock(spec=Alist)
-
-    AnimeRenamer.initialize(alist)
-
-    assert AnimeRenamer._instance.alist_client == alist
-    assert AnimeRenamer._instance.rename_format == "{name} S{season:02d}E{episode:02d}"
+    assert AnimeRenamer().alist_client == alist
+    assert AnimeRenamer().rename_format == rename_format
 
 
 @pytest.mark.asyncio
 async def test_build_new_name(alist_mock, resource_info):
-    AnimeRenamer.initialize(alist_mock)
+    AnimeRenamer.initialize(alist_mock, "{name} S{season:02d}E{episode:02d}")
 
     old_filepath = "/path/to/old_file.mp4"
 
     alist_mock.list_dir.return_value = ["file1", "file2", "file3"]
 
-    new_filename = await AnimeRenamer._instance._build_new_name(
-        old_filepath, resource_info
-    )
+    new_filename = await AnimeRenamer()._build_new_name(old_filepath, resource_info)
 
     expected_filename = "Test Anime S01E05.mp4"
     assert new_filename == expected_filename
@@ -75,16 +62,14 @@ async def test_build_new_name(alist_mock, resource_info):
 
 @pytest.mark.asyncio
 async def test_build_new_name_ova(alist_mock, resource_info):
-    AnimeRenamer.initialize(alist_mock)
+    AnimeRenamer.initialize(alist_mock, "{name} S{season:02d}E{episode:02d}")
 
     old_filepath = "/path/to/old_file.mp4"
     resource_info.season = 0
 
     alist_mock.list_dir.return_value = ["file1", "file2", "file3"]
 
-    new_filename = await AnimeRenamer._instance._build_new_name(
-        old_filepath, resource_info
-    )
+    new_filename = await AnimeRenamer()._build_new_name(old_filepath, resource_info)
 
     expected_filename = "Test Anime S00E03.mp4"
     assert new_filename == expected_filename
@@ -92,14 +77,12 @@ async def test_build_new_name_ova(alist_mock, resource_info):
 
 @pytest.mark.asyncio
 async def test_build_new_name_version(alist_mock, resource_info):
-    AnimeRenamer.initialize(alist_mock)
+    AnimeRenamer.initialize(alist_mock, "{name} S{season:02d}E{episode:02d}")
 
     old_filepath = "/path/to/old_file.mp4"
     resource_info.version = 2
 
-    new_filename = await AnimeRenamer._instance._build_new_name(
-        old_filepath, resource_info
-    )
+    new_filename = await AnimeRenamer()._build_new_name(old_filepath, resource_info)
 
     expected_filename = "Test Anime S01E05 v2.mp4"
     assert new_filename == expected_filename
@@ -107,7 +90,7 @@ async def test_build_new_name_version(alist_mock, resource_info):
 
 @pytest.mark.asyncio
 async def test_rename_success(alist_mock, resource_info):
-    AnimeRenamer.initialize(alist_mock)
+    AnimeRenamer.initialize(alist_mock, "{name} S{season:02d}E{episode:02d}")
 
     old_filepath = "/path/to/old_file.mp4"
 
@@ -119,7 +102,7 @@ async def test_rename_success(alist_mock, resource_info):
 
 @pytest.mark.asyncio
 async def test_rename_retry(alist_mock, resource_info):
-    AnimeRenamer.initialize(alist_mock)
+    AnimeRenamer.initialize(alist_mock, "{name} S{season:02d}E{episode:02d}")
 
     old_filepath = "/path/to/old_file.mp4"
 
@@ -134,7 +117,7 @@ async def test_rename_retry(alist_mock, resource_info):
 
 @pytest.mark.asyncio
 async def test_rename_max_retry_exceeded(alist_mock, resource_info):
-    AnimeRenamer.initialize(alist_mock)
+    AnimeRenamer.initialize(alist_mock, "{name} S{season:02d}E{episode:02d}")
 
     old_filepath = "/path/to/old_file.mp4"
 

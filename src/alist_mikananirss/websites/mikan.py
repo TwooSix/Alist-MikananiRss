@@ -1,7 +1,9 @@
+import asyncio
 from dataclasses import dataclass
 
 import aiohttp
 import bs4
+from async_lru import alru_cache
 
 from alist_mikananirss.extractor import Extractor
 from alist_mikananirss.websites import FeedEntry, ResourceInfo, Website
@@ -17,11 +19,13 @@ class Mikan(Website):
     def __init__(self, rss_url: str):
         super().__init__(rss_url)
 
+    @alru_cache(maxsize=1024)
     async def parse_homepage(self, home_page_url: str) -> MikanHomePageInfo:
         async with aiohttp.ClientSession(trust_env=True) as session:
             async with session.get(home_page_url) as response:
                 response.raise_for_status()
                 html = await response.text()
+                await asyncio.sleep(1)  # 再不slepp ip又被ban啦QAQ
         soup = bs4.BeautifulSoup(html, "html.parser")
         anime_name = soup.find("p", class_="bangumi-title").text.strip()
         fansub = None

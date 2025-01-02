@@ -1,28 +1,36 @@
 import os
+import uuid
 
 import pytest
 import pytest_asyncio
-from alist_mikananirss.common.database import SubscribeDatabase, db_path
+
+from alist_mikananirss.common.database import SubscribeDatabase, db_dirpath
 from alist_mikananirss.websites import ResourceInfo
 
 
 @pytest_asyncio.fixture
 async def test_db():
-    db = SubscribeDatabase("test_subscribe_database.db")
-    db_filepath = os.path.join(db_path, "test_subscribe_database.db")
-    if os.path.exists(db_filepath):
-        os.remove(db_filepath)
-    await db.initialize()
+    # 为每个测试创建唯一的数据库文件名
+    unique_db_name = f"test_db_{uuid.uuid4()}.db"
+    db = await SubscribeDatabase.create(unique_db_name)
+    db_filepath = os.path.join(db_dirpath, unique_db_name)
+
     yield db
-    # delete test database every time
-    os.remove(db_filepath)
+
+    # 清理工作
+    await db.close()
+    if os.path.exists(db_filepath):
+        try:
+            os.remove(db_filepath)
+        except PermissionError:
+            import time
+
+            time.sleep(0.1)
+            os.remove(db_filepath)
 
 
 @pytest.mark.asyncio
 async def test_create_table(test_db):
-    assert os.path.exists(test_db.db_name)
-
-    await test_db.connect()
     cursor = await test_db.db.execute(
         "SELECT name FROM sqlite_master WHERE type='table';"
     )
@@ -124,11 +132,7 @@ async def test_upgrade_database(test_db):
     """
     )
     await test_db.db.commit()
-    await test_db.close()
-
     await test_db._upgrade_database()
-
-    await test_db.connect()
     cursor = await test_db.db.execute("SELECT version FROM db_version")
     version = await cursor.fetchone()
     version = version[0]
