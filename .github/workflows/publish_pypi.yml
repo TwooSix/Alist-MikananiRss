@@ -16,16 +16,16 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install a specific version
-      uses: eifinger/setup-rye@v4
+    - name: Install the latest version of uv
+      uses: astral-sh/setup-uv@v5
       with:
-        version: 'latest'
+        version: "latest"
 
     - name: Install dependencies
       run: |
-        rye sync --no-dev
+        uv sync --no-dev
 
     - name: Build and publish to PyPI
       run: |
-        rye build
-        rye publish --token ${{ secrets.PYPI_TOKEN }} --yes
+        uv build
+        uv publish --token ${{ secrets.PYPI_TOKEN }} --yes
