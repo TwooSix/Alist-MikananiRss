@@ -1,46 +1,45 @@
 [project]
 name = "alist-mikananirss"
-version = "0.2.0"
+version = "0.2.1"
 description = "Automatically fetch anime updates from the Mikan Project's RSS feed and offline download them to the cloud drive through Alist."
-authors = [
-    { name = "TwoSix", email = "ljj2288@gmail.com" }
-]
-dependencies = [
-    "aiohttp>=3.9.3",
-    "asyncio>=3.4.3",
-    "feedparser>=6.0.11",
-    "beautifulsoup4>=4.12.3",
-    "openai==1.7.0",
-    "pyyaml>=6.0.1",
-    "loguru>=0.7.2",
-    "tenacity>=9.0.0",
-    "aiosqlite>=0.20.0",
-]
 readme = "README.md"
-requires-python = ">= 3.11"
+requires-python = ">=3.11"
+dependencies = [
+    "aiohttp>=3.11",
+    "aiosqlite>=0.20.0",
+    "async-lru>=2.0.4",
+    "asyncio>=3.4.3",
+    "beautifulsoup4>=4.12.3",
+    "feedparser>=6.0.11",
+    "loguru>=0.7.3",
+    "openai>=1.58.1",
+    "python-telegram-bot>=21.9",
+    "pyyaml>=6.0.2",
+    "tenacity>=9.0.0",
+]
 
 [project.scripts]
-"alist-mikananirss" = "alist_mikananirss:main"
+alist-mikananirss = "alist_mikananirss:main"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
-
-[tool.rye]
-managed = true
-dev-dependencies = [
-    "pytest>=8.1.1",
-    "pytest-asyncio>=0.23.6",
-    "aioresponses>=0.7.6",
-    "ruff>=0.3.5",
-    "black>=24.3.0",
-    "ipykernel>=6.29.4",
-    "requests>=2.31.0",
-    "coverage>=7.6.1",
-]
 
 [tool.hatch.metadata]
 allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/alist_mikananirss"]
+
+[dependency-groups]
+dev = [
+    "pytest-asyncio>=0.25.1",
+    "pytest>=8.3.4",
+    "aioresponses>=0.7.7",
+    "ipykernel>=6.29.5",
+    "ruff>=0.8.4",
+    "black>=24.10.0",
+    "requests>=2.32.3",
+    "coverage>=7.6.10",
+    "pytest-order>=1.3.0",
+]

@@ -17,6 +17,7 @@ class RssMonitor:
         self,
         subscribe_urls: list[str] | str,
         filter: RegexFilter,
+        db: SubscribeDatabase,
         use_extractor: bool = False,
     ) -> None:
         """The rss feed manager"""
@@ -27,22 +28,23 @@ class RssMonitor:
             WebsiteFactory.get_website_parser(url) for url in subscribe_urls
         ]
         self.filter = filter
+        self.db = db
         self.use_extractor = use_extractor
 
         self.interval_time = 300
 
-    async def initialize(self):
-        self.db = SubscribeDatabase()
-        await self.db.initialize()
-
     def set_interval_time(self, interval_time: int):
         self.interval_time = interval_time
 
-    async def get_new_resources(self, m_filter: RegexFilter) -> list[ResourceInfo]:
-        "Parse all rss url and get the filtered, unique resource info list"
+    async def get_new_resources(
+        self,
+        m_websites: list[Website],
+        m_filter: RegexFilter,
+    ) -> list[ResourceInfo]:
+        """Parse all rss url and get the filtered, unique resource info list"""
 
         async def process_entry(self, website: Website, entry):
-            "get resource info from feed entry"
+            """Parse all rss url and get the filtered, unique resource info list"""
             try:
                 resource_info = await website.extract_resource_info(
                     entry, self.use_extractor
@@ -56,30 +58,41 @@ class RssMonitor:
             return resource_info
 
         new_resources_set: set[ResourceInfo] = set()
-        tasks = []
-        for website in self.websites:
+
+        for website in m_websites:
             feed_entries = await website.get_feed_entries()
             feed_entries_filted = filter(
                 lambda entry: m_filter.filt_single(entry.resource_title),
                 feed_entries,
             )
             for entry in feed_entries_filted:
-                if not await self.db.is_resource_title_exist(entry.resource_title):
-                    task = asyncio.create_task(process_entry(self, website, entry))
-                    tasks.append(task)
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        for result in results:
-            if result:
-                new_resources_set.add(result)
+                if await self.db.is_resource_title_exist(entry.resource_title):
+                    continue
+                resource_info = await process_entry(self, website, entry)
+                if not resource_info:
+                    continue
+                new_resources_set.add(resource_info)
+                logger.info(f"Find new resource: {resource_info.resource_title}")
+
         new_resources = list(new_resources_set)
         return new_resources
 
     async def run(self):
         while 1:
             logger.info("Start update checking")
-            new_resources = await self.get_new_resources(self.filter)
+            new_resources = await self.get_new_resources(self.websites, self.filter)
             if not new_resources:
                 logger.info("No new resources")
             else:
                 await DownloadManager.add_download_tasks(new_resources)
             await asyncio.sleep(self.interval_time)
+
+    async def run_once_with_url(self, url: str):
+        logger.info("Start update checking for {url}")
+        website = WebsiteFactory.get_website_parser(url)
+        new_resources = await self.get_new_resources(self.filter, [website])
+        if not new_resources:
+            logger.info("No new resources")
+        else:
+            await DownloadManager.add_download_tasks(new_resources)
+        await asyncio.sleep(self.interval_time)

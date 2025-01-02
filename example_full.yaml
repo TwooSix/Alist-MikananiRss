@@ -30,6 +30,7 @@ notification:
     user_id: your_id
   pushplus: 
     token: xxxxx
+    channel: channel
   interval_time: 300
 
 rename: 
@@ -37,9 +38,9 @@ rename:
     api_key: sk-xxx
     base_url: https://example.com/v1
     model: gpt-3.5-turbo
-  rename_format: "{name} S{season:02d}E{episode:02d}.{ext}"
+  rename_format: "{name} S{season:02d}E{episode:02d}"
   remap: 
-    enable: true
+    enable: trues
     cfg_path: "remap.yaml"
 
 dev:

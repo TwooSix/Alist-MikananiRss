@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import feedparser
 import pytest
+
 from alist_mikananirss.websites import FeedEntry, ResourceInfo
 from alist_mikananirss.websites.mikan import Mikan, MikanHomePageInfo
 
@@ -75,9 +76,10 @@ async def test_parse_homepage(mock_get, mikan):
     """
     )
     mock_get.return_value.__aenter__.return_value = mock_response
-    result = await mikan.parse_homepage(
-        "https://mikanani.me/Home/Episode/a19d5da34e2ec205bddd9c6935ab579ff37da7d7"
-    )
+    with patch("asyncio.sleep", new_callable=AsyncMock):
+        result = await mikan.parse_homepage(
+            "https://mikanani.me/Home/Episode/a19d5da34e2ec205bddd9c6935ab579ff37da7d7"
+        )
     assert isinstance(result, MikanHomePageInfo)
     assert result.anime_name == "GIRLS BAND CRY"
     assert result.fansub == "喵萌奶茶屋"
@@ -97,7 +99,8 @@ async def test_extract_resource_info(mikan):
     )
 
     with patch.object(mikan, "parse_homepage", return_value=mock_homepage_info):
-        result = await mikan.extract_resource_info(mock_entry)
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            result = await mikan.extract_resource_info(mock_entry)
 
     assert isinstance(result, ResourceInfo)
     assert result.anime_name == "GIRLS BAND CRY"

@@ -7,44 +7,35 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from alist_mikananirss.bot import NotificationBot, NotificationMsg
 from alist_mikananirss.websites import ResourceInfo
 
+from ..utils import Singleton
 
-class NotificationSender:
-    _instance = None
-    notification_bots: List[NotificationBot] = []
-    _queue: asyncio.Queue = None
-    _interval: int = 60
-    _max_retries = 3
 
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
+class NotificationSender(metaclass=Singleton):
 
-    @classmethod
-    def get_instance(cls):
-        if cls._instance is None:
-            raise RuntimeError("NotificationSender is not initialized")
-        return cls._instance
+    def __init__(self, notification_bots: list[NotificationBot], interval: int = 60):
+        self.notification_bots = notification_bots
+        self._interval = interval
+        self._queue = asyncio.Queue()
+        self._max_retries = 3
 
     @classmethod
     def initialize(cls, notification_bots: List[NotificationBot], interval: int = 60):
-        cls._instance = NotificationSender()
-        cls._instance.notification_bots = notification_bots
-        cls._instance._queue = asyncio.Queue()
-        cls._instance._interval = interval
-        asyncio.create_task(cls._instance._run())
+        cls(notification_bots, interval)
 
     @classmethod
     def set_notification_bots(cls, notification_bots: List[NotificationBot]):
-        cls._instance.notification_bots = notification_bots
+        instance = cls()
+        instance.notification_bots = notification_bots
 
     @classmethod
     async def add_resource(cls, resource: ResourceInfo):
-        await cls._instance._queue.put(resource)
+        instance = cls()
+        await instance._queue.put(resource)
 
     @classmethod
     def set_interval(cls, interval: int):
-        cls._instance._interval = interval
+        instance = cls()
+        instance._interval = interval
 
     async def _run(self):
         while True:
@@ -58,6 +49,18 @@ class NotificationSender:
                     break
             if resources:
                 await self._send(resources)
+
+    @classmethod
+    async def run(cls):
+        instance = cls()
+        await instance._run()
+
+    @classmethod
+    def destroy_instance(cls):
+        instance = cls()
+        if instance._task and not instance._task.done():
+            instance._task.cancel()
+        NotificationSender._instances.pop(cls)
 
     async def _send(self, resources: List[ResourceInfo]):
         if not self.notification_bots:

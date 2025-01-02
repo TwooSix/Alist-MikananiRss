@@ -1,7 +1,9 @@
 from copy import deepcopy
 
 import pytest
+
 from alist_mikananirss.core import Remapper
+from alist_mikananirss.core.remapper import RemapFrom, RemapTo
 from alist_mikananirss.websites import ResourceInfo
 
 
@@ -22,14 +24,15 @@ def test_data():
 
 
 def test_match(test_data):
+
     test_match = Remapper(
-        {"anime_name": "死神 千年血战篇-相克谭-", "season": 1, "fansub": "ANi"},
-        {"anime_name": "死神", "season": 1, "episode_offset": 0},
+        from_=RemapFrom(anime_name="死神 千年血战篇-相克谭-", season=1, fansub="ANi"),
+        to_=RemapTo(anime_name="死神", season=1, episode_offset=0),
     )
 
     test_not_match = Remapper(
-        {"anime_name": "死神 千年血战篇-相克谭-", "season": 2},
-        {"anime_name": "死神", "season": 2, "episode_offset": 0},
+        from_=RemapFrom(anime_name="死神 千年血战篇-相克谭-", season=2, fansub="ANi"),
+        to_=RemapTo(anime_name="死神", season=2, episode_offset=0),
     )
 
     assert test_match.match(test_data)
@@ -39,8 +42,8 @@ def test_match(test_data):
 def test_remap(test_data):
     test_data_copy = deepcopy(test_data)
     test_remap = Remapper(
-        {"anime_name": "死神 千年血战篇-相克谭-", "season": 1, "fansub": "ANi"},
-        {"anime_name": "死神", "season": 2, "episode_offset": -26},
+        from_=RemapFrom(anime_name="死神 千年血战篇-相克谭-", season=1, fansub="ANi"),
+        to_=RemapTo(anime_name="死神", season=2, episode_offset=-26),
     )
 
     test_remap.remap(test_data_copy)

@@ -19,6 +19,7 @@ from alist_mikananirss.alist.tasks import (
 from alist_mikananirss.common.database import SubscribeDatabase
 from alist_mikananirss.websites import ResourceInfo
 
+from ..utils import Singleton
 from .notification_sender import NotificationSender
 from .renamer import AnimeRenamer
 
@@ -107,45 +108,42 @@ class TaskMonitor:
             await asyncio.sleep(1)
 
 
-class DownloadManager:
-    _instance = None
-    alist_client: Alist
-    base_download_path: str
-    use_renamer: bool = False
-    need_notification: bool = False
-    uuid_set: set[str] = set()
-    db = None
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(DownloadManager, cls).__new__(cls)
-        return cls._instance
+class DownloadManager(metaclass=Singleton):
+    def __init__(
+        self,
+        alist_client: Alist,
+        base_download_path: str,
+        use_renamer: bool = False,
+        need_notification: bool = False,
+        db: SubscribeDatabase = None,
+    ):
+        self.alist_client = alist_client
+        self.base_download_path = base_download_path
+        self.use_renamer = use_renamer
+        self.need_notification = need_notification
+        self.uuid_set = set()
+        self.db = db
 
     @classmethod
-    async def initialize(
+    def initialize(
         cls,
         alist_client: Alist,
         base_download_path: str,
         use_renamer: bool = False,
         need_notification: bool = False,
+        db: SubscribeDatabase = None,
     ) -> None:
-        cls._instance = cls()
-        cls.alist_client = alist_client
-        cls.base_download_path = base_download_path
-        cls.use_renamer = use_renamer
-        cls.need_notification = need_notification
-        cls.db = SubscribeDatabase()
-        await cls.db.initialize()
-
-    @classmethod
-    def get_instance(cls):
-        if not cls._instance:
-            raise RuntimeError("DownloadManager is not initialized")
-        return cls._instance
+        cls(
+            alist_client=alist_client,
+            base_download_path=base_download_path,
+            use_renamer=use_renamer,
+            need_notification=need_notification,
+            db=db,
+        )
 
     @classmethod
     async def add_download_tasks(cls, resources: list[ResourceInfo]):
-        instance = cls.get_instance()
+        instance = cls()
         info_list: list[AnimeDownloadTaskInfo] = await instance.download(resources)
         for task_info in info_list:
             await instance.db.insert_resource_info(task_info.resource)
