@@ -10,6 +10,7 @@ from alist_mikananirss.bot import BotFactory, BotType, NotificationBot
 from alist_mikananirss.common.config import ConfigManager
 from alist_mikananirss.common.database import SubscribeDatabase
 from alist_mikananirss.core import DownloadManager, RssMonitor
+from alist_mikananirss.core.bot_assistant import BotAssistant
 from alist_mikananirss.core.filters import RegexFilter
 from alist_mikananirss.core.notification_sender import NotificationSender
 from alist_mikananirss.core.remapper import RemapperManager
@@ -120,6 +121,11 @@ async def run():
             notification_bots.append(NotificationBot(bot))
         NotificationSender.initialize(notification_bots, cfg.notification_interval_time)
         asyncio.create_task(NotificationSender.run())
+
+    # Initialize bot assistant
+    if cfg.bot_assistant_enable:  # 假设你在配置中添加了这个选项
+        bot_assistant = BotAssistant(cfg.bot_assistant_telegram_bot_token, rss_monitor)
+        asyncio.create_task(bot_assistant.run())
 
     task = asyncio.create_task(rss_monitor.run())
     await task

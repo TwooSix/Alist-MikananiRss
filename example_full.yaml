@@ -43,5 +43,9 @@ rename:
     enable: trues
     cfg_path: "remap.yaml"
 
+bot_assistant:
+  telegram:
+    bot_token: your_token
+
 dev:
   log_level: INFO
