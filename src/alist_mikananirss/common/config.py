@@ -278,7 +278,7 @@ class ConfigManager(metaclass=Singleton):
                 "rename.chatgpt.model", "gpt-3.5-turbo"
             ),
             rename_format=config_loader.get(
-                "rename.format", "{name} S{season:02d}E{episode:02d}"
+                "rename.rename_format", "{name} S{season:02d}E{episode:02d}"
             ),
             rename_remap_enable=config_loader.get("rename.remap.enable", False),
             rename_remap_cfg_path=config_loader.get(

@@ -29,13 +29,14 @@ async def run():
 
     cfg_manager = ConfigManager(args.config)
     cfg = cfg_manager.get_config()
-    logger.info("Loaded config Successfully")
-    logger.info(f"Config: \n{cfg}")
     # logger
     log_level = cfg.dev_log_level
     logger.remove()
     logger.add("log/main_{time}.log", retention="7 days", level=log_level)
     logger.add(sys.stderr, level=log_level)
+
+    logger.info("Loaded config Successfully")
+    logger.info(f"Config: \n{cfg}")
 
     # proxy
     proxies = cfg.common_proxies

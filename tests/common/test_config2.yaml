@@ -1,0 +1,11 @@
+alist:
+  base_url: http[s]://www.example.com
+  # 缺少必选项token
+  downloader: aria2
+  download_path: Onedrive/Anime
+
+mikan:
+  subscribe_url: 
+    - https://mikanani.me/RSS/MyBangumi?token=xxx
+    - https://mikanani.me/RSS/rss2
+    
