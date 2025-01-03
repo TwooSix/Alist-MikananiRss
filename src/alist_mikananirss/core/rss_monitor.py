@@ -72,7 +72,7 @@ class RssMonitor:
                 if not resource_info:
                     continue
                 new_resources_set.add(resource_info)
-                logger.info(f"Find new resource: {resource_info.resource_title}")
+                logger.info(f"Find new resource: {resource_info}")
 
         new_resources = list(new_resources_set)
         return new_resources
