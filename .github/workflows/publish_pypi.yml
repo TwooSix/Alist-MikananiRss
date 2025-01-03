@@ -28,4 +28,4 @@ jobs:
     - name: Build and publish to PyPI
       run: |
         uv build
-        uv publish --token ${{ secrets.PYPI_TOKEN }} --yes
+        uv publish --token ${{ secrets.PYPI_TOKEN }}

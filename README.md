@@ -14,7 +14,7 @@
 ## 功能
 - 自动获取番剧更新并下载至对应网盘
 - 通过PushPlus, Telegram等渠道发送更新通知
-- 自动重命名为emby可识别格式
+- 自动重命名为emby可识别格式，同时支持对自动解析的结果进行自定义重映射，让重命名结果更准确
 
 ## 准备工作 
 1. 请自行参照[Alist](https://github.com/alist-org/alist)项目文档部署Alist（版本须>=3.29.0），并搭建好Aria2/qBittorrent离线下载
