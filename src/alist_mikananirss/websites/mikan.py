@@ -25,7 +25,7 @@ class Mikan(Website):
             async with session.get(home_page_url) as response:
                 response.raise_for_status()
                 html = await response.text()
-                await asyncio.sleep(1)  # 再不slepp ip又被ban啦QAQ
+                await asyncio.sleep(1)
         soup = bs4.BeautifulSoup(html, "html.parser")
         anime_name = soup.find("p", class_="bangumi-title").text.strip()
         fansub = None

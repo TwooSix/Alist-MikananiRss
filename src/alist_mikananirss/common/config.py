@@ -107,6 +107,10 @@ class AppConfig:
     rename_remap_enable: bool
     rename_remap_cfg_path: str
 
+    bot_assistant_enable: bool
+    bot_assistant_telegram_enable: bool
+    bot_assistant_telegram_bot_token: str
+
     dev_log_level: str
 
     def __post_init__(self):
@@ -127,6 +131,14 @@ class AppConfig:
         if self.rename_enable:
             assert self.rename_chatgpt_api_key, "ChatGPT API key should be provided."
             self.__check_rename_format(self.rename_format)
+        if self.bot_assistant_enable:
+            assert (
+                self.bot_assistant_telegram_enable
+            ), "Telegram config should be provided."
+            assert (
+                self.bot_assistant_telegram_bot_token
+            ), "Telegram bot token should be provided."
+
         assert self.common_interval_time >= 0, "Invalid interval time."
         assert self.dev_log_level in [
             "DEBUG",
@@ -171,6 +183,11 @@ class AppConfig:
                 "remap": {
                     "enable": self.rename_remap_enable,
                     "cfg_path": self.rename_remap_cfg_path,
+                },
+            },
+            "bot_assistant": {
+                "telegram": {
+                    "bot_token": self.bot_assistant_telegram_bot_token,
                 },
             },
             "dev": {"log_level": self.dev_log_level},
@@ -283,6 +300,15 @@ class ConfigManager(metaclass=Singleton):
             rename_remap_enable=config_loader.get("rename.remap.enable", False),
             rename_remap_cfg_path=config_loader.get(
                 "rename.remap.cfg_path", "remap.yaml"
+            ),
+            bot_assistant_enable=(
+                False if not config_loader.get("bot_assistant", {}) else True
+            ),
+            bot_assistant_telegram_enable=(
+                False if not config_loader.get("bot_assistant.telegram", {}) else True
+            ),
+            bot_assistant_telegram_bot_token=config_loader.get(
+                "bot_assistant.telegram.bot_token", ""
             ),
             dev_log_level=config_loader.get("dev.log_level", "INFO"),
         )
