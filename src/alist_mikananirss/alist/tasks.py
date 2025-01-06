@@ -49,7 +49,7 @@ class AlistTaskState(Enum):
 
 
 DOWNLOAD_DES_PATTERN = re.compile(r"download\s+(.+?)\s+to")
-TRANSFER_DES_PATTERN = re.compile(r"transfer (.+?) to \[")
+TEMP_FILEPATH_PATTERN = re.compile(r"transfer (.+?) to \[")
 
 
 class AlistTaskError(Exception):
@@ -87,6 +87,7 @@ class AlistTask(ABC):
 
 @dataclass
 class AlistTransferTask(AlistTask):
+    temp_filepath: str = ""
     uuid: str = ""
     file_name: str = ""
 
@@ -96,12 +97,12 @@ class AlistTransferTask(AlistTask):
     @classmethod
     def from_json(cls, json_data: dict) -> AlistTransferTask:
         task = super().from_json(json_data)
-        match = re.search(TRANSFER_DES_PATTERN, task.description)
+        match = re.search(TEMP_FILEPATH_PATTERN, task.description)
         if match:
-            extracted_string = match.group(1)
-            elements = extracted_string.split("/")
-            uuid = elements[-2]
-            file_name = elements[-1]
+            temp_filepath = match.group(1)
+            elements = temp_filepath.split("/")
+            uuid = elements[elements.index("temp") + 2]
+            file_name = temp_filepath[temp_filepath.rfind(uuid) + len(uuid) + 1 :]
         else:
             raise InvalidTaskDescription(
                 f"Failed to get uuid and file name from task description: {task.description}"

@@ -70,7 +70,7 @@ async def test_add_offline_download_task(alist):
                 "delete_policy": AlistDeletePolicy.DeleteAlways.value,
                 "path": "/path/to/save",
                 "urls": ["https://example.com/file.zip"],
-                "tool": AlistDownloaderType.ARIA,
+                "tool": AlistDownloaderType.ARIA.value,
             },
         )
 
@@ -239,7 +239,7 @@ def test_alist_transfer_task():
     task = AlistTransferTask.from_json(
         {
             "id": "task1",
-            "name": "transfer /download/123456/file.zip to [/path/to/save]",
+            "name": "transfer /root/program/alist/data/temp/qBittorrent/b33f58c0-5357-4c9d-bf43-334fc3e622a4/[KTXP][Grisaia_Phantom_Trigger][01][GB_CN][HEVC_opus][1080p]/[KTXP][Grisaia_Phantom_Trigger][01][GB_CN][HEVC_opus][1080p].mkv to [/Onedrive/Anime/灰色：幻影扳机/Season 2]",
             "state": 2,
             "progress": 1.0,
             "error": None,
@@ -247,10 +247,12 @@ def test_alist_transfer_task():
     )
 
     assert task.tid == "task1"
-    assert task.description == "transfer /download/123456/file.zip to [/path/to/save]"
     assert task.status == AlistTaskStatus.Succeeded
     assert math.isclose(task.progress, 1.0, rel_tol=1e-9, abs_tol=1e-9)
     assert task.error_msg is None
-    assert task.uuid == "123456"
-    assert task.file_name == "file.zip"
+    assert task.uuid == "b33f58c0-5357-4c9d-bf43-334fc3e622a4"
+    assert (
+        task.file_name
+        == "[KTXP][Grisaia_Phantom_Trigger][01][GB_CN][HEVC_opus][1080p]/[KTXP][Grisaia_Phantom_Trigger][01][GB_CN][HEVC_opus][1080p].mkv"
+    )
     assert task.task_type == AlistTaskType.TRANSFER
