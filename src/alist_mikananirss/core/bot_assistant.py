@@ -32,8 +32,8 @@ class BotAssistant:
             return
 
         rss_url = context.args[0]
-
         try:
+            await update.message.reply_text("分析 RSS 链接...")
             results: ResourceInfo = await self.rss_monitor.run_once_with_url(rss_url)
             if results:
                 replymsg = "开始下载:\n" + "\n".join(
@@ -46,7 +46,7 @@ class BotAssistant:
             await update.message.reply_text(f"RSS 下载失败:\n{str(e)}")
 
     async def run(self):
-        """Initialize and start the bot without blocking"""
+        """Initialize and start the bot"""
         await self.app.initialize()
         await self.app.start()
         # Instead of run_polling(), we'll use update_queue
