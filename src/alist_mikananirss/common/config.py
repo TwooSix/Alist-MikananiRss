@@ -258,8 +258,8 @@ class ConfigManager(metaclass=Singleton):
             alist_downloader=alist_downloader,
             alist_download_path=config_loader.get("alist.download_path"),
             mikan_subscribe_url=config_loader.get("mikan.subscribe_url"),
-            mikan_regex_pattern=config_loader.get(
-                "mikan.regex_pattern", default_regex_pattern
+            mikan_regex_pattern=default_regex_pattern.update(
+                config_loader.get("mikan.regex_pattern", {})
             ),
             mikan_filters=config_loader.get("mikan.filters", ["1080p", "非合集"]),
             notification_enable=(
