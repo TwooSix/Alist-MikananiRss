@@ -15,14 +15,12 @@ from .filters import RegexFilter
 class RssMonitor:
     def __init__(
         self,
-        subscribe_urls: list[str] | str,
+        subscribe_urls: list[str],
         filter: RegexFilter,
         db: SubscribeDatabase,
         use_extractor: bool = False,
     ) -> None:
         """The rss feed manager"""
-        if not isinstance(subscribe_urls, list):
-            subscribe_urls = [subscribe_urls]
         self.subscribe_urls = subscribe_urls
         self.websites = [
             WebsiteFactory.get_website_parser(url) for url in subscribe_urls
