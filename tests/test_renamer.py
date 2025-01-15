@@ -6,6 +6,7 @@ from loguru import logger
 from alist_mikananirss.alist import Alist
 from alist_mikananirss.core import AnimeRenamer
 from alist_mikananirss.websites import ResourceInfo
+from alist_mikananirss.websites.entities import VideoQuality
 
 
 @pytest.fixture(autouse=True)
@@ -30,7 +31,7 @@ def resource_info():
         season=1,
         episode=5,
         fansub="TestSub",
-        quality="1080p",
+        quality=VideoQuality.p1080,
         language="JP",
     )
 
@@ -48,7 +49,9 @@ async def test_initialize():
 
 @pytest.mark.asyncio
 async def test_build_new_name(alist_mock, resource_info):
-    AnimeRenamer.initialize(alist_mock, "{name} S{season:02d}E{episode:02d}")
+    AnimeRenamer.initialize(
+        alist_mock, "{name} S{season:02d}E{episode:02d} {fansub} {quality} {language}"
+    )
 
     old_filepath = "/path/to/old_file.mp4"
 
@@ -56,7 +59,7 @@ async def test_build_new_name(alist_mock, resource_info):
 
     new_filename = await AnimeRenamer()._build_new_name(old_filepath, resource_info)
 
-    expected_filename = "Test Anime S01E05.mp4"
+    expected_filename = "Test Anime S01E05 TestSub 1080p JP.mp4"
     assert new_filename == expected_filename
 
 
