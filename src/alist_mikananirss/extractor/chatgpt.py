@@ -1,5 +1,6 @@
 import json
 import re
+from typing import Optional
 
 from loguru import logger
 from openai import AsyncOpenAI
@@ -55,14 +56,14 @@ class ChatGPTExtractor(ExtractorBase):
         logger.debug(f"Chatgpt analyse resource name: {anime_name} -> {res}")
         return res
 
-    async def search_name_in_tmdb(self, resource_title: str) -> TMDBTvInfo:
+    async def search_name_in_tmdb(self, resource_title: str) -> Optional[TMDBTvInfo]:
         """Ask GPT use the resource title to search in TMDB and find the correct anime name
 
         Args:
             resource_title (str): The title of the resource
 
         Returns:
-            TMDBTvInfo: The information of the tv series in TMDB
+            TMDBTvInfo: The information of the tv series in TMDB, or None if not found
         """
         # 1. Ask GPT to parse the resource title and extract search keyword
         response = await self.client.beta.chat.completions.parse(

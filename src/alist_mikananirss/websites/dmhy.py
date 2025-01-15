@@ -1,3 +1,5 @@
+from typing import Optional
+
 import aiohttp
 import bs4
 
@@ -13,7 +15,7 @@ class Dmhy(Website):
     def __init__(self, rss_url: str):
         super().__init__(rss_url)
 
-    async def parse_homepage(self, home_page_url: str) -> str:
+    async def parse_homepage(self, home_page_url: str) -> Optional[str]:
         async with aiohttp.ClientSession(trust_env=True) as session:
             async with session.get(home_page_url) as response:
                 response.raise_for_status()
