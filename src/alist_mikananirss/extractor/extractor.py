@@ -29,9 +29,9 @@ class Extractor(metaclass=Singleton):
 
     @classmethod
     async def analyse_resource_title(
-        cls, resource_name: str
+        cls, resource_name: str, use_tmdb: bool = True
     ) -> ResourceTitleExtractResult:
         instance = cls()
         if instance._extractor is None:
             raise RuntimeError("Extractor is not initialized")
-        return await instance._extractor.analyse_resource_title(resource_name)
+        return await instance._extractor.analyse_resource_title(resource_name, use_tmdb)

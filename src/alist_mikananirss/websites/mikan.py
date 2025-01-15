@@ -75,7 +75,7 @@ class Mikan(Website):
                 resource_info.anime_name
             )
             rtitle_extract_result = await Extractor.analyse_resource_title(
-                resource_info.resource_title
+                resource_info.resource_title, use_tmdb=False
             )
             resource_info = ResourceInfo(
                 anime_name=name_extract_result.anime_name,

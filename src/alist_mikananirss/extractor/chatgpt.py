@@ -116,10 +116,8 @@ class ChatGPTExtractor(ExtractorBase):
         return tmdb_info
 
     async def analyse_resource_title(
-        self, resource_title: str
+        self, resource_title: str, use_tmdb: bool = True
     ) -> ResourceTitleExtractResult:
-        tmdb_info = await self.search_name_in_tmdb(resource_title)
-
         response = await self.client.beta.chat.completions.parse(
             model=self.model,
             messages=[
@@ -139,7 +137,8 @@ class ChatGPTExtractor(ExtractorBase):
         if res is None:
             raise ValueError(f"Failed to parse resource title: {resource_title} by GPT")
 
-        if tmdb_info:
-            res.anime_name = tmdb_info.anime_name
+        if use_tmdb:
+            tmdb_info = await self.search_name_in_tmdb(resource_title)
+            res.anime_name = tmdb_info.anime_name if tmdb_info else res.anime_name
         logger.debug(f"Chatgpt analyse resource name: {resource_title} -> {res}")
         return res
