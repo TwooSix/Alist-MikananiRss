@@ -17,9 +17,9 @@ class DefaultWebsite(Website):
             return []
         feed_entries = []
         for tmp_entry in feed.entries:
-            resource_title = tmp_entry.title
+            resource_title = tmp_entry.get("title", None)
             torrent_url = None
-            for link_entry in tmp_entry.links:
+            for link_entry in tmp_entry.get("links", []):
                 # 判断是否是磁力链接
                 link = link_entry["href"]
                 if link.startswith("magnet:") or link.endswith(".torrent"):
@@ -30,15 +30,15 @@ class DefaultWebsite(Website):
                 if utils.is_video(link_parsed.path):
                     torrent_url = link
                     break
-            if not torrent_url:
-                raise RuntimeError("No torrent url found")
-            homepage_url = tmp_entry.link
-            published_date = tmp_entry.published
+            published_date = tmp_entry.get("published", None)
+
+            if not resource_title or not torrent_url:
+                raise RuntimeError(f"Unsupport rss feed format: {self.rss_url}")
+
             feed_entry = FeedEntry(
                 resource_title=resource_title,
                 torrent_url=torrent_url,
                 published_date=published_date,
-                homepage_url=homepage_url,
             )
             feed_entries.append(feed_entry)
         return feed_entries
