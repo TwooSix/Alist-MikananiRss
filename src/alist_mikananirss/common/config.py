@@ -293,9 +293,7 @@ class ConfigManager(metaclass=Singleton):
         rename_enable = False if not config_loader.get("rename", {}) else True
         rename_chatgpt_api_key = config_loader.get("rename.chatgpt.api_key", "")
         rename_chatgpt_base_url = config_loader.get("rename.chatgpt.base_url", "")
-        rename_chatgpt_model = config_loader.get(
-            "rename.chatgpt.model", "gpt-3.5-turbo"
-        )
+        rename_chatgpt_model = config_loader.get("rename.chatgpt.model", "gpt-4o-mini")
         rename_format = config_loader.get(
             "rename.rename_format", "{name} S{season:02d}E{episode:02d}"
         )

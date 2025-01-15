@@ -16,7 +16,7 @@ from .models import (
 
 
 class ChatGPTExtractor(ExtractorBase):
-    def __init__(self, api_key, base_url=None, model="gpt-3.5-turbo") -> None:
+    def __init__(self, api_key, base_url=None, model="gpt-4o-mini") -> None:
         self._api_key = api_key
         self._base_url = base_url
         self.model = model

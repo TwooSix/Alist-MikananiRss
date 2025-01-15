@@ -33,7 +33,7 @@ def test_load_config():
     assert cfg.rename_enable is True
     assert cfg.rename_chatgpt_api_key == "sk-xxx"
     assert cfg.rename_chatgpt_base_url == "https://example.com/v1"
-    assert cfg.rename_chatgpt_model == "gpt-3.5-turbo"
+    assert cfg.rename_chatgpt_model == "gpt-4o-mini"
     assert cfg.rename_format == "{name} S{season:02d}E{episode:02d} {fansub}"
     assert cfg.rename_enable is True
     assert cfg.rename_remap_cfg_path == "remap.yaml"
