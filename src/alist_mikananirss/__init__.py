@@ -21,7 +21,9 @@ from alist_mikananirss.extractor import ChatGPTExtractor, Extractor
 def init_logging(cfg: AppConfig):
     log_level = cfg.dev_log_level
     logger.remove()
-    logger.add("log/main_{time}.log", retention="7 days", level=log_level)
+    logger.add(
+        "log/main_{time}.log", rotation="1 days", retention="7 days", level=log_level
+    )
     logger.add(sys.stderr, level=log_level)
 
 
