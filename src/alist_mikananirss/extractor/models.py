@@ -1,12 +1,8 @@
-from enum import Enum
 from typing import Optional
 
 from pydantic import BaseModel, Field
 
-
-class VideoQuality(str, Enum):
-    p1080 = "1080p"
-    p720 = "720p"
+from alist_mikananirss.websites.entities import VideoQuality
 
 
 class TMDBSearchParam(BaseModel):

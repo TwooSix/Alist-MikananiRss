@@ -1,6 +1,8 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from tenacity import wait_none
+
 from alist_mikananirss.alist import Alist
 from alist_mikananirss.alist.tasks import (
     AlistDownloadTask,
@@ -9,7 +11,6 @@ from alist_mikananirss.alist.tasks import (
     AlistTaskType,
 )
 from alist_mikananirss.core.download_manager import TaskMonitor
-from tenacity import wait_none
 
 
 @pytest.fixture
@@ -123,7 +124,7 @@ async def test_wait_finished_stalled(task_monitor):
 
 @pytest.mark.parametrize("task_type", [AlistTaskType.DOWNLOAD, AlistTaskType.TRANSFER])
 def test_normal_status(task_type):
-    assert set(TaskMonitor.NORMAL_STATUSES) == {
+    assert set(TaskMonitor.NORMAL_STATUS) == {
         AlistTaskStatus.Pending,
         AlistTaskStatus.Running,
         AlistTaskStatus.StateBeforeRetry,

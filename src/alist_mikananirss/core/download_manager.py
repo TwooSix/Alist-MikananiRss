@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from loguru import logger
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import RetryError, retry, stop_after_attempt, wait_exponential
 
 from alist_mikananirss import utils
 from alist_mikananirss.alist import Alist
@@ -34,7 +34,7 @@ class AnimeDownloadTaskInfo:
 
 
 class TaskMonitor:
-    NORMAL_STATUSES = [
+    NORMAL_STATUS = [
         AlistTaskStatus.Pending,
         AlistTaskStatus.Running,
         AlistTaskStatus.StateBeforeRetry,
@@ -62,8 +62,7 @@ class TaskMonitor:
         task_list = await self.alist.get_task_list(self.task.task_type)
         task = task_list[self.task.tid]
         if not task:
-            logger.warning(f"Can't find the task {self.task.tid}")
-            raise RuntimeError("Task not found")
+            raise RuntimeError("Can't find the task {self.task.tid}")
         self.task = task
 
     def _is_progress_stalled(self) -> bool:
@@ -100,7 +99,7 @@ class TaskMonitor:
             logger.debug(
                 f"Checking {self.task} status: {self.task.status} progress: {self.task.progress:.2f}%"
             )
-            if self.task.status not in self.NORMAL_STATUSES:
+            if self.task.status not in self.NORMAL_STATUS:
                 return self.task
 
             if self._is_progress_stalled():
@@ -150,37 +149,36 @@ class DownloadManager(metaclass=Singleton):
             await instance.db.insert_resource_info(task_info.resource)
             asyncio.create_task(instance.monitor(task_info))
 
+    @retry(
+        stop=stop_after_attempt(10),
+        wait=wait_exponential(multiplier=1, min=1, max=60),
+    )
     async def _find_transfer_task(self, resource: ResourceInfo) -> AlistTransferTask:
-
-        async with asyncio.timeout(10):
-            while True:
-                try:
-                    transfer_task_list = await self.alist_client.get_task_list(
-                        AlistTaskType.TRANSFER
-                    )
-                    for transfer_task in transfer_task_list:
-                        # 查找第一个，未被标记过的番剧名相同的视频文件传输任务作为下载任务对应的传输任务
-                        if (
-                            transfer_task.uuid not in self.uuid_set
-                            and utils.is_video(transfer_task.file_name)
-                            and transfer_task.status
-                            in [AlistTaskStatus.Pending, AlistTaskStatus.Running]
-                            and resource.anime_name in transfer_task.description
-                        ):
-
-                            self.uuid_set.add(transfer_task.uuid)
-                            logger.debug(
-                                f"Linked {resource.resource_title} to {transfer_task.uuid}"
-                            )
-                            return transfer_task
-
-                    logger.warning(
-                        f"Can't find the transfer task of {resource.resource_title}"
-                    )
-                    await asyncio.sleep(1)
-                except Exception as e:
-                    logger.error(f"Error when getting transfer task list: {e}")
-                    await asyncio.sleep(1)
+        try:
+            transfer_task_list = await self.alist_client.get_task_list(
+                AlistTaskType.TRANSFER
+            )
+        except Exception as e:
+            logger.error(f"Error when getting transfer task list: {e}")
+            raise RuntimeError(f"Error when getting transfer task list: {e}")
+        for transfer_task in transfer_task_list:
+            # 查找第一个，未被标记过的番剧名相同的视频文件传输任务作为下载任务对应的传输任务
+            if (
+                transfer_task.uuid not in self.uuid_set
+                and utils.is_video(transfer_task.file_name)
+                and transfer_task.status
+                in [AlistTaskStatus.Pending, AlistTaskStatus.Running]
+                and resource.anime_name in transfer_task.description
+            ):
+                self.uuid_set.add(transfer_task.uuid)
+                logger.debug(
+                    f"Linked {resource.resource_title} to {transfer_task.uuid}"
+                )
+                return transfer_task
+        logger.warning(
+            f"Can't find the transfer task of {resource.resource_title}, retrying..."
+        )
+        raise TimeoutError("Transfer task not found")
 
     async def _wait_finished(
         self, task: AnimeDownloadTaskInfo
@@ -198,29 +196,27 @@ class DownloadManager(metaclass=Singleton):
             monitor = TaskMonitor(self.alist_client, task_obj)
             try:
                 finished_task = await monitor.wait_finished()
-                if finished_task.status != AlistTaskStatus.Succeeded:
-                    raise ValueError(
-                        f"Error in {type(task_obj)}: {finished_task.error_msg}"
-                    )
-                return finished_task
             except TimeoutError:
                 await self.alist_client.cancel_task(task_obj)
-                raise ValueError(
+                raise TimeoutError(
                     f"Timeout waiting for {type(task_obj)} of {task.resource.resource_title}"
                 )
-            except RuntimeError:
-                raise ValueError(
-                    f"Task not found: {type(task_obj)} of {task.resource.resource_title}"
+
+            if finished_task.status != AlistTaskStatus.Succeeded:
+                raise RuntimeError(
+                    f"Error in {type(task_obj)}: {finished_task.error_msg}"
                 )
+            return finished_task
 
         try:
             task.download_task = await wait_task(task.download_task)
             transfer_task = await self._find_transfer_task(task.resource)
             task.transfer_task = await wait_task(transfer_task)
             return task
-        except ValueError as e:
-            logger.error(str(e))
-            return None
+        except (RuntimeError, TimeoutError) as e:
+            logger.error(f"Error when waiting task successed: {e}")
+        except RetryError as e:
+            logger.error(f"TimeoutError: {e.last_attempt.exception()}")
 
     def _post_process(self, task: AnimeDownloadTaskInfo):
         "Something to do after download task success"
@@ -289,6 +285,9 @@ class DownloadManager(metaclass=Singleton):
             try:
                 task_list += await self.alist_client.add_offline_download_task(
                     download_path, urls
+                )
+                logger.info(
+                    f"Added download task: {download_path} {len(urls)} resources"
                 )
             except Exception as e:
                 logger.error(f"Error when add offline download task: {e}")

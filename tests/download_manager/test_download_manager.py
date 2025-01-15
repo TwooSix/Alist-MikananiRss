@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from loguru import logger
+from tenacity import RetryError
 
 from alist_mikananirss.alist import Alist
 from alist_mikananirss.alist.tasks import (
@@ -186,6 +187,32 @@ async def test_find_transfer_task(download_manager):
 
     assert result == transfer_task
     assert transfer_task.uuid in download_manager.uuid_set
+
+
+@pytest.mark.asyncio
+async def test_find_transfer_task_not_found(download_manager):
+    resource = ResourceInfo(
+        anime_name="Test Anime",
+        resource_title="Episode 1",
+        torrent_url="https://example.com/test.torrent",
+    )
+    transfer_task = AlistTransferTask(
+        tid="123",
+        description="transfer WrongAnime/file.mp4 to [/path]",
+        status=AlistTaskStatus.Running,
+        progress=50,
+        uuid="123",
+        file_name="file.mp4",
+    )
+
+    download_manager.alist_client.get_task_list.return_value = [transfer_task]
+
+    with patch("asyncio.sleep", new_callable=AsyncMock):
+        try:
+            await download_manager._find_transfer_task(resource)
+        except RetryError as e:
+            assert e.last_attempt.attempt_number == 10
+            assert isinstance(e.last_attempt.exception(), TimeoutError)
 
 
 @pytest.mark.asyncio

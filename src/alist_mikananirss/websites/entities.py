@@ -1,5 +1,12 @@
 from dataclasses import dataclass
+from enum import Enum
 from typing import Optional
+
+
+class VideoQuality(str, Enum):
+    p2160 = "2160p"
+    p1080 = "1080p"
+    p720 = "720p"
 
 
 @dataclass
@@ -12,7 +19,7 @@ class ResourceInfo:
     season: Optional[int] = None
     episode: Optional[int] = None
     fansub: Optional[str] = None
-    quality: Optional[str] = None
+    quality: Optional[VideoQuality] = None
     language: Optional[str] = None
     version: int = 1
 
