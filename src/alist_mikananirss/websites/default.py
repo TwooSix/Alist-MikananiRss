@@ -1,39 +1,15 @@
-from dataclasses import dataclass
+from urllib.parse import urlparse
 
-import aiohttp
-import bs4
-from async_lru import alru_cache
-
+from alist_mikananirss import utils
 from alist_mikananirss.extractor import Extractor
-from alist_mikananirss.websites import FeedEntry, ResourceInfo, Website
+
+from .base import Website
+from .entities import FeedEntry, ResourceInfo
 
 
-@dataclass
-class MikanHomePageInfo:
-    anime_name: str
-    fansub: str
-
-
-class Mikan(Website):
+class DefaultWebsite(Website):
     def __init__(self, rss_url: str):
         super().__init__(rss_url)
-
-    @alru_cache(maxsize=16, ttl=60 * 60)
-    async def parse_homepage(self, home_page_url: str) -> MikanHomePageInfo:
-        async with aiohttp.ClientSession(trust_env=True) as session:
-            async with session.get(home_page_url) as response:
-                response.raise_for_status()
-                html = await response.text()
-        soup = bs4.BeautifulSoup(html, "html.parser")
-        anime_name = soup.find("p", class_="bangumi-title").text.strip()
-        fansub = None
-        bgm_info_elements = soup.find_all("p", class_="bangumi-info")
-        for e in bgm_info_elements:
-            if "字幕组" in e.text:
-                text = e.text.strip()
-                fansub = text.split("：")[-1]
-                break
-        return MikanHomePageInfo(anime_name=anime_name, fansub=fansub)
 
     async def get_feed_entries(self) -> list[FeedEntry]:
         feed = await self.parse_feed(self.rss_url)
@@ -43,9 +19,17 @@ class Mikan(Website):
         for tmp_entry in feed.entries:
             resource_title = tmp_entry.title
             torrent_url = None
-            for link in tmp_entry.links:
-                if link["type"] == "application/x-bittorrent":
-                    torrent_url = link["href"]
+            for link_entry in tmp_entry.links:
+                # 判断是否是磁力链接
+                link = link_entry["href"]
+                if link.startswith("magnet:") or link.endswith(".torrent"):
+                    torrent_url = link
+                    break
+                # 判断是否是视频直链
+                link_parsed = urlparse(link)
+                if utils.is_video(link_parsed.path):
+                    torrent_url = link
+                    break
             if not torrent_url:
                 raise RuntimeError("No torrent url found")
             homepage_url = tmp_entry.link
@@ -62,28 +46,22 @@ class Mikan(Website):
     async def extract_resource_info(
         self, entry: FeedEntry, use_extractor: bool = False
     ) -> ResourceInfo:
-        homepage_info = await self.parse_homepage(entry.homepage_url)
         resource_info = ResourceInfo(
-            anime_name=homepage_info.anime_name,
             resource_title=entry.resource_title,
             torrent_url=entry.torrent_url,
             published_date=entry.published_date,
-            fansub=homepage_info.fansub,
         )
         if use_extractor:
-            name_extract_result = await Extractor.analyse_anime_name(
-                resource_info.anime_name
-            )
             rtitle_extract_result = await Extractor.analyse_resource_title(
                 resource_info.resource_title
             )
             resource_info = ResourceInfo(
-                anime_name=name_extract_result.anime_name,
-                season=name_extract_result.season,
+                anime_name=rtitle_extract_result.anime_name,
+                season=rtitle_extract_result.season,
                 episode=rtitle_extract_result.episode,
                 quality=rtitle_extract_result.quality,
                 language=rtitle_extract_result.language,
-                fansub=resource_info.fansub,
+                fansub=rtitle_extract_result.fansub,
                 resource_title=resource_info.resource_title,
                 torrent_url=resource_info.torrent_url,
                 published_date=resource_info.published_date,

@@ -7,6 +7,7 @@ from typing import Optional
 from loguru import logger
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+from alist_mikananirss import utils
 from alist_mikananirss.alist import Alist
 from alist_mikananirss.alist.tasks import (
     AlistDownloadTask,
@@ -150,10 +151,6 @@ class DownloadManager(metaclass=Singleton):
             asyncio.create_task(instance.monitor(task_info))
 
     async def _find_transfer_task(self, resource: ResourceInfo) -> AlistTransferTask:
-        def is_video(file_name: str) -> bool:
-            return file_name.lower().endswith(
-                (".mp4", ".mkv", ".avi", ".rmvb", ".wmv", ".flv")
-            )
 
         async with asyncio.timeout(10):
             while True:
@@ -165,7 +162,7 @@ class DownloadManager(metaclass=Singleton):
                         # 查找第一个，未被标记过的番剧名相同的视频文件传输任务作为下载任务对应的传输任务
                         if (
                             transfer_task.uuid not in self.uuid_set
-                            and is_video(transfer_task.file_name)
+                            and utils.is_video(transfer_task.file_name)
                             and transfer_task.status
                             in [AlistTaskStatus.Pending, AlistTaskStatus.Running]
                             and resource.anime_name in transfer_task.description

@@ -118,6 +118,7 @@ async def test_get_new_resources_with_exceptions(mock_website, mock_filter, mock
     mock_website.get_feed_entries.return_value = feed_entries
     mock_filter.filt_single.side_effect = [True, True]
     mock_db.is_resource_title_exist.return_value = False
+    # extract_resource_info方法报错
     mock_website.extract_resource_info.side_effect = [
         ResourceInfo("Resource 1", "https://example.com/torrent1"),
         Exception("Network error"),

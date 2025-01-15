@@ -1,19 +1,43 @@
-from dataclasses import dataclass
+from enum import Enum
 from typing import Optional
 
-
-@dataclass
-class ResourceTitleExtractResult:
-    anime_name: str
-    season: int
-    episode: int
-    quality: Optional[str] = None
-    fansub: Optional[str] = None
-    language: Optional[str] = None
-    version: int = 1
+from pydantic import BaseModel, Field
 
 
-@dataclass
-class AnimeNameExtractResult:
-    anime_name: str
-    season: int
+class VideoQuality(str, Enum):
+    p1080 = "1080p"
+    p720 = "720p"
+
+
+class TMDBSearchParam(BaseModel):
+    query: str = Field(..., description="Keywords of anime name to search")
+
+
+class TMDBTvInfo(BaseModel):
+    anime_name: str = Field(..., description="The name of the anime")
+    tvid: int = Field(..., description="The tmdb id of the anime")
+
+
+class ResourceTitleExtractResult(BaseModel):
+    anime_name: str = Field(..., description="The name of the anime")
+    season: int = Field(
+        ...,
+        description="The season of the anime.Default to be 1. But if special episode, it should be 0",
+    )
+    episode: int = Field(
+        ...,
+        description="The episode number. It should be int. If float, it means special episode",
+    )
+    quality: Optional[VideoQuality] = Field(..., description="The quality of the video")
+    fansub: Optional[str] = Field(..., description="The fansub of the video")
+    language: Optional[str] = Field(
+        ..., description="The subtitle language of the video"
+    )
+    version: int = Field(
+        ..., description="The version of the video's subtitle, default to be 1"
+    )
+
+
+class AnimeNameExtractResult(BaseModel):
+    anime_name: str = Field(..., description="The name of the anime")
+    season: int = Field(..., description="The season of the anime")

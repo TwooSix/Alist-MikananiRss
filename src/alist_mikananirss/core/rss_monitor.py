@@ -43,17 +43,18 @@ class RssMonitor:
 
         async def process_entry(self, website: Website, entry):
             """Parse all rss url and get the filtered, unique resource info list"""
-            try:
-                resource_info = await website.extract_resource_info(
-                    entry, self.use_extractor
-                )
+            async with asyncio.Semaphore(8):
+                try:
+                    resource_info = await website.extract_resource_info(
+                        entry, self.use_extractor
+                    )
+                except Exception as e:
+                    logger.error(f"Pass {entry.resource_title} because of error: {e}")
+                    return None
                 remapper = RemapperManager.match(resource_info)
                 if remapper:
                     remapper.remap(resource_info)
-            except Exception as e:
-                logger.error(f"Pass {entry.resource_title} because of error: {e}")
-                return None
-            return resource_info
+                return resource_info
 
         new_resources_set: set[ResourceInfo] = set()
 
@@ -63,10 +64,14 @@ class RssMonitor:
                 lambda entry: m_filter.filt_single(entry.resource_title),
                 feed_entries,
             )
+            tasks = []
             for entry in feed_entries_filted:
                 if await self.db.is_resource_title_exist(entry.resource_title):
                     continue
-                resource_info = await process_entry(self, website, entry)
+                task = asyncio.create_task(process_entry(self, website, entry))
+                tasks.append(task)
+            results = await asyncio.gather(*tasks)
+            for resource_info in results:
                 if not resource_info:
                     continue
                 new_resources_set.add(resource_info)

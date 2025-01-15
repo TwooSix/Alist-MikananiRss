@@ -26,6 +26,7 @@ class FeedEntry:
     torrent_url: str
     published_date: Optional[str] = None
     homepage_url: Optional[str] = None
+    author: Optional[str] = None
 
     def __hash__(self):
         return hash(self.resource_title)

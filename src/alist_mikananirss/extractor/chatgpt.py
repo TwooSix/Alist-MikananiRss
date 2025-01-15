@@ -4,8 +4,15 @@ import re
 from loguru import logger
 from openai import AsyncOpenAI
 
+from alist_mikananirss.utils.tmdb import TMDBClient
+
 from .base import ExtractorBase
-from .models import AnimeNameExtractResult, ResourceTitleExtractResult
+from .models import (
+    AnimeNameExtractResult,
+    ResourceTitleExtractResult,
+    TMDBSearchParam,
+    TMDBTvInfo,
+)
 
 
 class ChatGPTExtractor(ExtractorBase):
@@ -23,17 +30,6 @@ class ChatGPTExtractor(ExtractorBase):
                 self._client.base_url = self._base_url
         return self._client
 
-    async def _get_gpt_response(self, prompt, resource_name):
-        chat_completion = await self.client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": prompt},
-                {"role": "user", "content": resource_name},
-            ],
-            model=self.model,
-            temperature=0,
-        )
-        return chat_completion.choices[0].message.content
-
     async def _parse_json_response(self, resp):
         match = re.search(r"(\{[^\}]*\})", resp)
         if not match:
@@ -41,92 +37,109 @@ class ChatGPTExtractor(ExtractorBase):
         return json.loads(match.group(1))
 
     async def analyse_anime_name(self, anime_name: str) -> AnimeNameExtractResult:
-        prompt = """
-        In the following, I will provide you with an anime name. Please extract the original name of the anime (i.e., the name without season information) and the season number based on the given name.
-        I need to parse this text into a data structure to initialize a AnimeNameInfo class in my code. The definition of the AnimeNameInfo class is as follows:
-
-        class AnimeNameInfo{
-            string anime_name;
-            int season;
-            
-            MikanAnimeResource(this.anime_name, this.season);
-        }
-
-        Based on the resource name of the anime series, please provide a JSON-formatted data structure(output in markdown format) that I can directly use to initialize an instance of the class.
-        """
-        resp = await self._get_gpt_response(prompt, anime_name)
-        data = await self._parse_json_response(resp)
-
-        expected_data = {"anime_name": str, "season": int}
-        if not all(
-            isinstance(data.get(field_name), field_type)
-            for field_name, field_type in expected_data.items()
-        ):
-            raise TypeError(f"GPT provide a wrong type data: {data}")
-
-        info = AnimeNameExtractResult(
-            anime_name=data["anime_name"], season=data["season"]
+        response = await self.client.beta.chat.completions.parse(
+            model=self.model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an anime series resource categorization assistant. When given an anime series name, you need to parse out the original series name without season information, and the season information (default is Season 1)",
+                },
+                {"role": "user", "content": anime_name},
+            ],
+            response_format=AnimeNameExtractResult,
         )
-        logger.debug(f"Chatgpt analyse resource name: {anime_name} -> {info}")
-        return info
+
+        res = response.choices[0].message.parsed
+        if res is None:
+            raise ValueError(f"Failed to parse anime name: {anime_name} by GPT")
+        logger.debug(f"Chatgpt analyse resource name: {anime_name} -> {res}")
+        return res
+
+    async def search_name_in_tmdb(self, resource_title: str) -> TMDBTvInfo:
+        """Ask GPT use the resource title to search in TMDB and find the correct anime name
+
+        Args:
+            resource_title (str): The title of the resource
+
+        Returns:
+            TMDBTvInfo: The information of the tv series in TMDB
+        """
+        # 1. Ask GPT to parse the resource title and extract search keyword
+        response = await self.client.beta.chat.completions.parse(
+            model=self.model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an anime series search assistant. You need to parse the filename of anime resources and extract search keywords from it. The keywords should be as concise as possible and should not include season information, to avoid missing relevant search results.",
+                },
+                {"role": "user", "content": resource_title},
+            ],
+            response_format=TMDBSearchParam,
+        )
+        search_param = response.choices[0].message.parsed
+        if search_param is None:
+            logger.error(f"Failed to parse resource title: {resource_title} by GPT")
+            return None
+
+        # 2. Use the keyword to search in TMDB
+        self.tmdb_client = TMDBClient()
+        search_results = await self.tmdb_client.search_tv(search_param.query)
+        if len(search_results) == 0:
+            logger.error(
+                f"Unable to find anime name in TMDB, search keyword: {search_param.query}"
+            )
+            return None
+
+        # 3. Ask GPT to find the correct anime in the search results
+        response = await self.client.beta.chat.completions.parse(
+            model=self.model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an anime series search assistant. Now that the search part is completed, given a filename of an anime resource, you need to find the corresponding anime series from the search results based on the information contained in the filename",
+                },
+                {
+                    "role": "user",
+                    "content": f"resource_file_name: {resource_title}, search_results: {search_results}",
+                },
+            ],
+            response_format=TMDBTvInfo,
+        )
+        message = response.choices[0].message
+        tmdb_info = message.parsed
+        if tmdb_info is None:
+            logger.error(
+                f"Failed to find the anime of {resource_title} in search result: {search_results} by GPT"
+            )
+            return None
+
+        return tmdb_info
 
     async def analyse_resource_title(
         self, resource_title: str
     ) -> ResourceTitleExtractResult:
-        prompt = """
-        I will provide you with the torrent name of an anime. Please extract the following information from the torrent name: the name of the anime; the season number of the anime(If this episode is OVA，season set to 0); the episode number of the anime; the video quality; the fansub's name; language of the subtitles; and the version of the subtitle(defualt to 1). 
-        I need to parse this text into a data structure to initialize a ResourceNameInfo class in my code. The definition of the ResourceNameInfo class is as follows:
+        tmdb_info = await self.search_name_in_tmdb(resource_title)
 
-        class ResourceNameInfo{
-            string anime_name_cn;
-            string anime_name_jp;
-            string anime_name_en;
-            int season;
-            float episode;
-            string quality;
-            string fansub;
-            string language;
-            int version;
-            
-            ResourceNameInfo(this.anime_name, this.season, this.episode, this.quality, this.fansub, this.language, this.version);
-        }
-
-        Based on the anime resource name, please provide a JSON format data structure(output in markdown format) that I can use directly to initialize an instance of the ResourceNameInfo class.
-        ps:
-        1. If the episode number is a decimal, it means that it is a special episode. In this case, the season number should be set to 0.
-        2. Assume season=1 if no special indication is given
-        3. please make a comprehensive judgment based on the values of anime_name_cn, anime_name_jp, and anime_name_en. The meanings of these three should be relatively similar.
-        4. If there are multiple names, please choose just one of them
-        5. anime name should not contains season info
-        """
-        resp = await self._get_gpt_response(prompt, resource_title)
-        data = await self._parse_json_response(resp)
-
-        expected_data = {
-            "anime_name_cn": str,
-            "anime_name_jp": str,
-            "anime_name_en": str,
-            "season": int,
-            "episode": (float, int),
-            "quality": str,
-            "fansub": str,
-            "language": str,
-            "version": int,
-        }
-
-        if not all(
-            isinstance(data.get(field_name), field_type)
-            for field_name, field_type in expected_data.items()
-        ):
-            raise TypeError(f"GPT provide a wrong type data: {data}")
-        info = ResourceTitleExtractResult(
-            anime_name=data["anime_name_cn"],
-            season=data["season"],
-            episode=int(data["episode"]) if data["season"] != 0 else 0,
-            quality=data["quality"],
-            fansub=data["fansub"],
-            language=data["language"],
-            version=data["version"],
+        response = await self.client.beta.chat.completions.parse(
+            model=self.model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an anime resource categorization assistant. Given an anime resource name, you need to extract information that helps users categorize and organize the resource based on its name",
+                },
+                {
+                    "role": "user",
+                    "content": resource_title,
+                },
+            ],
+            response_format=ResourceTitleExtractResult,
         )
-        logger.debug(f"Chatgpt analyse resource name: {resource_title} -> {info}")
-        return info
+        message = response.choices[0].message
+        res = message.parsed
+        if res is None:
+            raise ValueError(f"Failed to parse resource title: {resource_title} by GPT")
+
+        if tmdb_info:
+            res.anime_name = tmdb_info.anime_name
+        logger.debug(f"Chatgpt analyse resource name: {resource_title} -> {res}")
+        return res

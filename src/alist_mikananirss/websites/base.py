@@ -44,8 +44,18 @@ class WebsiteFactory:
     @staticmethod
     def get_website_parser(rss_url: str) -> Website:
         if "mikan" in rss_url:
-            from alist_mikananirss.websites import Mikan
+            from . import Mikan
 
             return Mikan(rss_url)
+        elif "dmhy" in rss_url:
+            from . import Dmhy
+
+            return Dmhy(rss_url)
+        elif "acg.rip" in rss_url:
+            from . import AcgRip
+
+            return AcgRip(rss_url)
         else:
-            raise ValueError("Unknown website")
+            from .default import DefaultWebsite
+
+            return DefaultWebsite(rss_url)
