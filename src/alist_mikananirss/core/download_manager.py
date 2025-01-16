@@ -5,7 +5,13 @@ from dataclasses import dataclass
 from typing import Optional
 
 from loguru import logger
-from tenacity import RetryError, retry, stop_after_attempt, wait_exponential
+from tenacity import (
+    RetryError,
+    retry,
+    stop_after_attempt,
+    stop_after_delay,
+    wait_exponential,
+)
 
 from alist_mikananirss import utils
 from alist_mikananirss.alist import Alist
@@ -150,8 +156,8 @@ class DownloadManager(metaclass=Singleton):
             asyncio.create_task(instance.monitor(task_info))
 
     @retry(
-        stop=stop_after_attempt(10),
-        wait=wait_exponential(multiplier=1, min=1, max=60),
+        stop=stop_after_delay(30),
+        wait=wait_exponential(multiplier=0.5, min=1, max=15),
     )
     async def _find_transfer_task(self, resource: ResourceInfo) -> AlistTransferTask:
         try:

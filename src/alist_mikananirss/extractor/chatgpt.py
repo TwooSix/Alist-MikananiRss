@@ -76,6 +76,7 @@ class ChatGPTExtractor(ExtractorBase):
         if search_param is None:
             logger.error(f"Failed to parse resource title: {resource_title} by GPT")
             return None
+        logger.debug(f"Search param: {search_param}")
 
         # 2. Use the keyword to search in TMDB
         self.tmdb_client = TMDBClient()
@@ -111,6 +112,7 @@ class ChatGPTExtractor(ExtractorBase):
         if len(search_results) == 0:
             logger.error("Unable to find anime name in TMDB")
             return None
+        logger.debug(f"Search results: {search_results}")
 
         # 3. Ask GPT to find the correct anime in the search results
         response = await self.client.beta.chat.completions.parse(
@@ -134,6 +136,7 @@ class ChatGPTExtractor(ExtractorBase):
                 f"Failed to find the anime of {resource_title} in search result: {search_results} by GPT"
             )
             return None
+        logger.debug(f"TMDB info: {tmdb_info}")
 
         return tmdb_info
 
