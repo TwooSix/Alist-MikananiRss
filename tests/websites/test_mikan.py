@@ -1,15 +1,20 @@
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import feedparser
 import pytest
 
+from alist_mikananirss.extractor import (
+    AnimeNameExtractResult,
+    ResourceTitleExtractResult,
+    VideoQuality,
+)
 from alist_mikananirss.websites import FeedEntry, ResourceInfo
 from alist_mikananirss.websites.mikan import Mikan, MikanHomePageInfo
 
 
 @pytest.fixture
 def mikan():
-    return Mikan("https://mikanani.me/RSS/Bangumi?bangumiId=2742&subgroupid=370")
+    return Mikan("https://mikanani.me/RSS/Bangumi?bangumiId=3519&subgroupid=382")
 
 
 @pytest.fixture
@@ -62,33 +67,30 @@ async def test_get_feed_entries(mikan, mock_rss_data):
 
 
 @pytest.mark.asyncio
-@patch("aiohttp.ClientSession.get")
-async def test_parse_homepage(mock_get, mikan):
-    # Setup mock response
-    mock_response = AsyncMock()
-    mock_response.raise_for_status = MagicMock()
-    mock_response.text = AsyncMock(
-        return_value="""
-    <html>
-        <p class="bangumi-title">GIRLS BAND CRY</p>
-        <p class="bangumi-info">字幕组：喵萌奶茶屋</p>
-    </html>
-    """
+async def test_get_feed_entries_real(mikan):
+    # 测试真实的蜜柑RSS链接解析是否有报错
+    await mikan.get_feed_entries()
+
+
+@pytest.mark.asyncio
+async def test_parse_homepage_error(mikan):
+    # 对于蜜柑，强需求主页中的番剧名/字幕组信息，解析详情页时，如果出现异常，应该抛出异常
+    mock_entry = FeedEntry(
+        resource_title="【喵萌Production】★04月新番★[GIRLS BAND CRY][01-13][1080p][繁日双语][招募翻译时轴]",
+        torrent_url="https://mikanani.me/Download/20240717/a19d5da34e2ec205bddd9c6935ab579ff37da7d7.torrent",
+        published_date="2024-07-17T19:09:00",
+        homepage_url="https://mikanani.me/Home/Episode/a19d5da34e2ec205bddd9c6935ab579ff37da7d7",
     )
-    mock_get.return_value.__aenter__.return_value = mock_response
-    with patch("asyncio.sleep", new_callable=AsyncMock):
-        result = await mikan.parse_homepage(
-            "https://mikanani.me/Home/Episode/a19d5da34e2ec205bddd9c6935ab579ff37da7d7"
-        )
-    assert isinstance(result, MikanHomePageInfo)
-    assert result.anime_name == "GIRLS BAND CRY"
-    assert result.fansub == "喵萌奶茶屋"
+    with patch.object(mikan, "parse_homepage", side_effect=Exception):
+        with pytest.raises(Exception):
+            await mikan.extract_resource_info(mock_entry, use_extractor=False)
 
 
 @pytest.mark.asyncio
 async def test_extract_resource_info(mikan):
+    # 测试蜜柑是否使用主页提供的番剧名/字幕组信息
     mock_entry = FeedEntry(
-        resource_title="【喵萌Production】★04月新番★[GIRLS BAND CRY][01-13][1080p][繁日双语][招募翻译时轴]",
+        resource_title="【喵萌Production】★04月新番★[GIRLS BAND CRY][01][1080p][繁日双语][招募翻译时轴]",
         torrent_url="https://mikanani.me/Download/20240717/a19d5da34e2ec205bddd9c6935ab579ff37da7d7.torrent",
         published_date="2024-07-17T19:09:00",
         homepage_url="https://mikanani.me/Home/Episode/a19d5da34e2ec205bddd9c6935ab579ff37da7d7",
@@ -98,19 +100,37 @@ async def test_extract_resource_info(mikan):
         anime_name="GIRLS BAND CRY", fansub="喵萌奶茶屋"
     )
 
+    mock_animename_extract_result = AnimeNameExtractResult(
+        anime_name="GIRLS BAND CRY", season=1
+    )
+
+    mock_extract_result = ResourceTitleExtractResult(
+        anime_name="tmdb_name",
+        season=1,
+        episode=1,
+        quality=VideoQuality.p1080,
+        language="繁日双语",
+        fansub="gpt_fansub",
+        version=1,
+    )
+
     with patch.object(mikan, "parse_homepage", return_value=mock_homepage_info):
-        with patch("asyncio.sleep", new_callable=AsyncMock):
-            result = await mikan.extract_resource_info(mock_entry)
+        with patch(
+            "alist_mikananirss.extractor.Extractor.analyse_resource_title",
+            return_value=mock_extract_result,
+        ):
+            with patch(
+                "alist_mikananirss.extractor.Extractor.analyse_anime_name",
+                return_value=mock_animename_extract_result,
+            ):
+                result = await mikan.extract_resource_info(
+                    mock_entry, use_extractor=True
+                )
 
     assert isinstance(result, ResourceInfo)
-    assert result.anime_name == "GIRLS BAND CRY"
-    assert (
-        result.resource_title
-        == "【喵萌Production】★04月新番★[GIRLS BAND CRY][01-13][1080p][繁日双语][招募翻译时轴]"
-    )
-    assert (
-        result.torrent_url
-        == "https://mikanani.me/Download/20240717/a19d5da34e2ec205bddd9c6935ab579ff37da7d7.torrent"
-    )
-    assert result.published_date == "2024-07-17T19:09:00"
-    assert result.fansub == "喵萌奶茶屋"
+    assert result.anime_name == mock_homepage_info.anime_name
+    assert result.resource_title == mock_entry.resource_title
+    assert result.torrent_url == mock_entry.torrent_url
+    assert result.season == mock_extract_result.season
+    assert result.episode == mock_extract_result.episode
+    assert result.fansub == mock_homepage_info.fansub

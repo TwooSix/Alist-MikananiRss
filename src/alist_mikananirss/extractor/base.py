@@ -18,7 +18,7 @@ class ExtractorBase:
         raise NotImplementedError
 
     async def analyse_resource_title(
-        self, resource_title: str
+        self, resource_title: str, use_tmdb: bool = True
     ) -> ResourceTitleExtractResult:
         """Analyse the resource title to get resource info.
 

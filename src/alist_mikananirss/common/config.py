@@ -238,78 +238,109 @@ class ConfigManager(metaclass=Singleton):
 
     def __load_config(self, path):
         config_loader = ConfigLoader(path)
-
+        # ----------common----------
+        common_interval_time = config_loader.get("common.interval_time", 300)
+        common_proxies = config_loader.get("common.proxies", None)
+        # ----------alist----------
+        alist_base_url = config_loader.get("alist.base_url")
+        alist_token = config_loader.get("alist.token")
+        alist_downloader = AlistDownloaderType(
+            config_loader.get("alist.downloader", AlistDownloaderType.ARIA.value)
+        )
+        alist_download_path = config_loader.get("alist.download_path")
+        # ----------mikan----------
+        urls = config_loader.get("mikan.subscribe_url")
+        if isinstance(urls, str):
+            urls = [urls]
+        mikan_subscribe_url = urls
         default_regex_pattern = {
             "简体": "(简体|简中|简日|CHS)",
             "繁体": "(繁体|繁中|繁日|CHT|Baha)",
             "1080p": "(X1080|1080P)",
             "非合集": "^(?!.*(\\d{2}-\\d{2}|合集)).*",
         }
-
-        alist_downloader = AlistDownloaderType(
-            config_loader.get("alist.downloader", AlistDownloaderType.ARIA.value)
+        default_regex_pattern.update(config_loader.get("mikan.regex_pattern", {}))
+        mikan_regex_pattern = default_regex_pattern
+        mikan_filters = config_loader.get("mikan.filters", ["1080p", "非合集"])
+        # ----------notification----------
+        notification_enable = (
+            False if not config_loader.get("notification", {}) else True
         )
+        notification_telegram_enable = (
+            False if not config_loader.get("notification.telegram", {}) else True
+        )
+        notification_telegram_bot_token = config_loader.get(
+            "notification.telegram.bot_token", ""
+        )
+        notification_telegram_user_id = config_loader.get(
+            "notification.telegram.user_id", ""
+        )
+        notification_pushplus_enable = (
+            False if not config_loader.get("notification.pushplus", {}) else True
+        )
+        notification_pushplus_token = config_loader.get(
+            "notification.pushplus.token", ""
+        )
+        notification_pushplus_channel = PushPlusChannel(
+            config_loader.get(
+                "notification.pushplus.channel", PushPlusChannel.WECHAT.value
+            )
+        )
+        notification_interval_time = config_loader.get(
+            "notification.interval_time", 300
+        )
+        # ----------rename----------
+        rename_enable = False if not config_loader.get("rename", {}) else True
+        rename_chatgpt_api_key = config_loader.get("rename.chatgpt.api_key", "")
+        rename_chatgpt_base_url = config_loader.get("rename.chatgpt.base_url", "")
+        rename_chatgpt_model = config_loader.get("rename.chatgpt.model", "gpt-4o-mini")
+        rename_format = config_loader.get(
+            "rename.rename_format", "{name} S{season:02d}E{episode:02d}"
+        )
+        rename_remap_enable = config_loader.get("rename.remap.enable", False)
+        rename_remap_cfg_path = config_loader.get("rename.remap.cfg_path", "remap.yaml")
+        # ----------bot_assistant----------
+        bot_assistant_enable = (
+            False if not config_loader.get("bot_assistant", {}) else True
+        )
+        bot_assistant_telegram_enable = (
+            False if not config_loader.get("bot_assistant.telegram", {}) else True
+        )
+        bot_assistant_telegram_bot_token = config_loader.get(
+            "bot_assistant.telegram.bot_token", ""
+        )
+        # ----------dev----------
+        dev_log_level = config_loader.get("dev.log_level", "INFO")
 
         return AppConfig(
-            common_interval_time=config_loader.get("common.interval_time", 300),
-            common_proxies=config_loader.get("common.proxies", None),
-            alist_base_url=config_loader.get("alist.base_url"),
-            alist_token=config_loader.get("alist.token"),
+            common_interval_time=common_interval_time,
+            common_proxies=common_proxies,
+            alist_base_url=alist_base_url,
+            alist_token=alist_token,
             alist_downloader=alist_downloader,
-            alist_download_path=config_loader.get("alist.download_path"),
-            mikan_subscribe_url=config_loader.get("mikan.subscribe_url"),
-            mikan_regex_pattern=default_regex_pattern
-            | config_loader.get("mikan.regex_pattern", {}),
-            mikan_filters=config_loader.get("mikan.filters", ["1080p", "非合集"]),
-            notification_enable=(
-                False if not config_loader.get("notification", {}) else True
-            ),
-            notification_telegram_enable=(
-                False if not config_loader.get("notification.telegram", {}) else True
-            ),
-            notification_telegram_bot_token=config_loader.get(
-                "notification.telegram.bot_token", ""
-            ),
-            notification_telegram_user_id=config_loader.get(
-                "notification.telegram.user_id", ""
-            ),
-            notification_pushplus_enable=(
-                False if not config_loader.get("notification.pushplus", {}) else True
-            ),
-            notification_pushplus_token=config_loader.get(
-                "notification.pushplus.token", ""
-            ),
-            notification_pushplus_channel=PushPlusChannel(
-                config_loader.get(
-                    "notification.pushplus.channel", PushPlusChannel.WECHAT.value
-                )
-            ),
-            notification_interval_time=config_loader.get(
-                "notification.interval_time", 300
-            ),
-            rename_enable=False if not config_loader.get("rename", {}) else True,
-            rename_chatgpt_api_key=config_loader.get("rename.chatgpt.api_key", ""),
-            rename_chatgpt_base_url=config_loader.get("rename.chatgpt.base_url", ""),
-            rename_chatgpt_model=config_loader.get(
-                "rename.chatgpt.model", "gpt-3.5-turbo"
-            ),
-            rename_format=config_loader.get(
-                "rename.rename_format", "{name} S{season:02d}E{episode:02d}"
-            ),
-            rename_remap_enable=config_loader.get("rename.remap.enable", False),
-            rename_remap_cfg_path=config_loader.get(
-                "rename.remap.cfg_path", "remap.yaml"
-            ),
-            bot_assistant_enable=(
-                False if not config_loader.get("bot_assistant", {}) else True
-            ),
-            bot_assistant_telegram_enable=(
-                False if not config_loader.get("bot_assistant.telegram", {}) else True
-            ),
-            bot_assistant_telegram_bot_token=config_loader.get(
-                "bot_assistant.telegram.bot_token", ""
-            ),
-            dev_log_level=config_loader.get("dev.log_level", "INFO"),
+            alist_download_path=alist_download_path,
+            mikan_subscribe_url=mikan_subscribe_url,
+            mikan_regex_pattern=mikan_regex_pattern,
+            mikan_filters=mikan_filters,
+            notification_enable=notification_enable,
+            notification_telegram_enable=notification_telegram_enable,
+            notification_telegram_bot_token=notification_telegram_bot_token,
+            notification_telegram_user_id=notification_telegram_user_id,
+            notification_pushplus_enable=notification_pushplus_enable,
+            notification_pushplus_token=notification_pushplus_token,
+            notification_pushplus_channel=notification_pushplus_channel,
+            notification_interval_time=notification_interval_time,
+            rename_enable=rename_enable,
+            rename_chatgpt_api_key=rename_chatgpt_api_key,
+            rename_chatgpt_base_url=rename_chatgpt_base_url,
+            rename_chatgpt_model=rename_chatgpt_model,
+            rename_format=rename_format,
+            rename_remap_enable=rename_remap_enable,
+            rename_remap_cfg_path=rename_remap_cfg_path,
+            bot_assistant_enable=bot_assistant_enable,
+            bot_assistant_telegram_enable=bot_assistant_telegram_enable,
+            bot_assistant_telegram_bot_token=bot_assistant_telegram_bot_token,
+            dev_log_level=dev_log_level,
         )
 
     def get_config(self):

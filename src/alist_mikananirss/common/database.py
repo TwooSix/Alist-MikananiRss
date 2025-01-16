@@ -11,13 +11,14 @@ os.makedirs(db_dirpath, exist_ok=True)
 
 
 class SubscribeDatabase:
-    def __init__(self, db_name="subscribe_database.db"):
-        self.db_filepath = os.path.join(db_dirpath, db_name)
-        self.db = None
+    def __init__(self):
+        raise RuntimeError("Use `SubscribeDatabase.create()` to create an instance")
 
     @classmethod
     async def create(cls, db_name="subscribe_database.db"):
-        self = cls(db_name=db_name)
+        self = cls.__new__(cls)
+        self.db_filepath = os.path.join(db_dirpath, db_name)
+        self.db = None
         await self.initialize()
         return self
 
@@ -33,6 +34,8 @@ class SubscribeDatabase:
         if self.db:
             return
         self.db = await aiosqlite.connect(self.db_filepath)
+        if not self.db:
+            raise RuntimeError("Failed to connect to database")
 
     async def close(self):
         if self.db:

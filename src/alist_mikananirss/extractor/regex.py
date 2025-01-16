@@ -71,7 +71,7 @@ class RegexExtractor(ExtractorBase):
         return info
 
     async def analyse_resource_title(
-        self, resource_title: str
+        self, resource_title: str, use_tmdb: bool = True
     ) -> ResourceTitleExtractResult:
         clean_name = re.sub(r"[\[\]【】()（）]", " ", resource_title)
         match = self.episode_pattern.search(clean_name)

@@ -20,17 +20,6 @@ async def test_initialize(base_path):
     assert DownloadManager().base_download_path == base_path
 
 
-def test_build_download_path_without_anime_name(base_path):
-    resource = ResourceInfo(
-        resource_title="Test Resource",
-        torrent_url="https://example.com/torrent",
-        published_date="2023-05-20",
-    )
-    expected_path = base_path
-    test_instance = DownloadManager()
-    assert test_instance._build_download_path(resource) == expected_path
-
-
 def test_build_download_path_with_anime_name(base_path):
     resource = ResourceInfo(
         resource_title="Test Resource",
@@ -56,19 +45,8 @@ def test_build_download_path_with_anime_name_and_season(base_path):
     assert test_instance._build_download_path(resource) == expected_path
 
 
-def test_build_download_path_with_season_no_anime_name(base_path):
-    resource = ResourceInfo(
-        resource_title="Test Resource",
-        torrent_url="https://example.com/torrent",
-        published_date="2023-05-20",
-        season=1,
-    )
-    expected_path = base_path
-    test_instance = DownloadManager()
-    assert test_instance._build_download_path(resource) == expected_path
-
-
-def test_build_download_path_with_special_characters(base_path):
+def test_build_download_path_with_illegal_characters(base_path):
+    # 测试是否能正确处理动画名中的非法字符
     resource = ResourceInfo(
         resource_title="Test Resource",
         torrent_url="https://example.com/torrent",
@@ -81,8 +59,15 @@ def test_build_download_path_with_special_characters(base_path):
     assert test_instance._build_download_path(resource) == expected_path
 
 
-def test_build_download_path_with_empty_anime_name(base_path):
-    resource = ResourceInfo(
+def test_build_download_path_without_anime_name(base_path):
+    # 无动画名时，不会创建子文件夹，将视频文件下载到下载目录的根目录下
+    resource_none_name = ResourceInfo(
+        resource_title="Test Resource",
+        torrent_url="https://example.com/torrent",
+        published_date="2023-05-20",
+        season=4,
+    )
+    resource_empty_name = ResourceInfo(
         resource_title="Test Resource",
         torrent_url="https://example.com/torrent",
         published_date="2023-05-20",
@@ -91,20 +76,8 @@ def test_build_download_path_with_empty_anime_name(base_path):
     )
     expected_path = base_path
     test_instance = DownloadManager()
-    assert test_instance._build_download_path(resource) == expected_path
-
-
-def test_build_download_path_with_none_anime_name(base_path):
-    resource = ResourceInfo(
-        resource_title="Test Resource",
-        torrent_url="https://example.com/torrent",
-        published_date="2023-05-20",
-        anime_name=None,
-        season=4,
-    )
-    expected_path = base_path
-    test_instance = DownloadManager()
-    assert test_instance._build_download_path(resource) == expected_path
+    assert test_instance._build_download_path(resource_none_name) == expected_path
+    assert test_instance._build_download_path(resource_empty_name) == expected_path
 
 
 def test_build_download_path_with_special_season(base_path):

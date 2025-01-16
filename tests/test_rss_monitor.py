@@ -46,7 +46,7 @@ async def test_rss_monitor_initialization(mock_db):
 async def test_set_interval_time(mock_db):
     with patch("alist_mikananirss.websites.WebsiteFactory.get_website_parser"):
         monitor = RssMonitor(
-            "https://example.com/rss", MagicMock(spec=RegexFilter), mock_db
+            ["https://example.com/rss"], MagicMock(spec=RegexFilter), mock_db
         )
         monitor.set_interval_time(600)
         assert monitor.interval_time == 600
@@ -65,7 +65,7 @@ async def test_get_new_resources(mock_website, mock_filter, mock_db):
     resource_info = ResourceInfo("Resource 1", "https://example.com/torrent1")
     mock_website.extract_resource_info.return_value = resource_info
 
-    monitor = RssMonitor("https://mikanani.me/rss", mock_filter, mock_db)
+    monitor = RssMonitor(["https://mikanani.me/rss"], mock_filter, mock_db)
     monitor.db = mock_db
 
     new_resources = await monitor.get_new_resources([mock_website], mock_filter)
@@ -118,12 +118,13 @@ async def test_get_new_resources_with_exceptions(mock_website, mock_filter, mock
     mock_website.get_feed_entries.return_value = feed_entries
     mock_filter.filt_single.side_effect = [True, True]
     mock_db.is_resource_title_exist.return_value = False
+    # extract_resource_info方法报错
     mock_website.extract_resource_info.side_effect = [
         ResourceInfo("Resource 1", "https://example.com/torrent1"),
         Exception("Network error"),
     ]
 
-    monitor = RssMonitor("https://mikanani.me/rss/rss", mock_filter, mock_db)
+    monitor = RssMonitor(["https://mikanani.me/rss/rss"], mock_filter, mock_db)
     monitor.db = mock_db
 
     new_resources = await monitor.get_new_resources([mock_website], mock_filter)
@@ -136,7 +137,7 @@ async def test_get_new_resources_with_exceptions(mock_website, mock_filter, mock
 
 @pytest.mark.asyncio
 async def test_get_new_resources_with_non_feed(mock_filter, mock_db):
-    monitor = RssMonitor("https://mikanani.me/rss", mock_filter, mock_db)
+    monitor = RssMonitor(["https://mikanani.me/rss"], mock_filter, mock_db)
     monitor.db = mock_db
 
     new_resources = await monitor.get_new_resources([], mock_filter)

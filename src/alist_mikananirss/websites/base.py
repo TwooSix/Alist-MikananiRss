@@ -1,6 +1,7 @@
 import abc
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from typing import Optional
 
 import feedparser
 from loguru import logger
@@ -14,7 +15,7 @@ class Website(abc.ABC):
     def __init__(self, rss_url: str):
         self.rss_url = rss_url
 
-    async def parse_feed(self, url):
+    async def parse_feed(self, url) -> Optional[feedparser.FeedParserDict]:
         """使用feedparser库异步解析rss链接"""
         loop = asyncio.get_event_loop()
         with ThreadPoolExecutor() as pool:
@@ -44,8 +45,18 @@ class WebsiteFactory:
     @staticmethod
     def get_website_parser(rss_url: str) -> Website:
         if "mikan" in rss_url:
-            from alist_mikananirss.websites import Mikan
+            from . import Mikan
 
             return Mikan(rss_url)
+        elif "dmhy" in rss_url:
+            from . import Dmhy
+
+            return Dmhy(rss_url)
+        elif "acg.rip" in rss_url:
+            from . import AcgRip
+
+            return AcgRip(rss_url)
         else:
-            raise ValueError("Unknown website")
+            from .default import DefaultWebsite
+
+            return DefaultWebsite(rss_url)
