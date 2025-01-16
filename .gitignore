@@ -6,6 +6,7 @@ dist/
 wheels/
 *.egg-info
 .coverage
+.vscode/
 
 # venv
 .venv

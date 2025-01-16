@@ -9,7 +9,6 @@ from tenacity import (
     RetryError,
     retry,
     stop_after_attempt,
-    stop_after_delay,
     wait_exponential,
 )
 
@@ -156,7 +155,7 @@ class DownloadManager(metaclass=Singleton):
             asyncio.create_task(instance.monitor(task_info))
 
     @retry(
-        stop=stop_after_delay(30),
+        stop=stop_after_attempt(7),
         wait=wait_exponential(multiplier=0.5, min=1, max=15),
     )
     async def _find_transfer_task(self, resource: ResourceInfo) -> AlistTransferTask:

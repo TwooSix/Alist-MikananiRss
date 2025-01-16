@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from loguru import logger
-from tenacity import RetryError
+from tenacity import RetryError, wait_none
 
 from alist_mikananirss.alist import Alist
 from alist_mikananirss.alist.tasks import (
@@ -182,8 +182,8 @@ async def test_find_transfer_task(download_manager):
 
     download_manager.alist_client.get_task_list.return_value = [transfer_task]
 
-    with patch("asyncio.sleep", new_callable=AsyncMock):
-        result = await download_manager._find_transfer_task(resource)
+    download_manager._find_transfer_task.retry.wait = wait_none()
+    result = await download_manager._find_transfer_task(resource)
 
     assert result == transfer_task
     assert transfer_task.uuid in download_manager.uuid_set
@@ -207,7 +207,10 @@ async def test_find_transfer_task_not_found(download_manager):
 
     download_manager.alist_client.get_task_list.return_value = [transfer_task]
 
-    with patch("asyncio.sleep", new_callable=AsyncMock):
+    with (
+        patch("asyncio.sleep", new_callable=AsyncMock),
+        patch("tenacity.nap.sleep", return_value=None),
+    ):
         with pytest.raises(RetryError):
             await download_manager._find_transfer_task(resource)
 
