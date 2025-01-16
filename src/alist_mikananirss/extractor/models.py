@@ -6,11 +6,11 @@ from alist_mikananirss.websites.entities import VideoQuality
 
 
 class TMDBSearchParam(BaseModel):
-    query: str = Field(..., description="Keywords of anime name to search")
+    query: str = Field(..., description="Keywords of the anime name to search")
 
 
 class TMDBTvInfo(BaseModel):
-    anime_name: str = Field(..., description="The name of the anime")
+    anime_name: str = Field(..., description="The name of the anime in tmdb")
     tvid: int = Field(..., description="The tmdb id of the anime")
 
 
@@ -35,5 +35,7 @@ class ResourceTitleExtractResult(BaseModel):
 
 
 class AnimeNameExtractResult(BaseModel):
-    anime_name: str = Field(..., description="The name of the anime")
+    anime_name: str = Field(
+        ..., description="The pure name of the anime without season or other info"
+    )
     season: int = Field(..., description="The season of the anime")

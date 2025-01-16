@@ -1,5 +1,3 @@
-import json
-import re
 from typing import Optional
 
 from loguru import logger
@@ -31,12 +29,6 @@ class ChatGPTExtractor(ExtractorBase):
                 self._client.base_url = self._base_url
         return self._client
 
-    async def _parse_json_response(self, resp):
-        match = re.search(r"(\{[^\}]*\})", resp)
-        if not match:
-            raise ValueError(f"Can't parse GPT responese as a json:\n {resp}")
-        return json.loads(match.group(1))
-
     async def analyse_anime_name(self, anime_name: str) -> AnimeNameExtractResult:
         response = await self.client.beta.chat.completions.parse(
             model=self.model,
@@ -56,7 +48,9 @@ class ChatGPTExtractor(ExtractorBase):
         logger.debug(f"Chatgpt analyse resource name: {anime_name} -> {res}")
         return res
 
-    async def search_name_in_tmdb(self, resource_title: str) -> Optional[TMDBTvInfo]:
+    async def search_name_in_tmdb(
+        self, resource_title: str, max_retry_times: int = 5
+    ) -> Optional[TMDBTvInfo]:
         """Ask GPT use the resource title to search in TMDB and find the correct anime name
 
         Args:
@@ -65,6 +59,7 @@ class ChatGPTExtractor(ExtractorBase):
         Returns:
             TMDBTvInfo: The information of the tv series in TMDB, or None if not found
         """
+
         # 1. Ask GPT to parse the resource title and extract search keyword
         response = await self.client.beta.chat.completions.parse(
             model=self.model,
@@ -85,10 +80,36 @@ class ChatGPTExtractor(ExtractorBase):
         # 2. Use the keyword to search in TMDB
         self.tmdb_client = TMDBClient()
         search_results = await self.tmdb_client.search_tv(search_param.query)
-        if len(search_results) == 0:
-            logger.error(
-                f"Unable to find anime name in TMDB, search keyword: {search_param.query}"
+        i = 0
+        while i < max_retry_times and len(search_results) == 0:
+            logger.warning(
+                f"Unable to find anime name in TMDB, search param: {search_param}. Retry {i+1}/{max_retry_times}"
             )
+            response = await self.client.beta.chat.completions.parse(
+                model=self.model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an anime series search assistant. You excel at breaking down original anime titles into keywords containing core information, then entering these keywords into search engines to find corresponding results.",
+                    },
+                    {
+                        "role": "user",
+                        "content": f"No results found for: {search_param.query}. Please try a different keyword.",
+                    },
+                ],
+                response_format=TMDBSearchParam,
+            )
+            search_param = response.choices[0].message.parsed
+            if search_param is None:
+                logger.warning(
+                    f"Failed to parse resource title: {resource_title} by GPT"
+                )
+                continue
+            search_results = await self.tmdb_client.search_tv(search_param.query)
+            i += 1
+
+        if len(search_results) == 0:
+            logger.error("Unable to find anime name in TMDB")
             return None
 
         # 3. Ask GPT to find the correct anime in the search results
