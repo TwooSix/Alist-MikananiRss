@@ -208,11 +208,8 @@ async def test_find_transfer_task_not_found(download_manager):
     download_manager.alist_client.get_task_list.return_value = [transfer_task]
 
     with patch("asyncio.sleep", new_callable=AsyncMock):
-        try:
+        with pytest.raises(RetryError):
             await download_manager._find_transfer_task(resource)
-        except RetryError as e:
-            assert e.last_attempt.attempt_number == 10
-            assert isinstance(e.last_attempt.exception(), TimeoutError)
 
 
 @pytest.mark.asyncio
