@@ -2,6 +2,7 @@ from unittest.mock import patch
 
 import feedparser
 import pytest
+from loguru import logger
 
 from alist_mikananirss.websites import FeedEntry
 from alist_mikananirss.websites.default import DefaultWebsite
@@ -68,6 +69,24 @@ def mock_aniapi_rss():
 </item>"""
 
 
+@pytest.fixture
+def mock_unsupported_rss():
+    return """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+<channel>
+<title>Test RSS Feed</title>
+<link>http://example.com</link>
+<description>Test feed with unsupported format</description>
+<item>
+<title>Test Item</title>
+<description>Description without torrent link or video link</description>
+<link>http://example.com/article</link>
+<pubDate>Wed, 15 Jan 2025 08:08:41 -0000</pubDate>
+</item>
+</channel>
+</rss>"""
+
+
 @pytest.mark.asyncio
 async def test_nyaa(default_website, mock_nyaa_rss):
     with patch.object(
@@ -105,3 +124,18 @@ async def test_aniapi(default_website, mock_aniapi_rss):
         entry.torrent_url
         == "https://resources.ani.rip/2024-10/%5BANi%5D%20%E9%9D%92%E4%B9%8B%E5%A3%AC%E7%94%9F%E6%B5%AA%20-%2013%20%5B1080P%5D%5BBaha%5D%5BWEB-DL%5D%5BAAC%20AVC%5D%5BCHT%5D.mp4?d=true"
     )
+
+
+@pytest.mark.asyncio
+async def test_unsupported_rss(default_website, mock_unsupported_rss):
+    with patch.object(
+        default_website,
+        "parse_feed",
+        return_value=feedparser.parse(mock_unsupported_rss),
+    ):
+        with patch.object(logger, "error") as mock_logger_error:
+            result = await default_website.get_feed_entries()
+
+    mock_logger_error.assert_called_once()
+    assert isinstance(result, list)
+    assert len(result) == 0

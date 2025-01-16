@@ -1,5 +1,7 @@
 from urllib.parse import urlparse
 
+from loguru import logger
+
 from alist_mikananirss import utils
 from alist_mikananirss.extractor import Extractor
 
@@ -33,7 +35,8 @@ class DefaultWebsite(Website):
             published_date = tmp_entry.get("published", None)
 
             if not resource_title or not torrent_url:
-                raise RuntimeError(f"Unsupport rss feed format: {self.rss_url}")
+                logger.error(f"Unsupport rss feed format: {self.rss_url}")
+                return []
 
             feed_entry = FeedEntry(
                 resource_title=resource_title,

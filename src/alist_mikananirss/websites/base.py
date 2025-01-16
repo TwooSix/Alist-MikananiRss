@@ -1,6 +1,7 @@
 import abc
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from typing import Optional
 
 import feedparser
 from loguru import logger
@@ -14,7 +15,7 @@ class Website(abc.ABC):
     def __init__(self, rss_url: str):
         self.rss_url = rss_url
 
-    async def parse_feed(self, url):
+    async def parse_feed(self, url) -> Optional[feedparser.FeedParserDict]:
         """使用feedparser库异步解析rss链接"""
         loop = asyncio.get_event_loop()
         with ThreadPoolExecutor() as pool:

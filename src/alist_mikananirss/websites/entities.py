@@ -27,7 +27,9 @@ class ResourceInfo:
         return hash(self.resource_title)
 
     def __str__(self) -> str:
-        return f"ResourceInfo({self.resource_title} / {self.anime_name} S{self.season:02d}E{self.episode:02d} [{self.fansub}][{self.quality}])"
+        season_format = f"S{self.season:02d}" if self.season else "N/A"
+        episode_format = f"E{self.episode:02d}" if self.episode else "N/A"
+        return f"ResourceInfo({self.resource_title} / {self.anime_name} S{season_format}E{episode_format} [{self.fansub}][{self.quality}])"
 
 
 @dataclass
