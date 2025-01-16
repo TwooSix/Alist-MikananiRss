@@ -2,7 +2,7 @@
   Alist-MikananiRss
 </h1>
 <p align="center">
-  从<a href="https://mikanani.me/">蜜柑计划</a>的RSS订阅源中自动获取番剧更新并通过Alist离线下载至对应网盘
+  从<a href="https://mikanani.me/">蜜柑计划</a>或其他动漫番剧相关的RSS订阅源中自动获取番剧更新并通过Alist离线下载至对应网盘
 </p>  
 <p align="center">
   并结合使用ChatGPT分析资源名，将资源重命名为Emby可解析的格式。
@@ -18,9 +18,12 @@
 
 ## 准备工作 
 1. 请自行参照[Alist](https://github.com/alist-org/alist)项目文档部署Alist（版本须>=3.29.0），并搭建好Aria2/qBittorrent离线下载
-2. 自行注册蜜柑计划账户，订阅番剧，获取订阅链接
+2. 自行注册蜜柑计划账户，订阅番剧，获取订阅链接（附：对其余RSS订阅源也作了一定适配，但测试较少）
 
 ## 如何使用
+Docker，源码运行等更多的运行方法详见[使用文档](https://github.com/TwooSix/Alist-MikananiRss/wiki/%E5%BF%AB%E9%80%9F%E5%BC%80%E5%A7%8B) 
+
+使用pip安装运行
 1. 请确保你的python版本在3.11以上
 2. 使用pip安装: `pip install alist-mikananirss`
 3. 在目录下新建一个`config.yaml`配置文件，并填写配置文件如下(完整功能示例详解见[配置说明](https://github.com/TwooSix/Alist-MikananiRss/wiki/%E9%85%8D%E7%BD%AE%E8%AF%B4%E6%98%8E))
@@ -37,14 +40,14 @@
    mikan:
      subscribe_url:
        - https://mikanani.me/RSS/MyBangumi?token=xxx # 修改为你的蜜柑订阅地址
+       # - https://mikanani.me/RSS/MyBangumi?token=xxx2 # 多条RSS订阅链接情况
    
    filters:
      - 非合集
    ```
 4. 运行代码：`python -m alist_mikananirss --config /path/to/config.yaml`  
 5. Enjoy
-   
-更多的运行方法详见[使用文档](https://github.com/TwooSix/Alist-MikananiRss/wiki/%E5%BF%AB%E9%80%9F%E5%BC%80%E5%A7%8B)
+
 
 ## 重命名效果展示
 <div align=center>
