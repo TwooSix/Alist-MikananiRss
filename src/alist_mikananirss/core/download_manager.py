@@ -160,7 +160,7 @@ class DownloadManager(metaclass=Singleton):
             )
         except Exception as e:
             logger.error(f"Error when getting transfer task list: {e}")
-            raise RuntimeError(f"Error when getting transfer task list: {e}")
+            raise
         for transfer_task in transfer_task_list:
             # 查找第一个，未被标记过的番剧名相同的视频文件传输任务作为下载任务对应的传输任务
             if (
@@ -287,7 +287,7 @@ class DownloadManager(metaclass=Singleton):
                     download_path, urls
                 )
                 logger.info(
-                    f"Added download task: {download_path} {len(urls)} resources"
+                    f"Start to download {len(urls)} resources to [{download_path}]"
                 )
             except Exception as e:
                 logger.error(f"Error when add offline download task: {e}")

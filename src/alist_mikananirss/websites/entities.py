@@ -26,6 +26,9 @@ class ResourceInfo:
     def __hash__(self):
         return hash(self.resource_title)
 
+    def __str__(self) -> str:
+        return f"ResourceInfo({self.resource_title} / {self.anime_name} S{self.season:02d}E{self.episode:02d} [{self.fansub}][{self.quality}])"
+
 
 @dataclass
 class FeedEntry:
