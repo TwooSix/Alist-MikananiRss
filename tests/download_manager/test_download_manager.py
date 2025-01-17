@@ -187,7 +187,7 @@ async def test_download_failed(download_manager, test_resources):
             )
             assert download_manager.db.insert_resource_info.call_count == 1
             calls = download_manager.db.insert_resource_info.call_args_list
-            calls[0].args[0] == test_resources[0]
+            assert calls[0].args[0] == test_resources[0]
 
 
 @pytest.mark.asyncio
