@@ -155,10 +155,10 @@ class AlistDownloadTask(AlistTask):
 
 class AlistTaskList:
 
-    def __init__(self, tasks: list[AlistTask] = list()):
-        self.tasks = tasks
+    def __init__(self, tasks: list[AlistTask] = None):
+        self.tasks = tasks or []
         self.id_map = {}
-        for task in tasks:
+        for task in self.tasks:
             self.id_map[task.tid] = task
 
     def add_task(self, task: AlistTask):
