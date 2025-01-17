@@ -11,7 +11,7 @@ from alist_mikananirss.alist.tasks import (
     AlistDownloaderType,
     AlistDownloadTask,
     AlistTask,
-    AlistTaskCollection,
+    AlistTaskList,
     AlistTaskState,
     AlistTaskStatus,
     AlistTaskType,
@@ -73,7 +73,7 @@ class Alist:
         save_path: str,
         urls: list[str],
         policy: AlistDeletePolicy = AlistDeletePolicy.DeleteAlways,
-    ) -> "AlistTaskCollection":
+    ) -> list[AlistDownloadTask]:
         response_data = await self._api_call(
             "POST",
             "api/fs/add_offline_download",
@@ -84,9 +84,7 @@ class Alist:
                 "tool": self.downloader.value,
             },
         )
-        return AlistTaskCollection(
-            [AlistDownloadTask.from_json(task) for task in response_data["tasks"]]
-        )
+        return [AlistDownloadTask.from_json(task) for task in response_data["tasks"]]
 
     async def upload(self, save_path: str, file_path: str) -> bool:
         """upload local file to Alist.
@@ -149,7 +147,7 @@ class Alist:
 
     async def _fetch_tasks(
         self, task_type: AlistTaskType, status: AlistTaskStatus
-    ) -> "AlistTaskCollection":
+    ) -> AlistTaskList:
         json_data = await self._api_call(
             "GET", f"/api/admin/task/{task_type.value}/{status.value}"
         )
@@ -160,11 +158,11 @@ class Alist:
             task_class = AlistDownloadTask
 
         tasks = [task_class.from_json(task) for task in json_data] if json_data else []
-        return AlistTaskCollection(tasks)
+        return AlistTaskList(tasks)
 
     async def get_task_list(
         self, task_type: AlistTaskType, status: Optional[AlistTaskState] = None
-    ) -> AlistTaskCollection:
+    ) -> AlistTaskList:
         """
         Get Alist task list.
 
@@ -201,5 +199,3 @@ class Alist:
         await self._api_call(
             "POST", "api/fs/rename", json={"path": path, "name": new_name}
         )
-
-        return True

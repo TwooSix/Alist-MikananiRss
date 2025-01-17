@@ -27,9 +27,20 @@ class ResourceInfo:
         return hash(self.resource_title)
 
     def __str__(self) -> str:
-        season_format = f"{self.season:02d}" if self.season else "N/A"
-        episode_format = f"{self.episode:02d}" if self.episode else "N/A"
-        return f"ResourceInfo({self.resource_title} / {self.anime_name} S{season_format}E{episode_format} [{self.fansub}][{self.quality}])"
+        fields = [
+            ("Title", self.resource_title),
+            ("Anime", self.anime_name),
+            ("Season", f"{self.season:02d}" if self.season is not None else "--"),
+            ("Episode", f"{self.episode:02d}" if self.episode is not None else "--"),
+            ("Fansub", self.fansub or "--"),
+            ("Quality", str(self.quality) if self.quality else "--"),
+            ("Language", self.language or "--"),
+            ("Date", self.published_date or "--"),
+            ("Version", self.version),
+            ("URL", self.torrent_url),
+        ]
+
+        return "\n".join(f"{name:8}: {value}" for name, value in fields)
 
 
 @dataclass

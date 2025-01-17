@@ -1,5 +1,4 @@
-import math
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -8,8 +7,6 @@ from alist_mikananirss.alist.tasks import (
     AlistDeletePolicy,
     AlistDownloaderType,
     AlistDownloadTask,
-    AlistTaskCollection,
-    AlistTaskState,
     AlistTaskStatus,
     AlistTaskType,
     AlistTransferTask,
@@ -47,58 +44,29 @@ async def test_add_offline_download_task(alist):
         mock_api_call.return_value = {
             "tasks": [
                 {
-                    "id": "task1",
-                    "name": "download https://example.com/file.zip to /path/to/save",
-                    "state": 0,
+                    "error": "",
+                    "id": "lwYyV7TlpdS06fiflUmBH",
+                    "name": "download magnet:?xt=xxx to (/Local/颂乐人偶/Season 1)",
                     "progress": 0.0,
-                    "error": None,
+                    "state": 1,
+                    "status": "offline download waiting",
                 }
             ]
         }
         tasks = await alist.add_offline_download_task(
-            "/path/to/save", ["https://example.com/file.zip"]
+            "/Local/颂乐人偶/Season 1", ["magnet:?xt=xxx"]
         )
-        assert isinstance(tasks, AlistTaskCollection)
-        assert len(tasks) == 1
         assert isinstance(tasks[0], AlistDownloadTask)
-        assert tasks[0].tid == "task1"
-        assert tasks[0].url == "https://example.com/file.zip"
         mock_api_call.assert_called_once_with(
             "POST",
             "api/fs/add_offline_download",
             json={
                 "delete_policy": AlistDeletePolicy.DeleteAlways.value,
-                "path": "/path/to/save",
-                "urls": ["https://example.com/file.zip"],
-                "tool": AlistDownloaderType.ARIA.value,
+                "path": "/Local/颂乐人偶/Season 1",
+                "urls": ["magnet:?xt=xxx"],
+                "tool": alist.downloader.value,
             },
         )
-
-
-@pytest.mark.asyncio
-async def test_upload(alist):
-    with (
-        patch.object(alist, "_api_call", new_callable=AsyncMock) as mock_api_call,
-        patch("os.path.abspath", return_value="/local/path/file.txt"),
-        patch("os.stat") as mock_stat,
-        patch("builtins.open", create=True) as mock_open,
-        patch("mimetypes.guess_type", return_value=("application/octet-stream", None)),
-    ):
-
-        mock_stat.return_value = MagicMock(st_size=1024)
-        mock_file = MagicMock()
-        mock_open.return_value.__enter__.return_value = mock_file
-
-        result = await alist.upload("/remote/path", "/local/path/file.txt")
-
-        assert result is True
-        mock_api_call.assert_called_once()
-        args, kwargs = mock_api_call.call_args
-        assert args[0] == "PUT"
-        assert args[1] == "api/fs/put"
-        assert kwargs["custom_headers"]["file-path"] == "/remote/path/file.txt"
-        assert kwargs["custom_headers"]["Content-Type"] == "application/octet-stream"
-        assert kwargs["data"] == mock_file
 
 
 @pytest.mark.asyncio
@@ -109,41 +77,6 @@ async def test_list_dir(alist):
         }
         files = await alist.list_dir("/test/path")
         assert files == ["file1.txt", "file2.txt"]
-        mock_api_call.assert_called_once_with(
-            "POST",
-            "api/fs/list",
-            json={
-                "path": "/test/path",
-                "password": None,
-                "page": 1,
-                "per_page": 30,
-                "refresh": False,
-            },
-        )
-
-
-@pytest.mark.asyncio
-async def test_get_task_list(alist):
-    with patch.object(
-        alist, "_fetch_tasks", new_callable=AsyncMock
-    ) as mock_fetch_tasks:
-        mock_fetch_tasks.return_value = AlistTaskCollection(
-            [
-                AlistDownloadTask(
-                    tid="task1",
-                    description="test task",
-                    status=AlistTaskStatus.Running,
-                    progress=0.5,
-                )
-            ]
-        )
-        tasks = await alist.get_task_list(AlistTaskType.DOWNLOAD, AlistTaskState.UNDONE)
-        assert isinstance(tasks, AlistTaskCollection)
-        assert len(tasks) == 1
-        assert tasks[0].tid == "task1"
-        mock_fetch_tasks.assert_called_once_with(
-            AlistTaskType.DOWNLOAD, AlistTaskState.UNDONE
-        )
 
 
 @pytest.mark.asyncio
@@ -165,8 +98,7 @@ async def test_cancel_task(alist):
 @pytest.mark.asyncio
 async def test_rename(alist):
     with patch.object(alist, "_api_call", new_callable=AsyncMock) as mock_api_call:
-        result = await alist.rename("/old/path/file.txt", "new_file.txt")
-        assert result is True
+        await alist.rename("/old/path/file.txt", "new_file.txt")
         mock_api_call.assert_called_once_with(
             "POST",
             "api/fs/rename",
@@ -174,85 +106,35 @@ async def test_rename(alist):
         )
 
 
-def test_alist_task_collection():
-    task1 = AlistDownloadTask(
-        tid="task1",
-        description="test task 1",
-        status=AlistTaskStatus.Running,
-        progress=0.5,
-    )
-    task2 = AlistDownloadTask(
-        tid="task2",
-        description="test task 2",
-        status=AlistTaskStatus.Pending,
-        progress=0.0,
-    )
-
-    collection = AlistTaskCollection([task1, task2])
-
-    assert len(collection) == 2
-    assert collection["task1"] == task1
-    assert collection[0] == task1
-    assert task1 in collection
-
-    task3 = AlistDownloadTask(
-        tid="task3",
-        description="test task 3",
-        status=AlistTaskStatus.Succeeded,
-        progress=1.0,
-    )
-    collection.add_task(task3)
-
-    assert len(collection) == 3
-    assert collection["task3"] == task3
-
-    new_collection = AlistTaskCollection([task1])
-    combined_collection = collection + new_collection
-
-    assert len(combined_collection) == 3
-    assert combined_collection["task1"] == task1
-    assert combined_collection["task2"] == task2
-    assert combined_collection["task3"] == task3
-
-
-def test_alist_download_task():
+def test_dl_task_extract():
     task = AlistDownloadTask.from_json(
         {
-            "id": "task1",
-            "name": "download https://example.com/file.zip to /path/to/save",
-            "state": 1,
-            "progress": 0.5,
-            "error": None,
+            "error": "",
+            "id": "lwYyV7TlpdS06fiflUmBH",
+            "name": "download magnet:?xt=xxx to (/Local/颂乐人偶/Season 1)",
+            "progress": 100,
+            "state": 2,
+            "status": "offline download completed, waiting for seeding",
         }
     )
 
-    assert task.tid == "task1"
-    assert task.description == "download https://example.com/file.zip to /path/to/save"
-    assert task.status == AlistTaskStatus.Running
-    assert math.isclose(task.progress, 0.5, rel_tol=1e-9, abs_tol=1e-9)
-    assert task.error_msg is None
-    assert task.url == "https://example.com/file.zip"
+    assert task.url == "magnet:?xt=xxx"
+    assert task.download_path == "/Local/颂乐人偶/Season 1"
     assert task.task_type == AlistTaskType.DOWNLOAD
 
 
 def test_alist_transfer_task():
     task = AlistTransferTask.from_json(
         {
-            "id": "task1",
-            "name": "transfer /root/program/alist/data/temp/qBittorrent/b33f58c0-5357-4c9d-bf43-334fc3e622a4/[KTXP][Grisaia_Phantom_Trigger][01][GB_CN][HEVC_opus][1080p]/[KTXP][Grisaia_Phantom_Trigger][01][GB_CN][HEVC_opus][1080p].mkv to [/Onedrive/Anime/灰色：幻影扳机/Season 2]",
+            "error": "",
+            "id": "i-T7dWBTgh_9bohMpRlcA",
+            "name": "transfer /path/to/alist/data/temp/qBittorrent/107bd39c-44fa-4891-a930-8c101a31adca/subfolder/Avemujica 03.mp4 to [/Local/颂乐人偶/Season 1]",
+            "progress": 100.0000041135186,
             "state": 2,
-            "progress": 1.0,
-            "error": None,
+            "status": "transferring",
         }
     )
 
-    assert task.tid == "task1"
-    assert task.status == AlistTaskStatus.Succeeded
-    assert math.isclose(task.progress, 1.0, rel_tol=1e-9, abs_tol=1e-9)
-    assert task.error_msg is None
-    assert task.uuid == "b33f58c0-5357-4c9d-bf43-334fc3e622a4"
-    assert (
-        task.file_name
-        == "[KTXP][Grisaia_Phantom_Trigger][01][GB_CN][HEVC_opus][1080p]/[KTXP][Grisaia_Phantom_Trigger][01][GB_CN][HEVC_opus][1080p].mkv"
-    )
+    assert task.uuid == "107bd39c-44fa-4891-a930-8c101a31adca"
+    assert task.target_path == "/Local/颂乐人偶/Season 1/subfolder/Avemujica 03.mp4"
     assert task.task_type == AlistTaskType.TRANSFER

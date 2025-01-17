@@ -4,7 +4,7 @@ import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Union
+from typing import Optional
 
 from loguru import logger
 
@@ -48,8 +48,8 @@ class AlistTaskState(Enum):
     UNDONE = "undone"
 
 
-DOWNLOAD_DES_PATTERN = re.compile(r"download\s+(.+?)\s+to")
-TEMP_FILEPATH_PATTERN = re.compile(r"transfer (.+?) to \[")
+DOWNLOAD_DES_PATTERN = re.compile(r"download\s+(.+?)\s+to \((.+?)\)")
+TRANSFER_DES_PATTERN = re.compile(r"transfer (.+?) to \[(.+?)\]")
 
 
 class AlistTaskError(Exception):
@@ -80,16 +80,15 @@ class AlistTask(ABC):
         try:
             status = AlistTaskStatus(state_str)
         except ValueError:
-            logger.warning(f"Unknown task status {state_str} of task {tid}")
+            logger.warning(f'Unknown task status "{state_str}" of task {tid}')
             status = AlistTaskStatus.UNKNOWN
         return cls(tid, description, status, progress, error_str)
 
 
 @dataclass
 class AlistTransferTask(AlistTask):
-    temp_filepath: str = ""
     uuid: str = ""
-    file_name: str = ""
+    target_path: str = ""
 
     def __post_init__(self):
         self.task_type = AlistTaskType.TRANSFER
@@ -97,15 +96,18 @@ class AlistTransferTask(AlistTask):
     @classmethod
     def from_json(cls, json_data: dict) -> AlistTransferTask:
         task = super().from_json(json_data)
-        match = re.search(TEMP_FILEPATH_PATTERN, task.description)
+        match = re.search(TRANSFER_DES_PATTERN, task.description)
         if match:
             temp_filepath = match.group(1)
+            target_dir = match.group(2)
             elements = temp_filepath.split("/")
             uuid = elements[elements.index("temp") + 2]
-            file_name = temp_filepath[temp_filepath.rfind(uuid) + len(uuid) + 1 :]
+
+            sub_path = temp_filepath[temp_filepath.rfind(uuid) + len(uuid) + 1 :]
+            target_file_path = f"{target_dir}/{sub_path}"
         else:
             raise InvalidTaskDescription(
-                f"Failed to get uuid and file name from task description: {task.description}"
+                f"Failed to get uuid and target filepath from task description: {task.description}"
             )
 
         _instance = cls(
@@ -115,7 +117,7 @@ class AlistTransferTask(AlistTask):
             progress=task.progress,
             error_msg=task.error_msg,
             uuid=uuid,
-            file_name=file_name,
+            target_path=target_file_path,
         )
         return _instance
 
@@ -123,6 +125,7 @@ class AlistTransferTask(AlistTask):
 @dataclass
 class AlistDownloadTask(AlistTask):
     url: str = ""
+    download_path: str = ""
 
     def __post_init__(self):
         self.task_type = AlistTaskType.DOWNLOAD
@@ -133,6 +136,7 @@ class AlistDownloadTask(AlistTask):
         match = re.match(DOWNLOAD_DES_PATTERN, task.description)
         if match:
             url = match.group(1)
+            download_path = match.group(2)
         else:
             raise InvalidTaskDescription(
                 f"Failed to get url from task description: {task.description}"
@@ -144,40 +148,40 @@ class AlistDownloadTask(AlistTask):
             progress=task.progress,
             error_msg=task.error_msg,
             url=url,
+            download_path=download_path,
         )
         return _instance
 
 
-class AlistTaskCollection:
-    def __init__(
-        self, tasks_list: list[Union[AlistTransferTask, AlistDownloadTask]] = None
-    ):
-        self.tasks = {}
-        if tasks_list:
-            self.tasks = {task.tid: task for task in tasks_list}
+class AlistTaskList:
 
-    def add_task(self, task: Union[AlistTransferTask, AlistDownloadTask]) -> None:
-        self.tasks[task.tid] = task
+    def __init__(self, tasks: list[AlistTask] = None):
+        self.tasks = tasks or []
+        self.id_map = {}
+        for task in self.tasks:
+            self.id_map[task.tid] = task
 
-    def __add__(self, other: "AlistTaskCollection") -> "AlistTaskCollection":
-        if not isinstance(other, AlistTaskCollection):
-            raise TypeError("Operand must be an instance of AlistTaskCollection")
-        new_tasks = self.tasks.copy()
-        new_tasks.update(other.tasks)
-        return AlistTaskCollection(list(new_tasks.values()))
+    def add_task(self, task: AlistTask):
+        self.tasks.append(task)
+        self.id_map[task.tid] = task
 
-    def __getitem__(
-        self, index: Union[int, str]
-    ) -> Optional[Union[AlistDownloadTask, AlistTransferTask]]:
-        if isinstance(index, int):
-            return list(self.tasks.values())[index]
-        return self.tasks.get(index)
+    def __iter__(self):
+        return iter(self.tasks)
 
-    def __contains__(self, task: AlistTask) -> bool:
-        return task.tid in self.tasks
+    def __add__(self, other: AlistTaskList):
+        self.tasks.extend(other.tasks)
+        self.id_map.update(other.id_map)
+        return self
+
+    def __getitem__(self, idx: int) -> AlistTask:
+        return self.tasks[idx]
 
     def __len__(self) -> int:
         return len(self.tasks)
 
-    def __iter__(self):
-        return iter(self.tasks.values())
+    def __contains__(self, tid: str) -> bool:
+        return tid in self.id_map
+
+    def get_by_id(self, tid: str) -> Optional[AlistTask]:
+        """Get task by id, return None if not found."""
+        return self.id_map.get(tid, None)
