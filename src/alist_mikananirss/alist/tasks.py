@@ -6,8 +6,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 
-from loguru import logger
-
 
 # https://github.com/alist-org/alist/blob/86b35ae5cfec400871072356fec4dea88303195d/pkg/task/task.go#L27
 class AlistTaskStatus(Enum):
@@ -65,6 +63,7 @@ class AlistTask(ABC):
     tid: str
     description: str
     status: AlistTaskStatus
+    status_str: str
     progress: float
     error_msg: Optional[str] = None
     task_type: AlistTaskType = AlistTaskType.UNKNOWN
@@ -74,15 +73,18 @@ class AlistTask(ABC):
     def from_json(cls, json_data: dict) -> AlistTask:
         tid = json_data["id"]
         description = json_data["name"]
-        state_str = json_data["state"]
+        status = AlistTaskStatus(json_data["state"])
+        status_str = json_data["status"]
         progress = json_data["progress"]
         error_str = json_data["error"]
-        try:
-            status = AlistTaskStatus(state_str)
-        except ValueError:
-            logger.warning(f'Unknown task status "{state_str}" of task {tid}')
-            status = AlistTaskStatus.UNKNOWN
-        return cls(tid, description, status, progress, error_str)
+        return cls(
+            tid=tid,
+            description=description,
+            status=status,
+            status_str=status_str,
+            progress=progress,
+            error_msg=error_str,
+        )
 
 
 @dataclass
@@ -114,6 +116,7 @@ class AlistTransferTask(AlistTask):
             tid=task.tid,
             description=task.description,
             status=task.status,
+            status_str=task.status_str,
             progress=task.progress,
             error_msg=task.error_msg,
             uuid=uuid,
@@ -133,6 +136,12 @@ class AlistDownloadTask(AlistTask):
     @classmethod
     def from_json(cls, json_data: dict) -> AlistDownloadTask:
         task = super().from_json(json_data)
+        download_status = task.status
+        if (
+            download_status == AlistTaskStatus.Running
+            and "offline download completed" in task.status_str
+        ):
+            download_status = AlistTaskStatus.Succeeded
         match = re.match(DOWNLOAD_DES_PATTERN, task.description)
         if match:
             url = match.group(1)
@@ -144,7 +153,8 @@ class AlistDownloadTask(AlistTask):
         _instance = cls(
             tid=task.tid,
             description=task.description,
-            status=task.status,
+            status=download_status,
+            status_str=task.status_str,
             progress=task.progress,
             error_msg=task.error_msg,
             url=url,
