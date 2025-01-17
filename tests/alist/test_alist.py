@@ -7,7 +7,6 @@ from alist_mikananirss.alist.tasks import (
     AlistDeletePolicy,
     AlistDownloaderType,
     AlistDownloadTask,
-    AlistTaskStatus,
     AlistTaskType,
     AlistTransferTask,
 )
@@ -82,16 +81,19 @@ async def test_list_dir(alist):
 @pytest.mark.asyncio
 async def test_cancel_task(alist):
     with patch.object(alist, "_api_call", new_callable=AsyncMock) as mock_api_call:
-        task = AlistDownloadTask(
-            tid="task1",
-            description="test task",
-            status=AlistTaskStatus.Running,
-            progress=0.5,
-        )
+        json_data = {
+            "error": "",
+            "id": "tid1",
+            "name": "download xxx to (xxx)",
+            "progress": 50.0,
+            "state": 1,
+            "status": "active",
+        }
+        task = AlistDownloadTask.from_json(json_data)
         result = await alist.cancel_task(task)
         assert result is True
         mock_api_call.assert_called_once_with(
-            "POST", "/api/admin/task/offline_download/cancel?tid=task1"
+            "POST", f"/api/admin/task/offline_download/cancel?tid={json_data['id']}"
         )
 
 
