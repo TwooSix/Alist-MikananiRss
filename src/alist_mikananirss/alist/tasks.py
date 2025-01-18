@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import re
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from abc import ABC
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
@@ -63,42 +63,40 @@ class AlistTask(ABC):
     tid: str
     description: str
     status: AlistTaskStatus
-    status_str: str
+    status_msg: str
     progress: float
-    error_msg: Optional[str] = None
-    task_type: AlistTaskType = AlistTaskType.UNKNOWN
+    error_msg: str = ""
+    task_type: AlistTaskType = field(init=False)
 
     @classmethod
-    @abstractmethod
-    def from_json(cls, json_data: dict) -> AlistTask:
+    def from_json(cls, json_data: dict) -> "AlistTask":
+        """Creates an AlistTask instance from a JSON dictionary."""
         tid = json_data["id"]
         description = json_data["name"]
         status = AlistTaskStatus(json_data["state"])
-        status_str = json_data["status"]
+        status_msg = json_data["status"]
         progress = json_data["progress"]
-        error_str = json_data["error"]
+        error_msg = json_data.get("error")
+
         return cls(
             tid=tid,
             description=description,
             status=status,
-            status_str=status_str,
+            status_msg=status_msg,
             progress=progress,
-            error_msg=error_str,
+            error_msg=error_msg,
         )
 
 
 @dataclass
 class AlistTransferTask(AlistTask):
-    uuid: str = ""
-    target_path: str = ""
+    uuid: str = field(init=False)
+    target_path: str = field(init=False)
+    task_type: AlistTaskType = field(default=AlistTaskType.TRANSFER, init=False)
 
     def __post_init__(self):
         self.task_type = AlistTaskType.TRANSFER
-
-    @classmethod
-    def from_json(cls, json_data: dict) -> AlistTransferTask:
-        task = super().from_json(json_data)
-        match = re.search(TRANSFER_DES_PATTERN, task.description)
+        match = re.search(TRANSFER_DES_PATTERN, self.description)
         if match:
             temp_filepath = match.group(1)
             target_dir = match.group(2)
@@ -109,58 +107,37 @@ class AlistTransferTask(AlistTask):
             target_file_path = f"{target_dir}/{sub_path}"
         else:
             raise InvalidTaskDescription(
-                f"Failed to get uuid and target filepath from task description: {task.description}"
+                f"Failed to get uuid and target filepath from task description: {self.description}"
             )
-
-        _instance = cls(
-            tid=task.tid,
-            description=task.description,
-            status=task.status,
-            status_str=task.status_str,
-            progress=task.progress,
-            error_msg=task.error_msg,
-            uuid=uuid,
-            target_path=target_file_path,
-        )
-        return _instance
+        self.uuid = uuid
+        self.target_path = target_file_path
 
 
 @dataclass
 class AlistDownloadTask(AlistTask):
-    url: str = ""
-    download_path: str = ""
+    url: str = field(init=False)
+    download_path: str = field(init=False)
+    task_type: AlistTaskType = field(default=AlistTaskType.DOWNLOAD, init=False)
 
     def __post_init__(self):
-        self.task_type = AlistTaskType.DOWNLOAD
-
-    @classmethod
-    def from_json(cls, json_data: dict) -> AlistDownloadTask:
-        task = super().from_json(json_data)
-        download_status = task.status
-        if (
-            download_status == AlistTaskStatus.Running
-            and "offline download completed" in task.status_str
-        ):
-            download_status = AlistTaskStatus.Succeeded
-        match = re.match(DOWNLOAD_DES_PATTERN, task.description)
+        match = re.match(DOWNLOAD_DES_PATTERN, self.description)
         if match:
             url = match.group(1)
             download_path = match.group(2)
         else:
             raise InvalidTaskDescription(
-                f"Failed to get url from task description: {task.description}"
+                f"Failed to get url and download path from task description: {self.description}"
             )
-        _instance = cls(
-            tid=task.tid,
-            description=task.description,
-            status=download_status,
-            status_str=task.status_str,
-            progress=task.progress,
-            error_msg=task.error_msg,
-            url=url,
-            download_path=download_path,
-        )
-        return _instance
+        # If seeding, the task status will still be Running
+        # We need to change it to Succeeded manually to ensure the task is marked as completed
+        if (
+            self.status == AlistTaskStatus.Running
+            and "offline download completed" in self.status_msg
+        ):
+            self.status = AlistTaskStatus.Succeeded
+
+        self.url = url
+        self.download_path = download_path
 
 
 class AlistTaskList:

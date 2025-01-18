@@ -156,7 +156,7 @@ class AppConfig:
             },
             "alist": {
                 "base_url": self.alist_base_url,
-                "token": self.alist_token,
+                "token": "***" if self.alist_token else None,
                 "downloader": self.alist_downloader,
                 "download_path": self.alist_download_path,
             },
@@ -167,15 +167,17 @@ class AppConfig:
             },
             "notification": {
                 "telegram": {
-                    "bot_token": self.notification_telegram_bot_token,
-                    "user_id": self.notification_telegram_user_id,
+                    "bot_token": "***" if self.notification_telegram_bot_token else "",
+                    "user_id": "***" if self.notification_telegram_user_id else "",
                 },
-                "pushplus": {"token": self.notification_pushplus_token},
+                "pushplus": {
+                    "token": "***" if self.notification_pushplus_token else ""
+                },
                 "interval_time": self.notification_interval_time,
             },
             "rename": {
                 "chatgpt": {
-                    "api_key": self.rename_chatgpt_api_key,
+                    "api_key": "***" if self.rename_chatgpt_api_key else "",
                     "base_url": self.rename_chatgpt_base_url,
                     "model": self.rename_chatgpt_model,
                 },
@@ -187,7 +189,7 @@ class AppConfig:
             },
             "bot_assistant": {
                 "telegram": {
-                    "bot_token": self.bot_assistant_telegram_bot_token,
+                    "bot_token": "***" if self.bot_assistant_telegram_bot_token else "",
                 },
             },
             "dev": {"log_level": self.dev_log_level},

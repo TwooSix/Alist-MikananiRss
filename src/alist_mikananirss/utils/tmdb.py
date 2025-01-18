@@ -11,7 +11,7 @@ class TMDBClient:
     async def search_tv(self, query: str):
         endpoint = f"{self.base_url}/search/tv"
 
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(trust_env=True) as session:
             async with session.get(
                 endpoint,
                 params={
