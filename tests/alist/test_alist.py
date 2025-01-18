@@ -7,6 +7,7 @@ from alist_mikananirss.alist.tasks import (
     AlistDeletePolicy,
     AlistDownloaderType,
     AlistDownloadTask,
+    AlistTaskStatus,
     AlistTaskType,
     AlistTransferTask,
 )
@@ -116,7 +117,7 @@ def test_dl_task_extract():
             "name": "download magnet:?xt=xxx to (/Local/颂乐人偶/Season 1)",
             "progress": 100,
             "state": 2,
-            "status": "offline download completed, waiting for seeding",
+            "status": "offline download completed, maybe transferring",
         }
     )
 
@@ -124,8 +125,21 @@ def test_dl_task_extract():
     assert task.download_path == "/Local/颂乐人偶/Season 1"
     assert task.task_type == AlistTaskType.DOWNLOAD
 
+    # seeding situation
+    task2 = AlistDownloadTask.from_json(
+        {
+            "error": "",
+            "id": "lwYyV7TlpdS06fiflUmBH",
+            "name": "download magnet:?xt=xxx to (/Local/颂乐人偶/Season 1)",
+            "progress": 100,
+            "state": 1,
+            "status": "offline download completed, waiting for seeding",
+        }
+    )
+    assert task2.status == AlistTaskStatus.Succeeded
 
-def test_alist_transfer_task():
+
+def test_tf_task_extract():
     task = AlistTransferTask.from_json(
         {
             "error": "",
