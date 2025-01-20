@@ -8,8 +8,8 @@ from alist_mikananirss.extractor import (  # noqa
     ResourceTitleExtractResult,
     VideoQuality,
 )
-from alist_mikananirss.websites import FeedEntry, ResourceInfo
 from alist_mikananirss.websites.acgrip import AcgRip
+from alist_mikananirss.websites.models import FeedEntry, ResourceInfo
 
 
 @pytest.fixture

@@ -3,8 +3,8 @@ from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
-from alist_mikananirss.alist.api import AlistDownloaderType
-from alist_mikananirss.bot.pushplus_bot import PushPlusChannel
+from alist_mikananirss.alist import AlistDownloaderType
+from alist_mikananirss.bot import PushPlusChannel
 
 from ..utils import Singleton
 from .config_loader import ConfigLoader

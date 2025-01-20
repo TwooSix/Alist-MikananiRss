@@ -3,9 +3,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from alist_mikananirss import NotificationSender
 from alist_mikananirss.bot import NotificationBot
-from alist_mikananirss.core import NotificationSender
-from alist_mikananirss.websites import ResourceInfo
+from alist_mikananirss.websites.models import ResourceInfo
 
 
 @pytest.fixture

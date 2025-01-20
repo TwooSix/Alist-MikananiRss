@@ -5,7 +5,9 @@ import bs4
 from async_lru import alru_cache
 
 from alist_mikananirss.extractor import Extractor
-from alist_mikananirss.websites import FeedEntry, ResourceInfo, Website
+from alist_mikananirss.websites.models import FeedEntry, ResourceInfo
+
+from .base import Website
 
 
 @dataclass

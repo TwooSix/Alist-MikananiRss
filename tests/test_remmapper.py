@@ -2,9 +2,8 @@ from copy import deepcopy
 
 import pytest
 
-from alist_mikananirss.core import Remapper
-from alist_mikananirss.core.remapper import RemapFrom, RemapTo
-from alist_mikananirss.websites import ResourceInfo
+from alist_mikananirss import RemapFrom, Remapper, RemapTo
+from alist_mikananirss.websites.models import ResourceInfo
 
 
 @pytest.fixture

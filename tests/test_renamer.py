@@ -3,10 +3,9 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from loguru import logger
 
+from alist_mikananirss import AnimeRenamer
 from alist_mikananirss.alist import Alist
-from alist_mikananirss.core import AnimeRenamer
-from alist_mikananirss.websites import ResourceInfo
-from alist_mikananirss.websites.entities import VideoQuality
+from alist_mikananirss.websites.models import ResourceInfo, VideoQuality
 
 
 @pytest.fixture(autouse=True)

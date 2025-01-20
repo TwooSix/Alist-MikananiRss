@@ -8,8 +8,8 @@ from alist_mikananirss.extractor import (
     ResourceTitleExtractResult,
     VideoQuality,
 )
-from alist_mikananirss.websites import FeedEntry, ResourceInfo
 from alist_mikananirss.websites.mikan import Mikan, MikanHomePageInfo
+from alist_mikananirss.websites.models import FeedEntry, ResourceInfo
 
 
 @pytest.fixture

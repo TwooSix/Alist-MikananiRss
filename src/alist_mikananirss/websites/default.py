@@ -4,9 +4,9 @@ from loguru import logger
 
 from alist_mikananirss import utils
 from alist_mikananirss.extractor import Extractor
+from alist_mikananirss.websites.models import FeedEntry, ResourceInfo
 
 from .base import Website
-from .entities import FeedEntry, ResourceInfo
 
 
 class DefaultWebsite(Website):

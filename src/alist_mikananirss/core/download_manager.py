@@ -22,7 +22,7 @@ from alist_mikananirss.alist.tasks import (
     AlistTransferTask,
 )
 from alist_mikananirss.common.database import SubscribeDatabase
-from alist_mikananirss.websites import ResourceInfo
+from alist_mikananirss.websites.models import ResourceInfo
 
 from ..utils import Singleton
 from .notification_sender import NotificationSender

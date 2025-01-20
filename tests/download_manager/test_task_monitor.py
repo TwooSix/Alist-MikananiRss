@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from tenacity import RetryError, wait_none
 
+from alist_mikananirss import TaskMonitor
 from alist_mikananirss.alist import Alist
 from alist_mikananirss.alist.tasks import (
     AlistDownloadTask,
@@ -10,7 +11,6 @@ from alist_mikananirss.alist.tasks import (
     AlistTaskStatus,
     AlistTaskType,
 )
-from alist_mikananirss.core.download_manager import TaskMonitor
 
 
 @pytest.fixture

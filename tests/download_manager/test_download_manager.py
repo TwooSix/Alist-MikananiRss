@@ -7,18 +7,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from tenacity import wait_none
 
-from alist_mikananirss.alist import Alist
-from alist_mikananirss.alist.api import AlistClientError
-from alist_mikananirss.alist.tasks import (
+from alist_mikananirss import AnimeDownloadTaskInfo, DownloadManager, SubscribeDatabase
+from alist_mikananirss.alist import (
+    Alist,
+    AlistClientError,
     AlistDownloadTask,
     AlistTaskList,
     AlistTaskStatus,
     AlistTransferTask,
 )
-from alist_mikananirss.common.database import SubscribeDatabase
-from alist_mikananirss.core import DownloadManager
-from alist_mikananirss.core.download_manager import AnimeDownloadTaskInfo
-from alist_mikananirss.websites import ResourceInfo
+from alist_mikananirss.websites.models import ResourceInfo
 
 
 @pytest.fixture

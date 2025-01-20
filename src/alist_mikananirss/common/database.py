@@ -4,7 +4,7 @@ from datetime import datetime
 import aiosqlite
 from loguru import logger
 
-from alist_mikananirss.websites import ResourceInfo
+from alist_mikananirss.websites.models import ResourceInfo
 
 db_dirpath = "data"
 os.makedirs(db_dirpath, exist_ok=True)

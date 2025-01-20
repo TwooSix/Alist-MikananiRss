@@ -1,4 +1,4 @@
-from alist_mikananirss.websites import ResourceInfo
+from alist_mikananirss.websites.models import ResourceInfo
 
 from . import BotBase
 

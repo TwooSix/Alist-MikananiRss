@@ -1,8 +1,9 @@
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-from alist_mikananirss import RssMonitor
-from alist_mikananirss.websites import ResourceInfo
+from alist_mikananirss.websites.models import ResourceInfo
+
+from .rss_monitor import RssMonitor
 
 
 class BotAssistant:

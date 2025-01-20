@@ -2,7 +2,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from alist_mikananirss.websites.entities import VideoQuality
+from alist_mikananirss.websites.models import VideoQuality
 
 
 class TMDBSearchParam(BaseModel):

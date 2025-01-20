@@ -5,7 +5,7 @@ from loguru import logger
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from alist_mikananirss.bot import NotificationBot, NotificationMsg
-from alist_mikananirss.websites import ResourceInfo
+from alist_mikananirss.websites.models import ResourceInfo
 
 from ..utils import Singleton
 

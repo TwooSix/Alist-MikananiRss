@@ -3,8 +3,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from alist_mikananirss.core import DownloadManager
-from alist_mikananirss.websites.entities import ResourceInfo
+from alist_mikananirss import DownloadManager
+from alist_mikananirss.websites.models import ResourceInfo
 
 
 @pytest.fixture
