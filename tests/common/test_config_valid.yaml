@@ -18,7 +18,7 @@ mikan:
 notification:
   telegram:
     bot_token: your_token
-    user_id: your_id
+    user_id: 12345678
 
 rename: 
   chatgpt: 
@@ -27,4 +27,4 @@ rename:
     model: gpt-4o-mini
   rename_format: "{name} S{season:02d}E{episode:02d} {fansub}"
   remap: 
-    enable: trues
+    enable: true

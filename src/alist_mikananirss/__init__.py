@@ -74,7 +74,7 @@ async def run():
     init_logging(cfg)
 
     logger.info("Loaded config Successfully")
-    logger.info(f"Config: \n{cfg}")
+    logger.info(f"Config: \n{cfg.format_output_yaml()}")
 
     # proxy
     init_proxies(cfg)
