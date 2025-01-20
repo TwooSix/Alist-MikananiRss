@@ -5,7 +5,7 @@ from async_lru import alru_cache
 class TMDBClient:
     def __init__(self, api_key: str = "32b19d6a05b512190a056fa4e747cbbc"):
         self.api_key = api_key
-        self.base_url = "https://api.themoviedb.org/3"
+        self.base_url = "https://api.tmdb.org/3"
 
     @alru_cache(maxsize=1024)
     async def search_tv(self, query: str):
