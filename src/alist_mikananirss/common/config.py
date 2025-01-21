@@ -191,8 +191,10 @@ class AppConfig(BaseModel):
 
 
 class ConfigManager(metaclass=Singleton):
-    def __init__(self, config_path):
-        self.config: AppConfig = self.__load_config(config_path)
+    def __init__(self, config_path=None):
+        if config_path:
+            self.config: AppConfig = self.__load_config(config_path)
+            self.config_path = config_path
 
     def __load_config(self, path):
         config_loader = ConfigLoader(path)
@@ -301,5 +303,14 @@ class ConfigManager(metaclass=Singleton):
             dev_log_level=dev_log_level,
         )
 
+    def load_config(self, path):
+        self.config = self.__load_config(path)
+        self.config_path = path
+
+    def reload_config(self):
+        self.config = self.__load_config(self.config_path)
+
     def get_config(self):
+        if not self.config:
+            raise RuntimeError("Config not loaded")
         return self.config

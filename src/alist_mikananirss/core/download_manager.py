@@ -24,7 +24,7 @@ from alist_mikananirss.alist.tasks import (
 from alist_mikananirss.common.database import SubscribeDatabase
 from alist_mikananirss.websites.models import ResourceInfo
 
-from ..utils import Singleton
+from ..utils import FixedSizeSet, Singleton
 from .notification_sender import NotificationSender
 from .renamer import AnimeRenamer
 
@@ -124,7 +124,7 @@ class DownloadManager(metaclass=Singleton):
         self.base_download_path = base_download_path
         self.use_renamer = use_renamer
         self.need_notification = need_notification
-        self.uuid_set = set()
+        self.uuid_set = FixedSizeSet()
         self.db = db
 
     @classmethod

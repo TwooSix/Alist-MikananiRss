@@ -7,7 +7,7 @@ class TMDBClient:
         self.api_key = api_key
         self.base_url = "https://api.tmdb.org/3"
 
-    @alru_cache(maxsize=1024)
+    @alru_cache(maxsize=128)
     async def search_tv(self, query: str):
         endpoint = f"{self.base_url}/search/tv"
 
