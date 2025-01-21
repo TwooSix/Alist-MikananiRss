@@ -4,14 +4,10 @@ from alist_mikananirss.alist.api import AlistDownloaderType
 from alist_mikananirss.common.config import ConfigManager
 
 
-@pytest.fixture(autouse=True)
-def clear_manager():
-    ConfigManager._instances.pop(ConfigManager, None)
-
-
 def test_load_config():
     config_path = "tests/common/test_config_valid.yaml"
-    cfg = ConfigManager(config_path).get_config()
+    ConfigManager().load_config(config_path)
+    cfg = ConfigManager().get_config()
     assert cfg.common_interval_time == 300
     assert cfg.common_proxies is None
 
@@ -46,5 +42,5 @@ def test_load_config():
 def test_load_config_with_error():
     config_path = "tests/common/test_config_invalid.yaml"
     with pytest.raises(KeyError) as excinfo:
-        ConfigManager(config_path)
+        ConfigManager().load_config(config_path)
     assert "alist.token is not found in config file" in str(excinfo.value)

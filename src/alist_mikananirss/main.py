@@ -59,7 +59,6 @@ def init_notification(cfg: AppConfig):
         )
         notification_bots.append(NotificationBot(bot))
     NotificationSender.initialize(notification_bots, cfg.notification_interval_time)
-    asyncio.create_task(NotificationSender.run())
 
 
 async def run():
@@ -137,17 +136,26 @@ async def run():
     )
     rss_monitor.set_interval_time(cfg.common_interval_time)
 
+    tasks = []
     # notification
     if cfg.notification_enable:
         init_notification(cfg)
+        tasks.append(NotificationSender.run())
 
     # Initialize bot assistant
     if cfg.bot_assistant_enable:
         bot_assistant = BotAssistant(cfg.bot_assistant_telegram_bot_token, rss_monitor)
-        asyncio.create_task(bot_assistant.run())
+        tasks.append(bot_assistant.run())
 
-    task = asyncio.create_task(rss_monitor.run())
-    await task
+    tasks.append(rss_monitor.run())
+
+    try:
+        await asyncio.gather(*tasks)
+    finally:
+        # cleanup after program exit
+        await db.close()
+        if cfg.bot_assistant_enable:
+            await bot_assistant.stop()
 
 
 def main():

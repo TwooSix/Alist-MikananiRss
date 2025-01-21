@@ -55,13 +55,6 @@ class NotificationSender(metaclass=Singleton):
         instance = cls()
         await instance._run()
 
-    @classmethod
-    def destroy_instance(cls):
-        instance = cls()
-        if instance._task and not instance._task.done():
-            instance._task.cancel()
-        NotificationSender._instances.pop(cls)
-
     async def _send(self, resources: List[ResourceInfo]):
         if not self.notification_bots:
             return

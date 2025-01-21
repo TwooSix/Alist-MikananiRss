@@ -8,7 +8,7 @@ from .rss_monitor import RssMonitor
 
 class BotAssistant:
     def __init__(self, token: str, rss_monitor: RssMonitor):
-        """_summary_
+        """An assistant to manage the rss download tasks via Telegram Bot
 
         Args:
             token (str): Telegram Bot Token
@@ -50,10 +50,9 @@ class BotAssistant:
         """Initialize and start the bot"""
         await self.app.initialize()
         await self.app.start()
-        # Instead of run_polling(), we'll use update_queue
         await self.app.updater.start_polling()
 
     async def stop(self):
         """Stop the bot gracefully"""
-        await self.app.updater.stop()
         await self.app.stop()
+        await self.app.shutdown()

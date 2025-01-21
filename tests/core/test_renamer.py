@@ -10,9 +10,7 @@ from alist_mikananirss.websites.models import ResourceInfo, VideoQuality
 
 @pytest.fixture(autouse=True)
 def reset_anime_renamer():
-    AnimeRenamer._instances.pop(AnimeRenamer, None)
-    yield
-    AnimeRenamer._instances.pop(AnimeRenamer, None)
+    AnimeRenamer.destroy_instance()
 
 
 @pytest.fixture
