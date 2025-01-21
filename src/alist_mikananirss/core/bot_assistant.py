@@ -23,13 +23,13 @@ class BotAssistant:
         self._setup_handlers()
 
     def _setup_handlers(self):
-        self.app.add_handler(CommandHandler("download_rss", self._download_rss_command))
+        self.app.add_handler(CommandHandler("d", self._download_rss_command))
 
     async def _download_rss_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         if not context.args:
-            await update.message.reply_text("usage: /download_rss <rss_url>")
+            await update.message.reply_text("usage: /d <rss_url>")
             return
 
         rss_url = context.args[0]
