@@ -9,6 +9,16 @@ class VideoQuality(StrEnum):
     p720 = "720p"
 
 
+class Language(StrEnum):
+    SIMPLIFIED_CHINESE = "简"
+    TRADITIONAL_CHINESE = "繁"
+    JAPANESE = "日"
+    SIMPLIFIED_CHINESE_JAPANESE = "简日"
+    TRADITIONAL_CHINESE_JAPANESE = "繁日"
+    SIMPLIFIED_CHINESE_TRADITIONAL_CHINESE = "简繁"
+    SIMPLIFIED_CHINESE_TRADITIONAL_CHINESE_JAPANESE = "简繁日"
+
+
 @dataclass
 class ResourceInfo:
     resource_title: str
