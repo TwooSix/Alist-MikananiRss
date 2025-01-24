@@ -7,7 +7,7 @@ from alist_mikananirss.extractor import ResourceTitleExtractResult
 from alist_mikananirss.websites.dmhy import Dmhy
 from alist_mikananirss.websites.models import (
     FeedEntry,
-    Language,
+    LanguageType,
     ResourceInfo,
     VideoQuality,
 )
@@ -108,7 +108,7 @@ async def test_none_fansub(dmhy):
         season=1,
         episode=3,
         quality=VideoQuality.p1080,
-        language=Language.JAPANESE,
+        languages=[LanguageType.JAPANESE],
         fansub="LoliHouse",
         version=1,
     )
@@ -138,7 +138,7 @@ async def test_homepage_fansub(dmhy):
         season=1,
         episode=3,
         quality=VideoQuality.p1080,
-        language=Language.JAPANESE,
+        languages=[LanguageType.JAPANESE],
         fansub="LoliHouse",
         version=1,
     )

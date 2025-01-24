@@ -3,7 +3,7 @@ from copy import deepcopy
 import pytest
 
 from alist_mikananirss import RemapFrom, Remapper, RemapTo
-from alist_mikananirss.websites.models import Language, ResourceInfo, VideoQuality
+from alist_mikananirss.websites.models import LanguageType, ResourceInfo, VideoQuality
 
 
 @pytest.fixture
@@ -17,7 +17,7 @@ def test_data():
         episode=27,
         fansub="ANi",
         quality=VideoQuality.p1080,
-        language=Language.TRADITIONAL_CHINESE,
+        languages=[LanguageType.TRADITIONAL_CHINESE],
         version=1,
     )
 

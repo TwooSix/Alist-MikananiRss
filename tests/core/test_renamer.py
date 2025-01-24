@@ -5,7 +5,7 @@ from loguru import logger
 
 from alist_mikananirss import AnimeRenamer
 from alist_mikananirss.alist import Alist
-from alist_mikananirss.websites.models import Language, ResourceInfo, VideoQuality
+from alist_mikananirss.websites.models import LanguageType, ResourceInfo, VideoQuality
 
 
 @pytest.fixture(autouse=True)
@@ -29,7 +29,11 @@ def resource_info():
         episode=5,
         fansub="TestSub",
         quality=VideoQuality.p1080,
-        language=Language.SIMPLIFIED_CHINESE_TRADITIONAL_CHINESE_JAPANESE,
+        languages=[
+            LanguageType.SIMPLIFIED_CHINESE,
+            LanguageType.TRADITIONAL_CHINESE,
+            LanguageType.JAPANESE,
+        ],
     )
 
 

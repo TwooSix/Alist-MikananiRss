@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Optional
+from typing import List, Optional
 
 
 class VideoQuality(StrEnum):
@@ -9,14 +9,11 @@ class VideoQuality(StrEnum):
     p720 = "720p"
 
 
-class Language(StrEnum):
+class LanguageType(StrEnum):
     SIMPLIFIED_CHINESE = "简"
     TRADITIONAL_CHINESE = "繁"
     JAPANESE = "日"
-    SIMPLIFIED_CHINESE_JAPANESE = "简日"
-    TRADITIONAL_CHINESE_JAPANESE = "繁日"
-    SIMPLIFIED_CHINESE_TRADITIONAL_CHINESE = "简繁"
-    SIMPLIFIED_CHINESE_TRADITIONAL_CHINESE_JAPANESE = "简繁日"
+    UNKNOWN = "None"
 
 
 @dataclass
@@ -30,7 +27,7 @@ class ResourceInfo:
     episode: Optional[int] = None
     fansub: Optional[str] = None
     quality: Optional[VideoQuality] = None
-    language: Optional[str] = None
+    languages: List[str] = None
     version: int = 1
 
     def __hash__(self):
@@ -44,7 +41,7 @@ class ResourceInfo:
             ("Episode", f"{self.episode:02d}" if self.episode is not None else "--"),
             ("Fansub", self.fansub or "--"),
             ("Quality", str(self.quality) if self.quality else "--"),
-            ("Language", self.language or "--"),
+            ("Language", self.languages or "--"),
             ("Date", self.published_date or "--"),
             ("Version", self.version),
             ("URL", self.torrent_url),

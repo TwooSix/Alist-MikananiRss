@@ -16,7 +16,7 @@ from alist_mikananirss.alist import (
     AlistTaskStatus,
     AlistTransferTask,
 )
-from alist_mikananirss.websites.models import ResourceInfo
+from alist_mikananirss.websites.models import LanguageType, ResourceInfo
 
 
 @pytest.fixture
@@ -98,7 +98,7 @@ def test_resources():
             episode=5,
             fansub="TestSub",
             quality="1080p",
-            language="JP",
+            languages=[LanguageType.SIMPLIFIED_CHINESE],
         ),
     ]
     return resources

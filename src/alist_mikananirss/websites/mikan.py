@@ -82,7 +82,7 @@ class Mikan(Website):
                 season=name_extract_result.season,
                 episode=rtitle_extract_result.episode,
                 quality=rtitle_extract_result.quality,
-                language=rtitle_extract_result.language,
+                languages=rtitle_extract_result.languages,
                 fansub=resource_info.fansub,
                 resource_title=resource_info.resource_title,
                 torrent_url=resource_info.torrent_url,
