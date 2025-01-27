@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import List, Optional
 
@@ -27,7 +27,7 @@ class ResourceInfo:
     episode: Optional[int] = None
     fansub: Optional[str] = None
     quality: Optional[VideoQuality] = None
-    languages: List[str] = [LanguageType.UNKNOWN]
+    languages: List[str] = field(default_factory=list)
     version: int = 1
 
     def __hash__(self):
