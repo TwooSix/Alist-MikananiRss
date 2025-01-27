@@ -1,7 +1,9 @@
 from dataclasses import dataclass
+from datetime import timedelta
 
 import aiohttp
 import bs4
+from async_lru import alru_cache
 
 from alist_mikananirss.extractor import Extractor
 from alist_mikananirss.websites.models import FeedEntry, ResourceInfo
@@ -19,6 +21,7 @@ class Mikan(Website):
     def __init__(self, rss_url: str):
         super().__init__(rss_url)
 
+    @alru_cache(ttl=timedelta(hours=1))
     async def parse_homepage(self, home_page_url: str) -> MikanHomePageInfo:
         async with aiohttp.ClientSession(trust_env=True) as session:
             async with session.get(home_page_url) as response:

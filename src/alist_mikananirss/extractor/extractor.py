@@ -1,3 +1,7 @@
+from datetime import timedelta
+
+from async_lru import alru_cache
+
 from ..utils import Singleton
 from .base import ExtractorBase
 from .models import AnimeNameExtractResult, ResourceTitleExtractResult
@@ -20,6 +24,7 @@ class Extractor(metaclass=Singleton):
         self._extractor = extractor
 
     @classmethod
+    @alru_cache(ttl=timedelta(hours=1))
     async def analyse_anime_name(cls, anime_name: str) -> AnimeNameExtractResult:
         # chatgpt对番剧名分析不稳定，所以固定用正则分析番剧名
         instance = cls()
@@ -28,6 +33,7 @@ class Extractor(metaclass=Singleton):
         return await instance._tmp_regex_extractor.analyse_anime_name(anime_name)
 
     @classmethod
+    @alru_cache(maxsize=128)
     async def analyse_resource_title(
         cls, resource_name: str, use_tmdb: bool = True
     ) -> ResourceTitleExtractResult:
