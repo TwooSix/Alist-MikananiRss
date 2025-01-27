@@ -1,8 +1,8 @@
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
-from alist_mikananirss.websites.entities import VideoQuality
+from alist_mikananirss.websites.models import LanguageType, VideoQuality
 
 
 class TMDBSearchParam(BaseModel):
@@ -26,7 +26,7 @@ class ResourceTitleExtractResult(BaseModel):
     )
     quality: Optional[VideoQuality] = Field(..., description="The quality of the video")
     fansub: Optional[str] = Field(..., description="The fansub of the video")
-    language: Optional[str] = Field(
+    languages: List[LanguageType] = Field(
         ..., description="The subtitle language of the video"
     )
     version: int = Field(

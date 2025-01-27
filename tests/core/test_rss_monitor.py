@@ -3,9 +3,8 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
-from alist_mikananirss.common.database import SubscribeDatabase
-from alist_mikananirss.core import RegexFilter, RssMonitor
-from alist_mikananirss.websites import FeedEntry, ResourceInfo
+from alist_mikananirss import RegexFilter, RssMonitor, SubscribeDatabase
+from alist_mikananirss.websites.models import FeedEntry, ResourceInfo
 
 
 @pytest.fixture

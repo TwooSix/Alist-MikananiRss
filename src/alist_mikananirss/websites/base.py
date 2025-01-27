@@ -6,7 +6,7 @@ from typing import Optional
 import feedparser
 from loguru import logger
 
-from .entities import FeedEntry, ResourceInfo
+from .models import FeedEntry, ResourceInfo
 
 
 class Website(abc.ABC):

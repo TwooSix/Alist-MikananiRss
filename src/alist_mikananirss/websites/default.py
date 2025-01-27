@@ -4,9 +4,9 @@ from loguru import logger
 
 from alist_mikananirss import utils
 from alist_mikananirss.extractor import Extractor
+from alist_mikananirss.websites.models import FeedEntry, ResourceInfo
 
 from .base import Website
-from .entities import FeedEntry, ResourceInfo
 
 
 class DefaultWebsite(Website):
@@ -63,7 +63,7 @@ class DefaultWebsite(Website):
                 season=rtitle_extract_result.season,
                 episode=rtitle_extract_result.episode,
                 quality=rtitle_extract_result.quality,
-                language=rtitle_extract_result.language,
+                languages=rtitle_extract_result.languages,
                 fansub=rtitle_extract_result.fansub,
                 resource_title=resource_info.resource_title,
                 torrent_url=resource_info.torrent_url,

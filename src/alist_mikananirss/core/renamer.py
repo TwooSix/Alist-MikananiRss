@@ -4,7 +4,7 @@ import os
 from loguru import logger
 
 from alist_mikananirss.alist import Alist
-from alist_mikananirss.websites import ResourceInfo
+from alist_mikananirss.websites.models import ResourceInfo
 
 from ..utils import Singleton
 
@@ -28,7 +28,7 @@ class AnimeRenamer(metaclass=Singleton):
             raise ValueError("Season or episode is none when rename")
         fansub = resource.fansub
         quality = resource.quality
-        language = resource.language
+        language_str = "".join(resource.languages)
         old_filedir = os.path.dirname(old_filepath)
         old_filename = os.path.basename(old_filepath)
         file_ext = os.path.splitext(old_filename)[-1].replace(".", "")
@@ -44,7 +44,7 @@ class AnimeRenamer(metaclass=Singleton):
             episode=episode,
             fansub=fansub,
             quality=quality,
-            language=language,
+            language=language_str,
         )
         if resource.version != 1:
             new_filename += f" v{resource.version}"

@@ -5,7 +5,7 @@ from loguru import logger
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from alist_mikananirss.bot import NotificationBot, NotificationMsg
-from alist_mikananirss.websites import ResourceInfo
+from alist_mikananirss.websites.models import ResourceInfo
 
 from ..utils import Singleton
 
@@ -54,13 +54,6 @@ class NotificationSender(metaclass=Singleton):
     async def run(cls):
         instance = cls()
         await instance._run()
-
-    @classmethod
-    def destroy_instance(cls):
-        instance = cls()
-        if instance._task and not instance._task.done():
-            instance._task.cancel()
-        NotificationSender._instances.pop(cls)
 
     async def _send(self, resources: List[ResourceInfo]):
         if not self.notification_bots:

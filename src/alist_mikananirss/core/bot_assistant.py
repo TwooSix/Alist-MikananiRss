@@ -1,13 +1,14 @@
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-from alist_mikananirss import RssMonitor
-from alist_mikananirss.websites import ResourceInfo
+from alist_mikananirss.websites.models import ResourceInfo
+
+from .rss_monitor import RssMonitor
 
 
 class BotAssistant:
     def __init__(self, token: str, rss_monitor: RssMonitor):
-        """_summary_
+        """An assistant to manage the rss download tasks via Telegram Bot
 
         Args:
             token (str): Telegram Bot Token
@@ -22,13 +23,13 @@ class BotAssistant:
         self._setup_handlers()
 
     def _setup_handlers(self):
-        self.app.add_handler(CommandHandler("download_rss", self._download_rss_command))
+        self.app.add_handler(CommandHandler("d", self._download_rss_command))
 
     async def _download_rss_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         if not context.args:
-            await update.message.reply_text("usage: /download_rss <rss_url>")
+            await update.message.reply_text("usage: /d <rss_url>")
             return
 
         rss_url = context.args[0]
@@ -49,10 +50,9 @@ class BotAssistant:
         """Initialize and start the bot"""
         await self.app.initialize()
         await self.app.start()
-        # Instead of run_polling(), we'll use update_queue
         await self.app.updater.start_polling()
 
     async def stop(self):
         """Stop the bot gracefully"""
-        await self.app.updater.stop()
         await self.app.stop()
+        await self.app.shutdown()

@@ -3,17 +3,14 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from loguru import logger
 
+from alist_mikananirss import AnimeRenamer
 from alist_mikananirss.alist import Alist
-from alist_mikananirss.core import AnimeRenamer
-from alist_mikananirss.websites import ResourceInfo
-from alist_mikananirss.websites.entities import VideoQuality
+from alist_mikananirss.websites.models import LanguageType, ResourceInfo, VideoQuality
 
 
 @pytest.fixture(autouse=True)
 def reset_anime_renamer():
-    AnimeRenamer._instances.pop(AnimeRenamer, None)
-    yield
-    AnimeRenamer._instances.pop(AnimeRenamer, None)
+    AnimeRenamer.destroy_instance()
 
 
 @pytest.fixture
@@ -32,7 +29,11 @@ def resource_info():
         episode=5,
         fansub="TestSub",
         quality=VideoQuality.p1080,
-        language="JP",
+        languages=[
+            LanguageType.SIMPLIFIED_CHINESE,
+            LanguageType.TRADITIONAL_CHINESE,
+            LanguageType.JAPANESE,
+        ],
     )
 
 
@@ -59,7 +60,7 @@ async def test_build_new_name(alist_mock, resource_info):
 
     new_filename = await AnimeRenamer()._build_new_name(old_filepath, resource_info)
 
-    expected_filename = "Test Anime S01E05 TestSub 1080p JP.mp4"
+    expected_filename = "Test Anime S01E05 TestSub 1080p 简繁日.mp4"
     assert new_filename == expected_filename
 
 

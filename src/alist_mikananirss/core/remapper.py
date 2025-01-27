@@ -4,7 +4,7 @@ from typing import Optional
 from loguru import logger
 
 from alist_mikananirss.common.config_loader import ConfigLoader
-from alist_mikananirss.websites import ResourceInfo
+from alist_mikananirss.websites.models import ResourceInfo
 
 from ..utils import Singleton
 

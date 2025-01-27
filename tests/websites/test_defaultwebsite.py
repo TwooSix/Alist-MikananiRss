@@ -4,8 +4,8 @@ import feedparser
 import pytest
 from loguru import logger
 
-from alist_mikananirss.websites import FeedEntry
 from alist_mikananirss.websites.default import DefaultWebsite
+from alist_mikananirss.websites.models import FeedEntry
 
 
 @pytest.fixture

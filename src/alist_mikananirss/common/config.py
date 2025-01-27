@@ -1,95 +1,34 @@
-from dataclasses import dataclass
-from typing import Optional
+from collections import defaultdict
+from typing import Dict, List, Optional
 
-import yaml
+from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
-from alist_mikananirss.alist.api import AlistDownloaderType
-from alist_mikananirss.bot.pushplus_bot import PushPlusChannel
+from alist_mikananirss.alist import AlistDownloaderType
+from alist_mikananirss.bot import PushPlusChannel
 
 from ..utils import Singleton
+from .config_loader import ConfigLoader
 
 
-class ConfigLoader:
-    """A class for loading and accessing YAML configuration files.
+class AppConfig(BaseModel):
+    # Common settings
+    common_interval_time: int = Field(
+        ge=0, description="Interval time must be non-negative"
+    )
+    common_proxies: Optional[Dict]
 
-    This class provides methods to load a YAML config file and retrieve values
-    using dot notation paths.
-
-    Attributes:
-        config_path (str): The path to the YAML configuration file.
-        config (dict): The loaded configuration data.
-
-    Example:
-        >>> config_loader = ConfigLoader('config.yaml')
-        >>> database_url = config_loader.get('database.url')
-        >>> port = config_loader.get('server.port', default=8080)
-    """
-
-    _MISSING = object()
-
-    def __init__(self, config_path):
-        """Initializes the ConfigLoader with the given config file path.
-
-        Args:
-            config_path (str): The path to the YAML configuration file.
-        """
-        self.config_path = config_path
-        self.config = self.load_config()
-
-    def load_config(self):
-        """Loads the YAML configuration file.
-
-        Returns:
-            dict: The loaded configuration data.
-
-        Raises:
-            yaml.YAMLError: If there's an error parsing the YAML file.
-        """
-        with open(self.config_path, "r", encoding="utf-8") as file:
-            return yaml.safe_load(file)
-
-    def get(self, path, default=_MISSING):
-        """Retrieves a value from the configuration using a dot notation path.
-
-        Args:
-            path (str): The dot notation path to the desired configuration value.
-            default: The default value to return if the path is not found.
-                     If not provided, a KeyError will be raised.
-
-        Returns:
-            The value at the specified path in the configuration.
-
-        Raises:
-            KeyError: If the path is not found and no default value is provided.
-        """
-        keys = path.split(".")
-        value = self.config
-        for key in keys:
-            if value.get(key) is None:
-                if default is not self._MISSING:
-                    return default
-                else:
-                    raise KeyError(
-                        f"{path} is not found in config file {self.config_path}"
-                    )
-            value = value[key]
-        return value
-
-
-@dataclass
-class AppConfig:
-    common_interval_time: int
-    common_proxies: Optional[dict]
-
+    # Alist settings
     alist_base_url: str
     alist_token: str
     alist_downloader: AlistDownloaderType
     alist_download_path: str
 
-    mikan_subscribe_url: list
-    mikan_regex_pattern: dict
-    mikan_filters: list
+    # Mikan settings
+    mikan_subscribe_url: List[str] = Field(min_length=1)
+    mikan_regex_pattern: Dict
+    mikan_filters: List
 
+    # Notification settings
     notification_enable: bool
     notification_telegram_enable: bool
     notification_telegram_bot_token: str
@@ -99,6 +38,7 @@ class AppConfig:
     notification_pushplus_channel: PushPlusChannel
     notification_interval_time: int
 
+    # Rename settings
     rename_enable: bool
     rename_chatgpt_api_key: str
     rename_chatgpt_base_url: str
@@ -107,48 +47,82 @@ class AppConfig:
     rename_remap_enable: bool
     rename_remap_cfg_path: str
 
+    # Bot assistant settings
     bot_assistant_enable: bool
     bot_assistant_telegram_enable: bool
     bot_assistant_telegram_bot_token: str
 
-    dev_log_level: str
+    # Dev settings
+    dev_log_level: str = Field(
+        default="INFO", pattern="^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$"
+    )
 
-    def __post_init__(self):
-        """Check the validity of the configuration."""
+    @field_validator("alist_base_url", "mikan_subscribe_url")
+    @classmethod
+    def validate_url(cls, url: str | List[str]) -> str | List[str]:
+        if isinstance(url, list):
+            for u in url:
+                HttpUrl(u)
+        else:
+            HttpUrl(url)
+        return url
+
+    @model_validator(mode="after")
+    def validate_notification_config(self) -> "AppConfig":
         if self.notification_enable:
-            assert (
+            if not (
                 self.notification_telegram_enable or self.notification_pushplus_enable
-            ), "At least one notification method should be enabled."
-        if self.notification_telegram_enable:
-            assert (
+            ):
+                raise ValueError("At least one notification method should be enabled")
+
+            if self.notification_telegram_enable and not (
                 self.notification_telegram_bot_token
                 and self.notification_telegram_user_id
-            ), "Telegram bot token and user id should be provided."
-        if self.notification_pushplus_enable:
-            assert (
-                self.notification_pushplus_token
-            ), "Pushplus token should be provided."
-        if self.rename_enable:
-            assert self.rename_chatgpt_api_key, "ChatGPT API key should be provided."
-            self.__check_rename_format(self.rename_format)
+            ):
+                raise ValueError("Telegram bot token and user id should be provided")
+
+            if (
+                self.notification_pushplus_enable
+                and not self.notification_pushplus_token
+            ):
+                raise ValueError("Pushplus token should be provided")
+
+        return self
+
+    @field_validator("rename_format")
+    @classmethod
+    def validate_rename_format(cls, rename_format: str) -> str:
+
+        if not rename_format:
+            return rename_format
+
+        all_key_test_data = {
+            "name": "test",
+            "season": 1,
+            "episode": 1,
+            "fansub": "fansub",
+            "quality": "1080p",
+            "language": "简体中文",
+        }
+        safe_dict = defaultdict(lambda: "undefined", all_key_test_data)
+        res = rename_format.format_map(safe_dict)
+        if "undefined" in res:
+            unknown_keys = [
+                key for key, value in safe_dict.items() if value == "undefined"
+            ]
+            raise ValueError(f"Error keys in rename format: {', '.join(unknown_keys)}")
+        return rename_format
+
+    @model_validator(mode="after")
+    def validate_bot_assistant_config(self) -> "AppConfig":
         if self.bot_assistant_enable:
-            assert (
-                self.bot_assistant_telegram_enable
-            ), "Telegram config should be provided."
-            assert (
-                self.bot_assistant_telegram_bot_token
-            ), "Telegram bot token should be provided."
+            if not self.bot_assistant_telegram_enable:
+                raise ValueError("Telegram config should be provided")
+            if not self.bot_assistant_telegram_bot_token:
+                raise ValueError("Telegram bot token should be provided")
+        return self
 
-        assert self.common_interval_time >= 0, "Invalid interval time."
-        assert self.dev_log_level in [
-            "DEBUG",
-            "INFO",
-            "WARNING",
-            "ERROR",
-            "CRITICAL",
-        ], "Invalid log level."
-
-    def __repr__(self) -> str:
+    def format_output_yaml(self) -> str:
         sections = {
             "common": {
                 "interval_time": self.common_interval_time,
@@ -204,39 +178,19 @@ class AppConfig:
                     result.append(format_dict(value, indent + 2))
                 elif isinstance(value, list):
                     result.append(f"{spaces}{key}:")
-                    for item in value:
-                        result.append(f"{spaces}  - {item}")
+                    result.extend(f"{spaces}  - {item}" for item in value)
                 else:
                     result.append(f"{spaces}{key}: {value}")
             return "\n".join(result)
 
         return format_dict(sections)
 
-    def __check_rename_format(self, rename_format: str):
-        # Check if there are unknown keys in rename format
-        from collections import defaultdict
-
-        all_key_test_data = {
-            "name": "test",
-            "season": 1,
-            "episode": 1,
-            "fansub": "fansub",
-            "quality": "1080p",
-            "language": "简体中文",
-        }
-        # if the key in rename_format is not in all_key_test_data, it will be replaced by "undefined"
-        safe_dict = defaultdict(lambda: "undefined", all_key_test_data)
-        res = rename_format.format_map(safe_dict)
-        if "undefined" in res:
-            unknown_keys = [
-                key for key, value in safe_dict.items() if value == "undefined"
-            ]
-            raise KeyError(f"Error keys in rename format: {', '.join(unknown_keys)}")
-
 
 class ConfigManager(metaclass=Singleton):
-    def __init__(self, config_path):
-        self.config: AppConfig = self.__load_config(config_path)
+    def __init__(self, config_path=None):
+        if config_path:
+            self.config: AppConfig = self.__load_config(config_path)
+            self.config_path = config_path
 
     def __load_config(self, path):
         config_loader = ConfigLoader(path)
@@ -274,8 +228,8 @@ class ConfigManager(metaclass=Singleton):
         notification_telegram_bot_token = config_loader.get(
             "notification.telegram.bot_token", ""
         )
-        notification_telegram_user_id = config_loader.get(
-            "notification.telegram.user_id", ""
+        notification_telegram_user_id = str(
+            config_loader.get("notification.telegram.user_id", "")
         )
         notification_pushplus_enable = (
             False if not config_loader.get("notification.pushplus", {}) else True
@@ -345,5 +299,14 @@ class ConfigManager(metaclass=Singleton):
             dev_log_level=dev_log_level,
         )
 
+    def load_config(self, path):
+        self.config = self.__load_config(path)
+        self.config_path = path
+
+    def reload_config(self):
+        self.config = self.__load_config(self.config_path)
+
     def get_config(self):
+        if not self.config:
+            raise RuntimeError("Config not loaded")
         return self.config

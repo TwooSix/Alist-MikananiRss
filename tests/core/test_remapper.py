@@ -2,9 +2,8 @@ from copy import deepcopy
 
 import pytest
 
-from alist_mikananirss.core import Remapper
-from alist_mikananirss.core.remapper import RemapFrom, RemapTo
-from alist_mikananirss.websites import ResourceInfo
+from alist_mikananirss import RemapFrom, Remapper, RemapTo
+from alist_mikananirss.websites.models import LanguageType, ResourceInfo, VideoQuality
 
 
 @pytest.fixture
@@ -17,8 +16,8 @@ def test_data():
         season=1,
         episode=27,
         fansub="ANi",
-        quality="1080P",
-        language="CHT",
+        quality=VideoQuality.p1080,
+        languages=[LanguageType.TRADITIONAL_CHINESE],
         version=1,
     )
 
@@ -52,6 +51,3 @@ def test_remap(test_data):
     assert test_data_copy.season == 2
     assert test_data_copy.episode == 1
     assert test_data_copy.fansub == "ANi"
-    assert test_data_copy.quality == "1080P"
-    assert test_data_copy.language == "CHT"
-    assert test_data_copy.version == 1

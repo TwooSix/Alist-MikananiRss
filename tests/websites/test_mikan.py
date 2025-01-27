@@ -8,8 +8,8 @@ from alist_mikananirss.extractor import (
     ResourceTitleExtractResult,
     VideoQuality,
 )
-from alist_mikananirss.websites import FeedEntry, ResourceInfo
 from alist_mikananirss.websites.mikan import Mikan, MikanHomePageInfo
+from alist_mikananirss.websites.models import FeedEntry, LanguageType, ResourceInfo
 
 
 @pytest.fixture
@@ -109,7 +109,7 @@ async def test_extract_resource_info(mikan):
         season=1,
         episode=1,
         quality=VideoQuality.p1080,
-        language="繁日双语",
+        languages=[LanguageType.SIMPLIFIED_CHINESE, LanguageType.JAPANESE],
         fansub="gpt_fansub",
         version=1,
     )

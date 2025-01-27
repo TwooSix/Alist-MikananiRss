@@ -8,8 +8,8 @@ from alist_mikananirss.extractor import (  # noqa
     ResourceTitleExtractResult,
     VideoQuality,
 )
-from alist_mikananirss.websites import FeedEntry, ResourceInfo
 from alist_mikananirss.websites.acgrip import AcgRip
+from alist_mikananirss.websites.models import FeedEntry, LanguageType, ResourceInfo
 
 
 @pytest.fixture
@@ -50,7 +50,7 @@ def mock_extract_data():
             season=1,
             episode=2,
             quality=VideoQuality.p1080,
-            language="CHT",
+            languages=[LanguageType.TRADITIONAL_CHINESE],
             fansub="ANi",
             version=1,
         ),
@@ -118,7 +118,7 @@ async def test_homepage_fansub(acgrip, mock_extract_data):
         season=1,
         episode=3,
         quality=VideoQuality.p1080,
-        language="日语",
+        languages=[LanguageType.JAPANESE],
         fansub="LoliHouse",
         version=1,
     )

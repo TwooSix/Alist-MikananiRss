@@ -5,7 +5,7 @@ import pytest
 import pytest_asyncio
 
 from alist_mikananirss.common.database import SubscribeDatabase, db_dirpath
-from alist_mikananirss.websites import ResourceInfo
+from alist_mikananirss.websites.models import LanguageType, ResourceInfo
 
 
 @pytest_asyncio.fixture
@@ -51,7 +51,7 @@ async def test_insert_and_check_existence(test_db):
         episode=1,
         fansub="TestSub",
         quality="1080p",
-        language="Japanese",
+        languages=[LanguageType.SIMPLIFIED_CHINESE],
     )
 
     await test_db.insert_resource_info(resource)

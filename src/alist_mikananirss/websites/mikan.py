@@ -5,7 +5,9 @@ import bs4
 from async_lru import alru_cache
 
 from alist_mikananirss.extractor import Extractor
-from alist_mikananirss.websites import FeedEntry, ResourceInfo, Website
+from alist_mikananirss.websites.models import FeedEntry, ResourceInfo
+
+from .base import Website
 
 
 @dataclass
@@ -18,7 +20,7 @@ class Mikan(Website):
     def __init__(self, rss_url: str):
         super().__init__(rss_url)
 
-    @alru_cache(maxsize=16, ttl=60 * 60)
+    @alru_cache(maxsize=128)
     async def parse_homepage(self, home_page_url: str) -> MikanHomePageInfo:
         async with aiohttp.ClientSession(trust_env=True) as session:
             async with session.get(home_page_url) as response:
@@ -82,7 +84,7 @@ class Mikan(Website):
                 season=name_extract_result.season,
                 episode=rtitle_extract_result.episode,
                 quality=rtitle_extract_result.quality,
-                language=rtitle_extract_result.language,
+                languages=rtitle_extract_result.languages,
                 fansub=resource_info.fansub,
                 resource_title=resource_info.resource_title,
                 torrent_url=resource_info.torrent_url,

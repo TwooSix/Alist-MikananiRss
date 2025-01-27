@@ -4,7 +4,7 @@ from datetime import datetime
 import aiosqlite
 from loguru import logger
 
-from alist_mikananirss.websites import ResourceInfo
+from alist_mikananirss.websites.models import ResourceInfo
 
 db_dirpath = "data"
 os.makedirs(db_dirpath, exist_ok=True)
@@ -146,6 +146,7 @@ class SubscribeDatabase:
         quality=None,
         language=None,
     ):
+        language_str = "".join(language) if language else None
         try:
             await self.db.execute(
                 """
@@ -163,7 +164,7 @@ class SubscribeDatabase:
                     episode,
                     fansub,
                     quality,
-                    language,
+                    language_str,
                 ),
             )
             await self.db.commit()
@@ -185,7 +186,7 @@ class SubscribeDatabase:
             episode=resource.episode,
             fansub=resource.fansub,
             quality=resource.quality,
-            language=resource.language,
+            language=resource.languages,
         )
 
     async def is_resource_title_exist(self, resource_title: str):

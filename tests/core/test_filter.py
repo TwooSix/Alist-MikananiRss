@@ -1,5 +1,6 @@
 import pytest
-from alist_mikananirss.core.filters import RegexFilter  # 请替换为实际的模块名
+
+from alist_mikananirss import RegexFilter  # 请替换为实际的模块名
 
 
 @pytest.fixture

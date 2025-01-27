@@ -5,18 +5,16 @@ import pytest
 
 from alist_mikananirss.bot import NotificationBot
 from alist_mikananirss.core import NotificationSender
-from alist_mikananirss.websites import ResourceInfo
+from alist_mikananirss.websites.models import ResourceInfo
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def reset_notification_sender():
-    NotificationSender._instances.pop(NotificationSender, None)
-    yield
-    NotificationSender._instances.pop(NotificationSender, None)
+    NotificationSender.destroy_instance()
 
 
 @pytest.mark.asyncio
-async def test_initialization(reset_notification_sender):
+async def test_initialization():
     mock_bot = AsyncMock(spec=NotificationBot)
     NotificationSender.initialize([mock_bot], interval=30)
     instance1 = NotificationSender()
@@ -28,7 +26,7 @@ async def test_initialization(reset_notification_sender):
 
 
 @pytest.mark.asyncio
-async def test_set_notification_bots(reset_notification_sender):
+async def test_set_notification_bots():
     NotificationSender.initialize([])
     mock_bot1 = AsyncMock(spec=NotificationBot)
     mock_bot2 = AsyncMock(spec=NotificationBot)
@@ -39,7 +37,7 @@ async def test_set_notification_bots(reset_notification_sender):
 
 
 @pytest.mark.asyncio
-async def test_add_resource(reset_notification_sender):
+async def test_add_resource():
     NotificationSender.initialize([])
     resource = ResourceInfo(
         anime_name="test name",
@@ -54,7 +52,7 @@ async def test_add_resource(reset_notification_sender):
 
 
 @pytest.mark.asyncio
-async def test_set_interval(reset_notification_sender):
+async def test_set_interval():
     NotificationSender.initialize([], interval=60)
 
     NotificationSender.set_interval(120)
@@ -63,7 +61,7 @@ async def test_set_interval(reset_notification_sender):
 
 
 @pytest.mark.asyncio
-async def test_run_method(reset_notification_sender):
+async def test_run_method():
     mock_bot = AsyncMock(spec=NotificationBot)
     mock_bot.send_message.return_value = asyncio.Future()
     mock_bot.send_message.return_value.set_result(None)
@@ -84,7 +82,7 @@ async def test_run_method(reset_notification_sender):
 
 
 @pytest.mark.asyncio
-async def test_send_method_without_bots(reset_notification_sender):
+async def test_send_method_without_bots():
     NotificationSender.initialize([], interval=0.1)
     resource = ResourceInfo(
         anime_name="test name",

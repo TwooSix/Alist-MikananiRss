@@ -2,14 +2,15 @@ import asyncio
 
 from loguru import logger
 
-from alist_mikananirss.common.database import SubscribeDatabase
-from alist_mikananirss.core import (
-    RemapperManager,
-)
-from alist_mikananirss.websites import ResourceInfo, Website, WebsiteFactory
+from alist_mikananirss import SubscribeDatabase
+from alist_mikananirss.websites import Website, WebsiteFactory
+from alist_mikananirss.websites.models import ResourceInfo
 
 from .download_manager import DownloadManager
-from .filters import RegexFilter
+from .filter import RegexFilter
+from .remapper import (
+    RemapperManager,
+)
 
 
 class RssMonitor:
