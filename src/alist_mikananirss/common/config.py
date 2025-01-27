@@ -75,14 +75,11 @@ class AppConfig(BaseModel):
             ):
                 raise ValueError("At least one notification method should be enabled")
 
-            if self.notification_telegram_enable:
-                if not (
-                    self.notification_telegram_bot_token
-                    and self.notification_telegram_user_id
-                ):
-                    raise ValueError(
-                        "Telegram bot token and user id should be provided"
-                    )
+            if self.notification_telegram_enable and not (
+                self.notification_telegram_bot_token
+                and self.notification_telegram_user_id
+            ):
+                raise ValueError("Telegram bot token and user id should be provided")
 
             if (
                 self.notification_pushplus_enable
@@ -181,8 +178,7 @@ class AppConfig(BaseModel):
                     result.append(format_dict(value, indent + 2))
                 elif isinstance(value, list):
                     result.append(f"{spaces}{key}:")
-                    for item in value:
-                        result.append(f"{spaces}  - {item}")
+                    result.extend(f"{spaces}  - {item}" for item in value)
                 else:
                     result.append(f"{spaces}{key}: {value}")
             return "\n".join(result)

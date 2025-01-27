@@ -13,7 +13,7 @@ class LanguageType(StrEnum):
     SIMPLIFIED_CHINESE = "简"
     TRADITIONAL_CHINESE = "繁"
     JAPANESE = "日"
-    UNKNOWN = "None"
+    UNKNOWN = "Unknown"
 
 
 @dataclass
@@ -27,7 +27,7 @@ class ResourceInfo:
     episode: Optional[int] = None
     fansub: Optional[str] = None
     quality: Optional[VideoQuality] = None
-    languages: List[str] = None
+    languages: List[str] = [LanguageType.UNKNOWN]
     version: int = 1
 
     def __hash__(self):
