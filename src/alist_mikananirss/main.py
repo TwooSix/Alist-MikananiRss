@@ -88,7 +88,7 @@ async def run():
     # alist
     alist_client = Alist(cfg.alist_base_url, cfg.alist_token, cfg.alist_downloader)
     alist_ver = await alist_client.get_alist_ver()
-    if alist_ver < "3.29.0":
+    if alist_ver < "3.42.0":
         raise ValueError(f"Unsupported Alist version: {alist_ver}")
 
     # download manager

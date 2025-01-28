@@ -47,7 +47,7 @@ class AlistTaskState(Enum):
 
 
 DOWNLOAD_DES_PATTERN = re.compile(r"download\s+(.+?)\s+to \((.+?)\)")
-TRANSFER_DES_PATTERN = re.compile(r"transfer (.+?) to \[(.+?)\]")
+TRANSFER_DES_PATTERN = re.compile(r"transfer \[.*\]\((.+)\) to \[(.+)\]\((.+)\)")
 
 
 class AlistTaskError(Exception):
@@ -96,15 +96,16 @@ class AlistTransferTask(AlistTask):
 
     def __post_init__(self):
         self.task_type = AlistTaskType.TRANSFER
-        match = re.search(TRANSFER_DES_PATTERN, self.description)
+        match = re.match(TRANSFER_DES_PATTERN, self.description)
         if match:
             temp_filepath = match.group(1)
-            target_dir = match.group(2)
+            target_drive = match.group(2)
+            drive_subdir = match.group(3)
+            target_dirpath = f"{target_drive}{drive_subdir}"
             elements = temp_filepath.split("/")
             uuid = elements[elements.index("temp") + 2]
-
             sub_path = temp_filepath[temp_filepath.rfind(uuid) + len(uuid) + 1 :]
-            target_file_path = f"{target_dir}/{sub_path}"
+            target_file_path = f"{target_dirpath}/{sub_path}"
         else:
             raise InvalidTaskDescription(
                 f"Failed to get uuid and target filepath from task description: {self.description}"
@@ -168,6 +169,9 @@ class AlistTaskList:
 
     def __contains__(self, tid: str) -> bool:
         return tid in self.id_map
+
+    def __repr__(self):
+        return f"{self.tasks}"
 
     def get_by_id(self, tid: str) -> Optional[AlistTask]:
         """Get task by id, return None if not found."""
