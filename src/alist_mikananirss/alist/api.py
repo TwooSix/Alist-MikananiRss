@@ -149,7 +149,7 @@ class Alist:
         self, task_type: AlistTaskType, status: AlistTaskStatus
     ) -> AlistTaskList:
         json_data = await self._api_call(
-            "GET", f"/api/admin/task/{task_type.value}/{status.value}"
+            "GET", f"/api/task/{task_type.value}/{status.value}"
         )
 
         if task_type == AlistTaskType.TRANSFER:
@@ -185,7 +185,7 @@ class Alist:
         task: AlistTask,
     ) -> bool:
         await self._api_call(
-            "POST", f"/api/admin/task/{task.task_type.value}/cancel?tid={task.tid}"
+            "POST", f"/api/task/{task.task_type.value}/cancel?tid={task.tid}"
         )
         return True
 

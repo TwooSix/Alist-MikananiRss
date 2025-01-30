@@ -56,10 +56,18 @@ def get_incomplete_transfer_task(resource):
         secrets.choice(string.digits + string.ascii_lowercase) for _ in range(36)
     )
     download_path = test_instance._build_download_path(resource).replace(os.sep, "/")
+
+    cleaned_path = download_path.strip("/")
+    parts = cleaned_path.split("/", 1)
+    tgt_drive = "/" + parts[0]
+    drive_subdir = ""
+    if len(parts) > 1:
+        drive_subdir = "/" + parts[1]
+
     json_data = {
         "error": "",
         "id": tid,
-        "name": f"transfer /path/to/alist/data/temp/qBittorrent/{uuid}/subfolder/{resource.anime_name}/filename.mp4 to [{download_path}]",
+        "name": f"transfer [](/path/to/alist/data/temp/qBittorrent/{uuid}/subfolder/{resource.anime_name}/filename.mp4) to [{tgt_drive}]({drive_subdir})",
         "progress": 50.0,
         "state": 1,
         "status": "running",

@@ -94,7 +94,7 @@ async def test_cancel_task(alist):
         result = await alist.cancel_task(task)
         assert result is True
         mock_api_call.assert_called_once_with(
-            "POST", f"/api/admin/task/offline_download/cancel?tid={json_data['id']}"
+            "POST", f"/api/task/offline_download/cancel?tid={json_data['id']}"
         )
 
 
@@ -144,13 +144,13 @@ def test_tf_task_extract():
         {
             "error": "",
             "id": "i-T7dWBTgh_9bohMpRlcA",
-            "name": "transfer /path/to/alist/data/temp/qBittorrent/107bd39c-44fa-4891-a930-8c101a31adca/subfolder/Avemujica 03.mp4 to [/Local/颂乐人偶/Season 1]",
+            "name": "transfer [/Local](/opt/alist/data/temp/qBittorrent/d82ddec1-08f6-4894-b7ed-d9c9f25dc4db/test.mp4) to [/Google](/Debug/test/Season 1)",
             "progress": 100.0000041135186,
             "state": 2,
             "status": "transferring",
         }
     )
 
-    assert task.uuid == "107bd39c-44fa-4891-a930-8c101a31adca"
-    assert task.target_path == "/Local/颂乐人偶/Season 1/subfolder/Avemujica 03.mp4"
+    assert task.uuid == "d82ddec1-08f6-4894-b7ed-d9c9f25dc4db"
+    assert task.target_path == "/Google/Debug/test/Season 1/test.mp4"
     assert task.task_type == AlistTaskType.TRANSFER
