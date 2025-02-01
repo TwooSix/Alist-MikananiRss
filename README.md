@@ -17,7 +17,7 @@
 - 自动重命名为emby可识别格式，同时支持对自动解析的结果进行自定义重映射，让重命名结果更准确
 
 ## 准备工作 
-1. 请自行参照[Alist](https://github.com/alist-org/alist)项目文档部署Alist（版本须>=3.29.0），并搭建好Aria2/qBittorrent离线下载
+1. 请自行参照[Alist](https://github.com/alist-org/alist)项目文档部署Alist（版本须>=3.42.0），并搭建好Aria2/qBittorrent离线下载
 2. 自行注册蜜柑计划账户，订阅番剧，获取订阅链接
 
 附：对其余RSS订阅源也作了一定适配，理论上支持绝大多数订阅源(番剧相关)，对于未能支持的RSS，也欢迎上交issue
