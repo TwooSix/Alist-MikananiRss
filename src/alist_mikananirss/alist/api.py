@@ -72,7 +72,7 @@ class Alist:
         self,
         save_path: str,
         urls: list[str],
-        policy: AlistDeletePolicy = AlistDeletePolicy.DeleteAlways,
+        policy: AlistDeletePolicy = AlistDeletePolicy.DeleteOnUploadSucceed,
     ) -> list[AlistDownloadTask]:
         response_data = await self._api_call(
             "POST",

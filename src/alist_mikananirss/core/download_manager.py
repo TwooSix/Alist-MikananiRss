@@ -208,7 +208,7 @@ class DownloadManager(metaclass=Singleton):
                     )
             except TimeoutError:
                 await self.alist_client.cancel_task(task_obj)
-                logger.error("Long time no progress, cancel the task: {task_obj}")
+                logger.error(f"Long time no progress, cancel the task: {task_obj}")
             except RetryError as e:
                 logger.error(
                     f"Error to refresh task status: {e.last_attempt.exception()}"
