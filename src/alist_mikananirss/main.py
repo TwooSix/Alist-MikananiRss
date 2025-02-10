@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import os
 import sys
+from datetime import datetime
 
 from loguru import logger
 
@@ -23,10 +24,13 @@ from alist_mikananirss.extractor import ChatGPTExtractor, Extractor
 
 
 def init_logging(cfg: AppConfig):
+    today_date = datetime.now().strftime("%Y-%m-%d")
+
     log_level = cfg.dev_log_level
     logger.remove()
+    log_filename = f"log/alist_mikanrss_{today_date}.log"
     logger.add(
-        "log/main_{time}.log", rotation="1 days", retention="7 days", level=log_level
+        log_filename, rotation="00:00", retention="7 days", level=log_level, mode="a"
     )
     logger.add(sys.stderr, level=log_level)
 
