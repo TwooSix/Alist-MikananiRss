@@ -44,8 +44,8 @@ Docker，源码运行等更多的运行方法详见[使用文档](https://github
        - https://mikanani.me/RSS/MyBangumi?token=xxx # 修改为你的蜜柑订阅地址
        # - https://mikanani.me/RSS/MyBangumi?token=xxx2 # 多条RSS订阅链接情况
    
-   filters:
-     - 非合集
+     filters:
+       - 非合集
    ```
 4. 运行代码：`python -m alist_mikananirss --config /path/to/config.yaml`  
 5. Enjoy
