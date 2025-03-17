@@ -22,15 +22,21 @@ from alist_mikananirss.alist import Alist
 from alist_mikananirss.bot import BotFactory, BotType, NotificationBot
 from alist_mikananirss.extractor import ChatGPTExtractor, Extractor
 
-
 def init_logging(cfg: AppConfig):
-    today_date = datetime.now().strftime("%Y-%m-%d")
-
     log_level = cfg.dev_log_level
     logger.remove()
-    log_filename = f"log/alist_mikanrss_{today_date}.log"
+    
+    # 确保日志目录存在
+    os.makedirs("log", exist_ok=True)
+    
+    # 使用loguru的动态日期格式化功能
+    log_filename = "log/alist_mikanrss_{time:YYYY-MM-DD}.log"
     logger.add(
-        log_filename, rotation="00:00", retention="7 days", level=log_level, mode="a"
+        log_filename, 
+        rotation="00:00", 
+        retention="7 days", 
+        level=log_level, 
+        mode="a"
     )
     logger.add(sys.stderr, level=log_level)
 
