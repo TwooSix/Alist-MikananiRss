@@ -25,6 +25,8 @@ class AlistTaskStatus(Enum):
 class AlistDownloaderType(Enum):
     ARIA = "aria2"
     QBIT = "qBittorrent"
+    CLOUD115 = "115 Cloud"
+    PIKPAK = "PikPak"
 
 
 class AlistDeletePolicy(Enum):

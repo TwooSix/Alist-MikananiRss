@@ -36,7 +36,7 @@ Docker，源码运行等更多的运行方法详见[使用文档](https://github
    alist:
      base_url: https://example.com # 修改为你的alist访问地址
      token: alist-xxx # 修改为你的alist token；可在"管理员后台->设置->其他"中找到
-     downloader: qBittorrent # 或者 aria2
+     downloader: qBittorrent # 或者 aria2、115 Cloud、PikPak
      download_path: Onedrive/Anime # 修改为你的下载路径，相对于alist根目录
    
    mikan:
