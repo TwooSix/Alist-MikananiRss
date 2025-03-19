@@ -106,7 +106,9 @@ class TaskMonitor:
                 return self.task
 
             if self._is_progress_stalled():
-                raise TimeoutError("Progress is too slow")
+                logger.warning(f"Progress is too slow of Task[{self.task.url}].")
+                await asyncio.sleep(60)
+                # raise TimeoutError("Progress is too slow")
 
             await asyncio.sleep(1)
 
@@ -207,8 +209,8 @@ class DownloadManager(metaclass=Singleton):
                         f"Task {task_obj.tid} failed: {finished_task.error_msg}"
                     )
             except TimeoutError:
-                await self.alist_client.cancel_task(task_obj)
-                logger.error("Long time no progress, cancel the task: {task_obj}")
+                # await self.alist_client.cancel_task(task_obj)
+                logger.error(f"TimeoutError when wait {task_obj} finished.")
             except RetryError as e:
                 logger.error(
                     f"Error to refresh task status: {e.last_attempt.exception()}"

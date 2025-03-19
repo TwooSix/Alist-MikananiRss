@@ -103,25 +103,6 @@ async def test_wait_finished_failed(task_monitor):
     assert result == mock_task_failed
     assert result.status == AlistTaskStatus.Failed
 
-
-@pytest.mark.asyncio
-async def test_wait_finished_stalled(task_monitor):
-    async def mock_refresh():
-        task_monitor.task = mock_task
-
-    mock_task = MagicMock(
-        spec=AlistDownloadTask, tid="123", status=AlistTaskStatus.Running, progress=0.5
-    )
-
-    with (
-        patch.object(task_monitor, "_refresh", side_effect=mock_refresh),
-        patch("asyncio.sleep", new_callable=AsyncMock),
-        patch("time.time", side_effect=[0] + list(range(1, 302))),
-    ):  # Simulate 301 seconds of no progress
-        with pytest.raises(TimeoutError):
-            await task_monitor.wait_finished()
-
-
 @pytest.mark.parametrize("task_type", [AlistTaskType.DOWNLOAD, AlistTaskType.TRANSFER])
 def test_normal_status(task_type):
     assert set(TaskMonitor.NORMAL_STATUS) == {
