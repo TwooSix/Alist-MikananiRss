@@ -1,6 +1,6 @@
 [project]
 name = "alist-mikananirss"
-version = "0.5.0"
+version = "0.5.1"
 description = "Automatically fetch anime updates from the Mikan Project's RSS feed and offline download them to the cloud drive through Alist."
 readme = "README.md"
 requires-python = ">=3.11"
