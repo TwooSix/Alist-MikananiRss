@@ -20,13 +20,13 @@ from alist_mikananirss import (
 )
 from alist_mikananirss.alist import Alist
 from alist_mikananirss.bot import BotFactory, BotType, NotificationBot
-from alist_mikananirss.extractor import ChatGPTExtractor, Extractor
+from alist_mikananirss.extractor import Extractor, LLMExtractor, create_llm_provider
 
 
 def init_logging(cfg: AppConfig):
     today_date = datetime.now().strftime("%Y-%m-%d")
 
-    log_level = cfg.dev_log_level
+    log_level = cfg.dev.log_level
     logger.remove()
     log_filename = f"log/alist_mikanrss_{today_date}.log"
     logger.add(
@@ -36,7 +36,7 @@ def init_logging(cfg: AppConfig):
 
 
 def init_proxies(cfg: AppConfig):
-    proxies = cfg.common_proxies
+    proxies = cfg.common.proxies
     if not proxies:
         return
     if "http" in proxies:
@@ -47,22 +47,24 @@ def init_proxies(cfg: AppConfig):
 
 def init_notification(cfg: AppConfig):
     notification_bots = []
-    if cfg.notification_telegram_enable:
-        bot = BotFactory.create_bot(
-            BotType.TELEGRAM,
-            bot_token=cfg.notification_telegram_bot_token,
-            user_id=cfg.notification_telegram_user_id,
-        )
-        notification_bots.append(NotificationBot(bot))
-
-    if cfg.notification_pushplus_enable:
-        bot = BotFactory.create_bot(
-            BotType.PUSHPLUS,
-            user_token=cfg.notification_pushplus_token,
-            channel=cfg.notification_pushplus_channel,
-        )
-        notification_bots.append(NotificationBot(bot))
-    NotificationSender.initialize(notification_bots, cfg.notification_interval_time)
+    if not cfg.notification.enable:
+        return
+    for bot_cfg in cfg.notification.bots:
+        if bot_cfg.bot_type == "telegram":
+            bot = BotFactory.create_bot(
+                BotType.TELEGRAM,
+                bot_token=bot_cfg.token,
+                user_id=bot_cfg.user_id,
+            )
+            notification_bots.append(NotificationBot(bot))
+        elif bot_cfg.bot_type == "pushplus":
+            bot = BotFactory.create_bot(
+                BotType.PUSHPLUS,
+                user_token=bot_cfg.token,
+                channel=bot_cfg.channel,
+            )
+            notification_bots.append(NotificationBot(bot))
+    NotificationSender.initialize(notification_bots, cfg.notification.interval_time)
 
 
 async def run():
@@ -75,13 +77,13 @@ async def run():
 
     args = parser.parse_args()
 
-    cfg_manager = ConfigManager(args.config)
-    cfg = cfg_manager.get_config()
+    cfg_manager = ConfigManager()
+    cfg = cfg_manager.load_config(args.config)
     # logger
     init_logging(cfg)
 
     logger.info("Loaded config Successfully")
-    logger.info(f"Config: \n{cfg.format_output_yaml()}")
+    logger.info(f"Config: \n{cfg}")
 
     # proxy
     init_proxies(cfg)
@@ -90,7 +92,7 @@ async def run():
     db = await SubscribeDatabase.create()
 
     # alist
-    alist_client = Alist(cfg.alist_base_url, cfg.alist_token, cfg.alist_downloader)
+    alist_client = Alist(cfg.alist.base_url, cfg.alist.token, cfg.alist.downloader)
     alist_ver = await alist_client.get_alist_ver()
     if alist_ver < "3.42.0":
         raise ValueError(f"Unsupported Alist version: {alist_ver}")
@@ -98,67 +100,80 @@ async def run():
     # download manager
     DownloadManager.initialize(
         alist_client=alist_client,
-        base_download_path=cfg.alist_download_path,
-        use_renamer=cfg.rename_enable,
-        need_notification=cfg.notification_enable,
+        base_download_path=cfg.alist.download_path,
+        use_renamer=cfg.rename.enable,
+        need_notification=cfg.notification.enable,
         db=db,
     )
 
     # extractor
-    if cfg.rename_enable:
-        chatgpt = ChatGPTExtractor(
-            api_key=cfg.rename_chatgpt_api_key,
-            base_url=cfg.rename_chatgpt_base_url,
-            model=cfg.rename_chatgpt_model,
-        )
-        Extractor.initialize(chatgpt)
+    if cfg.rename.enable:
+        extractor_cfg = cfg.rename.extractor
+        type_ = extractor_cfg.extractor_type
+        extractor = None
+        if type_ == "openai":
+            llm_provider = create_llm_provider(
+                "openai",
+                api_key=extractor_cfg.api_key,
+                base_url=extractor_cfg.base_url,
+                model=extractor_cfg.model,
+            )
+            extractor = LLMExtractor(llm_provider, extractor_cfg.output_type)
+        elif type_ == "deepseek":
+            llm_provider = create_llm_provider(
+                "deepseek",
+                api_key=extractor_cfg.api_key,
+                base_url=extractor_cfg.base_url,
+            )
+            extractor = LLMExtractor(llm_provider, extractor_cfg.output_type)
+        else:
+            raise ValueError(f"Unsupported extractor type: {type_}")
+        Extractor.initialize(extractor)
 
-    # renamer
-    if cfg.rename_enable:
-        rename_format = cfg.rename_format
-        AnimeRenamer.initialize(alist_client, rename_format)
+        AnimeRenamer.initialize(alist_client, cfg.rename.rename_format)
 
     # remapper
-    if cfg.rename_remap_enable:
-        cfg_path = cfg.rename_remap_cfg_path
+    if cfg.rename.remap.enable:
+        cfg_path = cfg.rename.remap.cfg_path
         RemapperManager.load_remappers_from_cfg(cfg_path)
 
     # rss monitor
     regex_filter = RegexFilter()
-    filters_name = cfg.mikan_filters
-    regex_pattern = cfg.mikan_regex_pattern
+    filters_name = cfg.mikan.filters
+    regex_pattern = cfg.mikan.regex_pattern
     regex_filter.update_regex(regex_pattern)
     for name in filters_name:
         regex_filter.add_pattern(name)
 
-    subscribe_url = cfg.mikan_subscribe_url
+    subscribe_url = cfg.mikan.subscribe_url
     rss_monitor = RssMonitor(
         subscribe_urls=subscribe_url,
         db=db,
         filter=regex_filter,
-        use_extractor=cfg.rename_enable,
+        use_extractor=cfg.rename.enable,
     )
-    rss_monitor.set_interval_time(cfg.common_interval_time)
+    rss_monitor.set_interval_time(cfg.common.interval_time)
 
     tasks = []
+    tasks.append(rss_monitor.run())
     # notification
-    if cfg.notification_enable:
+    if cfg.notification.enable:
         init_notification(cfg)
         tasks.append(NotificationSender.run())
 
     # Initialize bot assistant
-    if cfg.bot_assistant_enable:
-        bot_assistant = BotAssistant(cfg.bot_assistant_telegram_bot_token, rss_monitor)
-        tasks.append(bot_assistant.run())
-
-    tasks.append(rss_monitor.run())
+    if cfg.bot_assistant.enable:
+        # Only telegram bot is supported now
+        if cfg.bot_assistant.bots[0].bot_type == "telegram":
+            bot_assistant = BotAssistant(cfg.bot_assistant.bots[0].token, rss_monitor)
+            tasks.append(bot_assistant.run())
 
     try:
         await asyncio.gather(*tasks)
     finally:
         # cleanup after program exit
         await db.close()
-        if cfg.bot_assistant_enable:
+        if cfg.bot_assistant.enable:
             await bot_assistant.stop()
 
 
