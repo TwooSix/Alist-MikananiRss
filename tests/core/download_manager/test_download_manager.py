@@ -5,7 +5,7 @@ from copy import deepcopy
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from tenacity import wait_none
+from tenacity import wait_none, RetryError
 
 from alist_mikananirss import AnimeDownloadTaskInfo, DownloadManager, SubscribeDatabase
 from alist_mikananirss.alist import (
