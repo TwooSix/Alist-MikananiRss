@@ -33,6 +33,7 @@ notification:
       user_id: 123456
     - bot_type: pushplus
       token: xxx
+      channel: wechat
 
 rename: 
   enable: false
