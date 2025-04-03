@@ -1,5 +1,6 @@
 import asyncio
 import os
+from typing import Optional
 
 from loguru import logger
 from tenacity import (
@@ -26,6 +27,214 @@ from .notification_sender import NotificationSender
 from .renamer import AnimeRenamer
 
 
+class TaskMonitor:
+    NORMAL_STATUS = [
+        AlistTaskState.Pending,
+        AlistTaskState.Running,
+        AlistTaskState.StateBeforeRetry,
+        AlistTaskState.StateWaitingRetry,
+    ]
+
+    def __init__(
+        self,
+        alist_client: Alist,
+        db: SubscribeDatabase,
+        use_renamer: bool,
+        need_notification: bool,
+    ):
+        self.alist_client = alist_client
+        self.db = db
+        self.uuid_set = FixedSizeSet()
+        self.use_renamer = use_renamer
+        self.need_notification = need_notification
+        self.running_tasks: list[AlistTask] = []
+        self.task_resource_map: dict[AlistTask, ResourceInfo] = {}
+
+        self.lock = asyncio.Lock()
+        self.coroutine = None
+
+    async def _fetch_remote_tasks(self):
+        """获取远程任务列表"""
+        try:
+            download_tasks = await self.alist_client.get_task_list(
+                AlistTaskType.DOWNLOAD
+            )
+            transfer_tasks = await self.alist_client.get_task_list(
+                AlistTaskType.TRANSFER
+            )
+            return download_tasks + transfer_tasks
+        except Exception as e:
+            logger.error(f"Error when getting task list: {e}")
+            return []
+
+    def _refresh_task(
+        self, old_task_list: list[AlistTask], new_task_list: list[AlistTask]
+    ):
+        new_tid_map = {task.tid: task for task in new_task_list}
+        for task in old_task_list:
+            if task.tid not in new_tid_map:
+                logger.warning(f"Task {task.tid} not found in remote task list")
+                continue
+
+            new_task = new_tid_map[task.tid]
+            task.__dict__.update(new_task.__dict__)
+            logger.debug(
+                f"Checking {task} state: {task.state} progress: {task.progress:.2f}%"
+            )
+
+    @retry(
+        stop=stop_after_attempt(7),
+        wait=wait_exponential(multiplier=0.5, min=1, max=15),
+        retry=retry_if_result(lambda x: x is None),
+        retry_error_callback=lambda _: None,
+    )
+    async def _find_transfer_task(
+        self, download_task: AlistDownloadTask
+    ) -> Optional[AlistTransferTask]:
+        """Find the transfer task that is related to the download task
+
+        Args:
+            download_task (AlistDownloadTask): The download task to find the transfer task for
+
+        Returns:
+            Optional[AlistTransferTask]: The transfer task if found, None otherwise
+        """
+        try:
+            transfer_task_list: list[AlistTransferTask] = (
+                await self.alist_client.get_task_list(AlistTaskType.TRANSFER)
+            )
+        except Exception as e:
+            logger.warning(f"Error when getting transfer task list: {e}")
+            return None
+        # Filter out the transfer tasks by start_time and state
+        transfer_task_list = [
+            task
+            for task in transfer_task_list
+            if (
+                # 1. The transfer task is not already linked
+                task.uuid not in self.uuid_set
+                # 2. It's a video file
+                and utils.is_video(task.target_path)
+                # 3. It's created after the download task
+                and task.start_time > download_task.start_time
+                # 4. The transfer task is in a valid state
+                and task.state
+                in [
+                    AlistTaskState.Pending,
+                    AlistTaskState.Running,
+                    AlistTaskState.Succeeded,
+                ]
+                # 5. Same anime, same season
+                and download_task.download_path in task.target_path
+            )
+        ]
+        if len(transfer_task_list) == 0:
+            return None
+        # Sort by start time, the latest one first
+        transfer_task_list.sort(key=lambda x: x.start_time, reverse=True)
+        matched_tf_task = transfer_task_list[0]
+        self.uuid_set.add(matched_tf_task.uuid)
+        logger.debug(f"Linked [{download_task.url}] to {matched_tf_task.uuid}")
+        return matched_tf_task
+
+    async def _post_process(self, tf_task: AlistTransferTask, resource: ResourceInfo):
+        "Something to do after download task success"
+        logger.info(f"Download {resource.resource_title} success")
+        if self.use_renamer:
+            remote_filepath = tf_task.target_path
+            await AnimeRenamer.rename(remote_filepath, resource)
+        if self.need_notification:
+            await NotificationSender.add_resource(resource)
+
+    async def _process_successed_tasks(self, task_list: list[AlistTask]):
+        """Process the successed tasks
+
+        Args:
+            task_list (list[AlistTask]): The task list to process
+        """
+        for task in task_list:
+            if task.task_type == AlistTaskType.DOWNLOAD:
+                tf_task = await self._find_transfer_task(task)
+                if tf_task is None:
+                    logger.error(
+                        f"Can't find transfer task for [{self.task_resource_map[task].resource_title}]"
+                    )
+                else:
+                    self.running_tasks.append(tf_task)
+                    self.task_resource_map[tf_task] = self.task_resource_map[task]
+            elif task.task_type == AlistTaskType.TRANSFER:
+                resource = self.task_resource_map[task]
+                await self._post_process(task, resource)
+
+    async def _process_failed_tasks(self, task_list: list[AlistTask]):
+        """Process the failed tasks
+
+        Args:
+            task_list (list[AlistTask]): The task list to process
+        """
+        for task in task_list:
+            resource = self.task_resource_map[task]
+            logger.error(
+                f"{type(task)} of [{resource.resource_title}] failed: {task.error}"
+            )
+            await self.db.delete_by_resource_title(resource.resource_title)
+
+    async def monitor(self, task: AlistTask, resource_info: ResourceInfo):
+        """Start monitor the download task.
+
+        Args:
+            task (AlistTask): Download task object
+            resource_info (ResourceInfo): The resource info which is related to the task
+        """
+        async with self.lock:
+            self.running_tasks.append(task)
+            self.task_resource_map[task] = resource_info
+            if (
+                self.coroutine is None
+                or self.coroutine.done()
+                or self.coroutine.cancelled()
+            ):
+                logger.debug("Createing a new monitor task")
+                self.coroutine = asyncio.create_task(self.run())
+
+    async def run(self):
+        while len(self.running_tasks) > 0:
+            # 1. Get remote task list
+            async with self.lock:
+                new_task_list = await self._fetch_remote_tasks()
+                if not new_task_list:
+                    await asyncio.sleep(1)
+                    continue
+
+                # 2. Update running tasks state
+                self._refresh_task(self.running_tasks, new_task_list)
+
+                # 3. Process finished tasks
+                successed_task = []
+                failed_task = []
+                for task in self.running_tasks:
+                    if task.state == AlistTaskState.Succeeded:
+                        successed_task.append(task)
+                    elif task.state not in self.NORMAL_STATUS:
+                        failed_task.append(task)
+
+                await self._process_successed_tasks(successed_task)
+                await self._process_failed_tasks(failed_task)
+
+                # 4. update running tasks
+                tasks_to_remove = successed_task + failed_task
+
+                for task in tasks_to_remove:
+                    self.running_tasks.remove(task)
+                    del self.task_resource_map[task]
+
+            await asyncio.sleep(1)
+
+    async def wait_finished(self):
+        if self.coroutine and not self.coroutine.done():
+            await self.coroutine
+
+
 class DownloadManager(metaclass=Singleton):
     def __init__(
         self,
@@ -37,15 +246,13 @@ class DownloadManager(metaclass=Singleton):
     ):
         self.alist_client = alist_client
         self.base_download_path = base_download_path
-        self.use_renamer = use_renamer
-        self.need_notification = need_notification
-        self.uuid_set = FixedSizeSet()
         self.db = db
-
-        self.running_tasks: list[AlistTask] = []
-        self.task_resource_map: dict[AlistTask, ResourceInfo] = {}
-
-        self.monitor_task = None
+        self.task_monitor = TaskMonitor(
+            alist_client=alist_client,
+            db=db,
+            use_renamer=use_renamer,
+            need_notification=need_notification,
+        )
 
     @classmethod
     def initialize(
@@ -135,137 +342,4 @@ class DownloadManager(metaclass=Singleton):
                 logger.error(f"Can't matched download task [{dl_task.url}] to resource")
                 continue
             await instance.db.insert_resource_info(matched_resource)
-            instance.running_tasks.append(dl_task)
-            instance.task_resource_map[dl_task] = matched_resource
-
-        if (
-            instance.monitor_task is None
-            or instance.monitor_task.done()
-            or instance.monitor_task.cancelled()
-        ):
-            logger.debug("Createing a new monitor task")
-            instance.monitor_task = asyncio.create_task(instance.monitor())
-
-    @retry(
-        stop=stop_after_attempt(7),
-        wait=wait_exponential(multiplier=0.5, min=1, max=15),
-        retry=retry_if_result(lambda x: x is None),
-        retry_error_callback=lambda _: None,
-    )
-    async def _find_transfer_task(
-        self, download_task: AlistDownloadTask
-    ) -> AlistTransferTask:
-        try:
-            transfer_task_list: list[AlistTransferTask] = (
-                await self.alist_client.get_task_list(AlistTaskType.TRANSFER)
-            )
-        except Exception as e:
-            logger.warning(f"Error when getting transfer task list: {e}")
-            return None
-        # Filter out the transfer tasks by start_time and state
-        transfer_task_list = [
-            task
-            for task in transfer_task_list
-            if (
-                task.uuid not in self.uuid_set
-                and utils.is_video(task.target_path)
-                and task.start_time > download_task.start_time
-                and task.state
-                in [
-                    AlistTaskState.Pending,
-                    AlistTaskState.Running,
-                    AlistTaskState.Succeeded,
-                ]
-                and download_task.download_path in task.target_path
-            )
-        ]
-        if len(transfer_task_list) == 0:
-            return None
-        # Sort by start time, the latest one first
-        transfer_task_list.sort(key=lambda x: x.start_time, reverse=True)
-        matched_tf_task = transfer_task_list[0]
-        self.uuid_set.add(matched_tf_task.uuid)
-        logger.debug(f"Linked [{download_task.url}] to {matched_tf_task.uuid}")
-        return matched_tf_task
-
-    async def _post_process(self, tf_task: AlistTransferTask, resource: ResourceInfo):
-        "Something to do after download task success"
-        logger.info(f"Download {resource.resource_title} success")
-        if self.use_renamer:
-            remote_filepath = tf_task.target_path
-            await AnimeRenamer.rename(remote_filepath, resource)
-        if self.need_notification:
-            await NotificationSender.add_resource(resource)
-
-    async def monitor(self):
-        NORMAL_STATUS = [
-            AlistTaskState.Pending,
-            AlistTaskState.Running,
-            AlistTaskState.StateBeforeRetry,
-            AlistTaskState.StateWaitingRetry,
-        ]
-        while len(self.running_tasks) > 0:
-            # 1. Get remote task list
-            try:
-                new_task_list = await self.alist_client.get_task_list(
-                    AlistTaskType.DOWNLOAD
-                )
-                new_task_list += await self.alist_client.get_task_list(
-                    AlistTaskType.TRANSFER
-                )
-            except Exception as e:
-                logger.error(f"Error when getting task list: {e}")
-                await asyncio.sleep(1)
-                continue
-
-            new_tid_map = {task.tid: task for task in new_task_list}
-            # 2. Update running tasks state
-            tasks_to_remove = []
-            for task in self.running_tasks:
-
-                if task.tid not in new_tid_map:
-                    logger.warning(f"Task {task.tid} not found in remote task list")
-                    continue
-
-                new_task = new_tid_map[task.tid]
-                task.__dict__.update(new_task.__dict__)
-                logger.debug(
-                    f"Checking {task} state: {task.state} progress: {task.progress:.2f}%"
-                )
-
-                # 3. Check if the task is finished
-                if task.state == AlistTaskState.Succeeded:
-                    # download success
-                    if task.task_type == AlistTaskType.DOWNLOAD:
-                        # if download task success, find the transfer task and monitor it
-                        tf_task = await self._find_transfer_task(task)
-                        if tf_task is None:
-                            logger.error(
-                                f"Can't find transfer task for [{self.task_resource_map[task].resource_title}]"
-                            )
-                        else:
-                            self.running_tasks.append(tf_task)
-                            self.task_resource_map[tf_task] = self.task_resource_map[
-                                task
-                            ]
-                    elif task.task_type == AlistTaskType.TRANSFER:
-                        # if transfer task success, done it.
-                        resource = self.task_resource_map[task]
-                        await self._post_process(task, resource)
-                    tasks_to_remove.append(task)
-                elif task.state not in NORMAL_STATUS:
-                    # download failed
-                    resource = self.task_resource_map[task]
-                    logger.error(
-                        f"{type(task)} of [{resource.resource_title}] failed: {task.error}"
-                    )
-                    await self.db.delete_by_resource_title(resource.resource_title)
-                    tasks_to_remove.append(task)
-
-            for task in tasks_to_remove:
-                if task in self.running_tasks:
-                    self.running_tasks.remove(task)
-                if task in self.task_resource_map:
-                    del self.task_resource_map[task]
-
-            await asyncio.sleep(1)
+            await instance.task_monitor.monitor(dl_task, matched_resource)

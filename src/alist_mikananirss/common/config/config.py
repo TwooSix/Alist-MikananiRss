@@ -34,10 +34,6 @@ class AppConfig(BaseModel):
         yaml_str = yaml.dump(
             config_dict, sort_keys=False, default_flow_style=False, allow_unicode=True
         )
-        # 转换为YAML并打印
-        yaml_str = yaml.dump(
-            config_dict, sort_keys=False, default_flow_style=False, allow_unicode=True
-        )
         return yaml_str
 
 
