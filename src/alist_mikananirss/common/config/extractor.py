@@ -21,7 +21,7 @@ class DeepSeekConfig(BaseModel):
     extractor_type: Literal["deepseek"]
     api_key: str = Field(..., description="DeepSeek API key")
     base_url: str = Field(
-        "https://api.deepseek.com/v1", description="Base URL for DeepSeek API"
+        "https://api.deepseek.com", description="Base URL for DeepSeek API"
     )
     model: str = Field("gpt-4o-2024-11-20", description="Model to use for DeepSeek API")
     output_type: PromptType = Field(

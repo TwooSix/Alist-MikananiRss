@@ -175,6 +175,7 @@ async def run():
     finally:
         # cleanup after program exit
         await db.close()
+        await alist_client.close()
         if cfg.bot_assistant.enable:
             await bot_assistant.stop()
 
