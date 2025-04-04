@@ -1,7 +1,4 @@
-from .common import (
-    AppConfig,
-    ConfigManager,
-    SubscribeDatabase,
-)
+from .common import SubscribeDatabase
+from .common.config import AppConfig, ConfigManager
 from .core import *
 from .main import main

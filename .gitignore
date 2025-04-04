@@ -14,8 +14,7 @@ wheels/
 # userdata
 data/
 log/
-config.yaml
-remap.yaml
+*.yaml
 
 # debug file
 *.ipynb

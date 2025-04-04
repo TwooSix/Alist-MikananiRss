@@ -1,8 +1,14 @@
+from enum import StrEnum
 from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
 from alist_mikananirss.websites.models import LanguageType, VideoQuality
+
+
+class ProviderType(StrEnum):
+    OPENAI = "openai"
+    DEEPSEEK = "deepseek"
 
 
 class TMDBSearchParam(BaseModel):

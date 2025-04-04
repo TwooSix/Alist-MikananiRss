@@ -1,9 +1,9 @@
 from dataclasses import dataclass
 from typing import Optional
 
+import yaml
 from loguru import logger
 
-from alist_mikananirss.common.config_loader import ConfigLoader
 from alist_mikananirss.websites.models import ResourceInfo
 
 from ..utils import Singleton
@@ -91,20 +91,23 @@ class RemapperManager(metaclass=Singleton):
 
     @classmethod
     def load_remappers_from_cfg(cls, cfg_path: str):
-        lder = ConfigLoader(cfg_path)
-        remapper_cfgs = lder.get("remap")
-        for cfg in remapper_cfgs:
-            from_ = RemapFrom(
-                cfg["from"].get("anime_name", None),
-                cfg["from"].get("season", None),
-                cfg["from"].get("fansub", None),
-            )
-            to_ = RemapTo(
-                cfg["to"].get("anime_name", None),
-                cfg["to"].get("season", None),
-                cfg["to"].get("episode_offset", None),
-            )
-            RemapperManager.add_remapper(from_, to_)
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            yaml_data = yaml.safe_load(f)
+            remapper_cfgs = yaml_data.get("remap")
+            for cfg in remapper_cfgs:
+                from_ = RemapFrom(
+                    cfg["from"].get("anime_name", None),
+                    cfg["from"].get("season", None),
+                    cfg["from"].get("fansub", None),
+                )
+                episode_offset = cfg["to"].get("episode_offset", None)
+                episode_offset = int(episode_offset) if episode_offset else None
+                to_ = RemapTo(
+                    cfg["to"].get("anime_name", None),
+                    cfg["to"].get("season", None),
+                    episode_offset,
+                )
+                RemapperManager.add_remapper(from_, to_)
 
     @classmethod
     def add_remapper(cls, from_: RemapFrom, to_: RemapTo) -> Remapper:

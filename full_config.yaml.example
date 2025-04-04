@@ -5,10 +5,10 @@ common:
     https: http://127.0.0.1:7890
 
 alist:
-  base_url: http[s]://www.example.com
+  base_url: https://www.example.com
   # base_url: http://127.0.0.1:port
   token: alist-xxx
-  downloader: aria2
+  downloader: qBittorrent
   download_path: Onedrive/Anime
 
 mikan:
@@ -25,27 +25,34 @@ mikan:
     - 非合集
     
 notification:
-  telegram:
-    bot_token: your_token
-    user_id: your_id
-  pushplus: 
-    token: xxxxx
-    channel: channel
+  enable: false
   interval_time: 300
+  bots:
+    - bot_type: telegram
+      token: xxx:xxx
+      user_id: 123456
+    - bot_type: pushplus
+      token: xxx
+      channel: wechat
 
 rename: 
-  chatgpt: 
-    api_key: sk-xxx
-    base_url: https://example.com/v1
-    model: gpt-4o-mini
+  enable: false
+  extractor:
+    extractor_type: openai
+    api_key: sk-***
+    base_url: https://api.openai.com/v1
+    model: gpt-4o
+    output_type: json_object
   rename_format: "{name} S{season:02d}E{episode:02d}"
   remap: 
-    enable: trues
+    enable: true
     cfg_path: "remap.yaml"
 
 bot_assistant:
-  telegram:
-    bot_token: your_token
+  enable: false
+  bots:
+    - bot_type: telegram
+      token: xxx
 
 dev:
   log_level: INFO

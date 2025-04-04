@@ -1,320 +1,207 @@
 import os
-import secrets
-import string
-from copy import deepcopy
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from tenacity import wait_none, RetryError
 
-from alist_mikananirss import AnimeDownloadTaskInfo, DownloadManager, SubscribeDatabase
-from alist_mikananirss.alist import (
-    Alist,
-    AlistClientError,
-    AlistDownloadTask,
-    AlistTaskList,
-    AlistTaskStatus,
-    AlistTransferTask,
-)
-from alist_mikananirss.websites.models import LanguageType, ResourceInfo
+from alist_mikananirss.alist.tasks import AlistDownloadTask
+from alist_mikananirss.core.download_manager import DownloadManager
+from alist_mikananirss.websites.models import ResourceInfo, VideoQuality
 
 
 @pytest.fixture
-def download_path():
-    return "/base/path"
+def setup_download_manager():
+    mock_alist_client = AsyncMock()
+    mock_alist_client.add_offline_download_task = AsyncMock()
 
+    mock_db = AsyncMock()
+    mock_db.insert_resource_info = AsyncMock()
+    mock_db.delete_by_resource_title = AsyncMock()
 
-def get_incomplete_download_task(resource):
-    test_instance = DownloadManager()
-    alphabet = "_-" + string.digits + string.ascii_letters
-    tid = "".join(secrets.choice(alphabet) for _ in range(21))
-    download_path = test_instance._build_download_path(resource).replace(os.sep, "/")
-    json_data = {
-        "error": "",
-        "id": tid,
-        "name": f"download {resource.torrent_url} to ({download_path})",
-        "progress": 50.0,
-        "state": 1,
-        "status": "offline downloading",
-    }
-
-    return AlistDownloadTask.from_json(json_data)
-
-
-def get_complete_download_task(download_task):
-    new_task = deepcopy(download_task)
-    new_task.status = AlistTaskStatus.Succeeded
-    new_task.progress = 100
-    return new_task
-
-
-def get_incomplete_transfer_task(resource):
-    test_instance = DownloadManager()
-    alphabet = "_-" + string.digits + string.ascii_letters
-    tid = "".join(secrets.choice(alphabet) for _ in range(21))
-    uuid = "".join(
-        secrets.choice(string.digits + string.ascii_lowercase) for _ in range(36)
+    DownloadManager.destroy_instance()
+    dm = DownloadManager(
+        alist_client=mock_alist_client, base_download_path="/anime", db=mock_db
     )
-    download_path = test_instance._build_download_path(resource).replace(os.sep, "/")
 
-    cleaned_path = download_path.strip("/")
-    parts = cleaned_path.split("/", 1)
-    tgt_drive = "/" + parts[0]
-    drive_subdir = ""
-    if len(parts) > 1:
-        drive_subdir = "/" + parts[1]
+    # Mock the task_monitor
+    dm.task_monitor = MagicMock()
+    dm.task_monitor.monitor = AsyncMock()
 
-    json_data = {
-        "error": "",
-        "id": tid,
-        "name": f"transfer [](/path/to/alist/data/temp/qBittorrent/{uuid}/subfolder/{resource.anime_name}/filename.mp4) to [{tgt_drive}]({drive_subdir})",
-        "progress": 50.0,
-        "state": 1,
-        "status": "running",
-    }
-    return AlistTransferTask.from_json(json_data)
-
-
-def get_complete_transfer_task(transfer_task):
-    new_task = deepcopy(transfer_task)
-    new_task.status = AlistTaskStatus.Succeeded
-    new_task.progress = 100
-    return new_task
+    return dm, mock_alist_client, mock_db
 
 
 @pytest.fixture
-def test_resources():
-    resources = [
-        # basic info
+def resources():
+    return [
         ResourceInfo(
-            resource_title="title1",
-            torrent_url="https://test1.torrent",
-        ),
-        # only anime name
-        ResourceInfo(
-            resource_title="title2",
-            torrent_url="https://test2.torrent",
-            anime_name="Test Anime",
-        ),
-        # full info
-        ResourceInfo(
-            resource_title="title3",
-            torrent_url="https://test3.torrent",
-            published_date="1",
+            resource_title="Test Anime S01E01",
+            torrent_url="https://example.com/test1.torrent",
             anime_name="Test Anime",
             season=1,
-            episode=5,
-            fansub="TestSub",
-            quality="1080p",
-            languages=[LanguageType.SIMPLIFIED_CHINESE],
+            episode=1,
+            quality=VideoQuality.p1080,
+        ),
+        ResourceInfo(
+            resource_title="Another Anime S02E03",
+            torrent_url="https://example.com/test2.torrent",
+            anime_name="Another Anime",
+            season=2,
+            episode=3,
+        ),
+        ResourceInfo(
+            resource_title="No Season E01",
+            torrent_url="https://example.com/test3.torrent",
+            anime_name="No Season",
+            episode=1,
+        ),
+        ResourceInfo(
+            resource_title="No Anime", torrent_url="https://example.com/test4.torrent"
         ),
     ]
-    return resources
-
-
-@pytest.fixture
-def download_manager(download_path):
-    mock_alist = AsyncMock(spec=Alist)
-    mock_db = AsyncMock(spec=SubscribeDatabase)
-    DownloadManager.initialize(
-        mock_alist, download_path, use_renamer=True, need_notification=True, db=mock_db
-    )
-    DownloadManager().alist_client = mock_alist
-    DownloadManager().db = mock_db
-    return DownloadManager()
 
 
 @pytest.mark.asyncio
-async def test_download_success(download_manager, test_resources):
-    incomplete_download_tasks = []
-    for resource in test_resources:
-        incomplete_download_tasks.append(get_incomplete_download_task(resource))
+async def test_download(setup_download_manager, resources):
+    # Mock the return value of add_offline_download_task
+    dm, mock_alist_client, _ = setup_download_manager
+    mock_tasks = [
+        MagicMock(spec=AlistDownloadTask, url=resources[0].torrent_url),
+        MagicMock(spec=AlistDownloadTask, url=resources[1].torrent_url),
+        MagicMock(spec=AlistDownloadTask, url=resources[2].torrent_url),
+        MagicMock(spec=AlistDownloadTask, url=resources[3].torrent_url),
+    ]
 
-    side_effect = []
-    tasks_by_path = {}
-    for task in incomplete_download_tasks:
-        path = task.download_path
-        if path not in tasks_by_path:
-            tasks_by_path[path] = []
-        tasks_by_path[path].append(task)
+    mock_alist_client.add_offline_download_task.side_effect = [
+        [mock_tasks[0]],
+        [mock_tasks[1]],
+        [mock_tasks[2]],
+        [mock_tasks[3]],
+    ]
 
-    for tasks in tasks_by_path.values():
-        side_effect.append(AlistTaskList(tasks))
+    # Call the function
+    tasks = await dm.download(resources)
 
-    download_manager.alist_client.add_offline_download_task.side_effect = side_effect
+    # Check that add_offline_download_task was called with correct arguments
+    assert mock_alist_client.add_offline_download_task.call_count == 4
 
-    with patch("asyncio.create_task", new_callable=MagicMock):
-        with patch.object(download_manager, "monitor", new_callable=MagicMock):
-            await DownloadManager.add_download_tasks(test_resources)
+    # Check that the correct number of tasks were returned
+    assert len(tasks) == 4
 
-            assert (
-                download_manager.alist_client.add_offline_download_task.call_count
-                == len(side_effect)
-            )
-            assert download_manager.db.insert_resource_info.call_count == len(
-                test_resources
-            )
-            calls = download_manager.db.insert_resource_info.call_args_list
-            for i in range(len(test_resources)):
-                assert calls[i].args[0] == test_resources[i]
+    # Check that the returned tasks are the ones we mocked
+    for mock_task in mock_tasks:
+        assert mock_task in tasks
 
 
 @pytest.mark.asyncio
-async def test_download_failed(download_manager, test_resources):
-    incomplete_download_tasks = []
-    for resource in test_resources:
-        incomplete_download_tasks.append(get_incomplete_download_task(resource))
+async def test_download_grouping_by_path(setup_download_manager):
+    dm, mock_alist_client, _ = setup_download_manager
+    # Create resources that will have the same download path
+    resources = [
+        ResourceInfo(
+            resource_title="Same Path 1",
+            torrent_url="http://example.com/same1.torrent",
+            anime_name="Same Anime",
+            season=1,
+            episode=1,
+        ),
+        ResourceInfo(
+            resource_title="Same Path 2",
+            torrent_url="http://example.com/same2.torrent",
+            anime_name="Same Anime",
+            season=1,
+            episode=2,
+        ),
+    ]
 
-    task_lists = []
-    tasks_by_path = {}
-    for task in incomplete_download_tasks:
-        path = task.download_path
-        if path not in tasks_by_path:
-            tasks_by_path[path] = []
-        tasks_by_path[path].append(task)
+    mock_tasks = [
+        MagicMock(spec=AlistDownloadTask, url=resources[0].torrent_url),
+        MagicMock(spec=AlistDownloadTask, url=resources[1].torrent_url),
+    ]
+    mock_alist_client.add_offline_download_task.return_value = mock_tasks
 
-    for tasks in tasks_by_path.values():
-        task_lists.append(AlistTaskList(tasks))
-    side_effect = []
-    for i in range(len(task_lists)):
-        if i == 0:
-            side_effect.append(task_lists[i])
-        else:
-            side_effect.append(TimeoutError)
+    # Call the function
+    tasks = await dm.download(resources)
 
-    download_manager.alist_client.add_offline_download_task.side_effect = side_effect
+    # Check that add_offline_download_task was called once (grouped by path)
+    mock_alist_client.add_offline_download_task.assert_called_once()
 
-    with patch("asyncio.create_task", new_callable=MagicMock):
-        with patch.object(download_manager, "monitor", new_callable=MagicMock):
-            await DownloadManager.add_download_tasks(test_resources)
-            assert (
-                download_manager.alist_client.add_offline_download_task.call_count
-                == len(task_lists)
-            )
-            assert download_manager.db.insert_resource_info.call_count == 1
-            calls = download_manager.db.insert_resource_info.call_args_list
-            assert calls[0].args[0] == test_resources[0]
+    # Check it was called with both URLs
+    call_args = mock_alist_client.add_offline_download_task.call_args
+    assert call_args[0][0] == os.path.join("/anime", "Same Anime", "Season 1")
+    assert sorted(call_args[0][1]) == sorted([r.torrent_url for r in resources])
 
-
-@pytest.mark.asyncio
-async def test_monitor_success(download_manager, test_resources):
-    incomplete_download_tasks = []
-    complete_download_tasks = []
-    incomplete_transfer_tasks = []
-    complete_transfer_tasks = []
-
-    for resource in test_resources:
-        incomplete_download_tasks.append(get_incomplete_download_task(resource))
-        complete_download_tasks.append(
-            get_complete_download_task(incomplete_download_tasks[-1])
-        )
-        incomplete_transfer_tasks.append(get_incomplete_transfer_task(resource))
-        complete_transfer_tasks.append(
-            get_complete_transfer_task(incomplete_transfer_tasks[-1])
-        )
-
-    task_info_list = []
-    for i in range(len(test_resources)):
-        task_info_list.append(
-            AnimeDownloadTaskInfo(
-                resource=test_resources[i],
-                download_task=incomplete_download_tasks[i],
-            )
-        )
-
-    with (
-        patch(
-            "alist_mikananirss.core.download_manager.TaskMonitor"
-        ) as mock_task_monitor,
-        patch.object(download_manager, "_post_process") as mock_post_process,
-        patch.object(
-            download_manager, "_find_transfer_task"
-        ) as mock_find_transfer_task,
-    ):
-        for i in range(len(test_resources)):
-            dl_monitor = AsyncMock()
-            dl_monitor.wait_finished.side_effect = [complete_download_tasks[i]]
-            mock_find_transfer_task.return_value = incomplete_transfer_tasks[i]
-            tf_monitor = AsyncMock()
-            tf_monitor.wait_finished.side_effect = [complete_transfer_tasks[i]]
-            mock_task_monitor.side_effect = [dl_monitor, tf_monitor]
-            await download_manager.monitor(task_info_list[i])
-
-        assert mock_post_process.call_count == len(test_resources)
+    assert len(tasks) == 2
+    assert all(t in tasks for t in mock_tasks)
 
 
 @pytest.mark.asyncio
-async def test_monitor_failed(download_manager, test_resources):
-    incomplete_download_task = get_incomplete_download_task(test_resources[0])
-
-    task_info = AnimeDownloadTaskInfo(
-        resource=test_resources[0],
-        download_task=incomplete_download_task,
+async def test_download_exception_handling(setup_download_manager, resources):
+    dm, mock_alist_client, _ = setup_download_manager
+    # Make add_offline_download_task raise an exception
+    mock_alist_client.add_offline_download_task.side_effect = Exception(
+        "Test exception"
     )
 
-    with (
-        patch(
-            "alist_mikananirss.core.download_manager.TaskMonitor"
-        ) as mock_task_monitor,
-        patch.object(
-            download_manager.db, "delete_by_resource_title"
-        ) as mock_delete_by_resource_title,
-    ):
-        dl_monitor = AsyncMock()
-        dl_monitor.wait_finished.side_effect = [TimeoutError]
-        mock_task_monitor.return_value = dl_monitor
-        await download_manager.monitor(task_info)
+    # Call the function
+    tasks = await dm.download(resources)
 
-        assert mock_delete_by_resource_title.call_count == 1
-        assert (
-            mock_delete_by_resource_title.call_args[0][0]
-            == test_resources[0].resource_title
-        )
+    # Check that no tasks were returned
+    assert len(tasks) == 0
 
 
 @pytest.mark.asyncio
-async def test_find_transfer_task_success(download_manager, test_resources):
-    download_tasks = []
-    transfer_tasks = []
+async def test_add_download_tasks(setup_download_manager, resources):
+    # Mock the download method
+    dm, _, mock_db = setup_download_manager
+    mock_tasks = [
+        MagicMock(spec=AlistDownloadTask, url=resources[0].torrent_url),
+        MagicMock(spec=AlistDownloadTask, url=resources[1].torrent_url),
+    ]
+    dm.download = AsyncMock(return_value=mock_tasks)
 
-    for resource in test_resources:
-        download_tasks.append(
-            get_complete_download_task(get_incomplete_download_task(resource))
-        )
-        transfer_tasks.append(get_incomplete_transfer_task(resource))
+    # Call the function
+    await DownloadManager.add_download_tasks([resources[0], resources[1]])
 
-    mock_task_list = AlistTaskList(transfer_tasks)
-    download_manager.alist_client.get_task_list.return_value = mock_task_list
+    # Check that download was called with the correct arguments
+    dm.download.assert_called_once_with([resources[0], resources[1]])
 
-    for i, dl_task in enumerate(download_tasks):
-        find_res = await download_manager._find_transfer_task(dl_task)
-        assert find_res == transfer_tasks[i]
-        assert transfer_tasks[i].uuid in download_manager.uuid_set
+    # Check that insert_resource_info was called for each resource
+    mock_db.insert_resource_info.assert_any_call(resources[0])
+    mock_db.insert_resource_info.assert_any_call(resources[1])
 
-
-@pytest.mark.asyncio
-async def test_find_transfer_task_not_found(download_manager, test_resources):
-    download_task = get_complete_download_task(
-        get_incomplete_download_task(test_resources[0])
-    )
-
-    download_manager.alist_client.get_task_list.return_value = AlistTaskList([])
-    download_manager._find_transfer_task.retry.wait = wait_none()
-    result = await download_manager._find_transfer_task(download_task)
-
-    assert result is None
+    # Check that monitor was called for each task
+    dm.task_monitor.monitor.assert_any_call(mock_tasks[0], resources[0])
+    dm.task_monitor.monitor.assert_any_call(mock_tasks[1], resources[1])
 
 
 @pytest.mark.asyncio
-async def test_find_transfer_task_api_error(download_manager, test_resources):
-    download_task = get_complete_download_task(
-        get_incomplete_download_task(test_resources[0])
-    )
+async def test_add_download_tasks_no_tasks(setup_download_manager, resources):
+    # Mock the download method to return an empty list
+    dm, _, mock_db = setup_download_manager
+    dm.download = AsyncMock(return_value=[])
 
-    download_manager.alist_client.get_task_list.side_effect = AlistClientError(
-        "Network error"
-    )
-    download_manager._find_transfer_task.retry.wait = wait_none()
-    result = await download_manager._find_transfer_task(download_task)
+    # Call the function
+    await DownloadManager.add_download_tasks([resources[0], resources[1]])
 
-    assert result is None
+    # Check that insert_resource_info was not called (no tasks returned)
+    mock_db.insert_resource_info.assert_not_called()
+
+    # Check that monitor was not called (no tasks returned)
+    dm.task_monitor.monitor.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_add_download_tasks_unmatched_task(setup_download_manager, resources):
+    dm, _, mock_db = setup_download_manager
+    # Mock a task that doesn't match any resource
+    unmatched_task = MagicMock(
+        spec=AlistDownloadTask, url="http://example.com/unmatched.torrent"
+    )
+    matched_task = MagicMock(spec=AlistDownloadTask, url=resources[0].torrent_url)
+    dm.download = AsyncMock(return_value=[matched_task, unmatched_task])
+
+    # Call the function
+    await DownloadManager.add_download_tasks([resources[0]])
+
+    # Check that only the matched resource was processed
+    mock_db.insert_resource_info.assert_called_once_with(resources[0])
+    dm.task_monitor.monitor.assert_called_once_with(matched_task, resources[0])

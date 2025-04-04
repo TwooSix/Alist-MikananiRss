@@ -2,7 +2,7 @@ import asyncio
 import mimetypes
 import os
 import urllib.parse
-from typing import Optional
+from typing import List
 
 import aiohttp
 
@@ -11,9 +11,6 @@ from alist_mikananirss.alist.tasks import (
     AlistDownloaderType,
     AlistDownloadTask,
     AlistTask,
-    AlistTaskList,
-    AlistTaskState,
-    AlistTaskStatus,
     AlistTaskType,
     AlistTransferTask,
 )
@@ -35,6 +32,11 @@ class Alist:
         async with self._session_lock:
             if self.session is None or self.session.closed:
                 self.session = aiohttp.ClientSession(trust_env=True)
+
+    async def close(self):
+        if self.session:
+            await self.session.close()
+            self.session = None
 
     async def _api_call(
         self,
@@ -146,11 +148,9 @@ class Alist:
         return files_list
 
     async def _fetch_tasks(
-        self, task_type: AlistTaskType, status: AlistTaskStatus
-    ) -> AlistTaskList:
-        json_data = await self._api_call(
-            "GET", f"/api/task/{task_type.value}/{status.value}"
-        )
+        self, task_type: AlistTaskType, status: str
+    ) -> List[AlistTask]:
+        json_data = await self._api_call("GET", f"/api/task/{task_type.value}/{status}")
 
         if task_type == AlistTaskType.TRANSFER:
             task_class = AlistTransferTask
@@ -158,27 +158,29 @@ class Alist:
             task_class = AlistDownloadTask
 
         tasks = [task_class.from_json(task) for task in json_data] if json_data else []
-        return AlistTaskList(tasks)
+        return tasks
 
     async def get_task_list(
-        self, task_type: AlistTaskType, status: Optional[AlistTaskState] = None
-    ) -> AlistTaskList:
+        self, task_type: AlistTaskType, status: str = ""
+    ) -> List[AlistTask]:
         """
         Get Alist task list.
 
         Args:
             task_type (TaskType):
-            status (TaskStatus, optional): Undone or Done; If None, return all tasks. Defaults to None.
+            status (str): undone | done; If None, return all tasks. Defaults to None.
 
         Returns:
             TaskList: The list contains all query tasks.
         """
-        if status is None:
-            done_tasks = await self._fetch_tasks(task_type, AlistTaskState.DONE)
-            undone_tasks = await self._fetch_tasks(task_type, AlistTaskState.UNDONE)
+        if not status:
+            done_tasks = await self._fetch_tasks(task_type, "done")
+            undone_tasks = await self._fetch_tasks(task_type, "undone")
             return done_tasks + undone_tasks
-        else:
+        elif status.lower() in ["done", "undone"]:
             return await self._fetch_tasks(task_type, status)
+        else:
+            raise ValueError("Unknown status when get task list.")
 
     async def cancel_task(
         self,
