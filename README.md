@@ -37,15 +37,15 @@ Docker，源码运行等更多的运行方法详见[使用文档](https://github
      base_url: https://example.com # 修改为你的alist访问地址
      token: alist-xxx # 修改为你的alist token；可在"管理员后台->设置->其他"中找到
      downloader: qBittorrent # 或者 aria2
-     download_path: Onedrive/Anime # 修改为你的下载路径，相对于alist根目录
-   
+     download_path: Onedrive/Anime # 修改为你的下载路径(Alist中的路径)
+
    mikan:
      subscribe_url:
        - https://mikanani.me/RSS/MyBangumi?token=xxx # 修改为你的蜜柑订阅地址
        # - https://mikanani.me/RSS/MyBangumi?token=xxx2 # 多条RSS订阅链接情况
    
      filters:
-       - 非合集
+       - 非合集 # 程序暂不支持合集等形式的重命名，若使用重命名功能推荐使用此过滤器
    ```
 4. 运行代码：`python -m alist_mikananirss --config /path/to/config.yaml`  
 5. Enjoy
