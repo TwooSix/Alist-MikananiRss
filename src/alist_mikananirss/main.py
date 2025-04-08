@@ -126,6 +126,7 @@ async def run():
                 "deepseek",
                 api_key=extractor_cfg.api_key,
                 base_url=extractor_cfg.base_url,
+                model=extractor_cfg.model,
             )
             extractor = LLMExtractor(llm_provider, extractor_cfg.output_type)
         else:
