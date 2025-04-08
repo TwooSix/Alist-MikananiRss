@@ -27,7 +27,8 @@ class Mikan(Website):
                 response.raise_for_status()
                 html = await response.text()
         soup = bs4.BeautifulSoup(html, "html.parser")
-        anime_name = soup.find("p", class_="bangumi-title").text.strip()
+        title_element = soup.find("p", class_="bangumi-title")
+        anime_name = title_element.text.strip() if title_element else None
         fansub = None
         bgm_info_elements = soup.find_all("p", class_="bangumi-info")
         for e in bgm_info_elements:
@@ -73,15 +74,25 @@ class Mikan(Website):
             fansub=homepage_info.fansub,
         )
         if use_extractor:
-            name_extract_result = await Extractor.analyse_anime_name(
-                resource_info.anime_name
-            )
-            rtitle_extract_result = await Extractor.analyse_resource_title(
-                resource_info.resource_title, use_tmdb=False
-            )
+            anime_name = resource_info.anime_name
+            season = None
+            if not anime_name:
+                # Can't get anime name from homepage, use tmdb result.
+                rtitle_extract_result = await Extractor.analyse_resource_title(
+                    resource_info.resource_title, use_tmdb=True
+                )
+                anime_name = rtitle_extract_result.anime_name
+                season = rtitle_extract_result.season
+            else:
+                name_extract_result = await Extractor.analyse_anime_name(anime_name)
+                rtitle_extract_result = await Extractor.analyse_resource_title(
+                    resource_info.resource_title, use_tmdb=False
+                )
+                anime_name = name_extract_result.anime_name
+                season = name_extract_result.season
             resource_info = ResourceInfo(
-                anime_name=name_extract_result.anime_name,
-                season=name_extract_result.season,
+                anime_name=anime_name,
+                season=season,
                 episode=rtitle_extract_result.episode,
                 quality=rtitle_extract_result.quality,
                 languages=rtitle_extract_result.languages,
