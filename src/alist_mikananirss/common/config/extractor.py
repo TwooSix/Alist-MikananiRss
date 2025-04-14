@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
@@ -27,3 +27,15 @@ class DeepSeekConfig(BaseModel):
     output_type: PromptType = Field(
         PromptType.JSON_OBJECT, description="Structure output type for DeepSeek API"
     )
+
+
+class GoogleConfig(BaseModel):
+    extractor_type: Literal["google"]
+    api_key: str = Field(..., description="Google API key")
+    model: str = Field("gemini-2.0-flash")
+    output_type: PromptType = Field(PromptType.JSON_SCHEMA)
+
+
+ExtractorConfig = Annotated[
+    OpenAIConfig | DeepSeekConfig | GoogleConfig, Field(discriminator="extractor_type")
+]

@@ -11,6 +11,7 @@ dependencies = [
     "asyncio>=3.4.3",
     "beautifulsoup4>=4.12.3",
     "feedparser>=6.0.11",
+    "google-genai>=1.10.0",
     "loguru>=0.7.3",
     "openai>=1.58.1",
     "python-telegram-bot>=21.9",

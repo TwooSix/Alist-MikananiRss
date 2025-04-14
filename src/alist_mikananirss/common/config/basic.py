@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 from alist_mikananirss.alist import AlistDownloaderType
 
 from .bot_assistant import TelegramBotAssistantConfig
-from .extractor import DeepSeekConfig, OpenAIConfig
+from .extractor import ExtractorConfig
 from .notifier import PushPlusConfig, TelegramConfig
 from .remap import RemapConfig
 
@@ -70,9 +70,7 @@ class MikanConfig(BaseModel):
 
 class RenameConfig(BaseModel):
     enable: bool = Field(default=False)
-    extractor: OpenAIConfig | DeepSeekConfig = Field(
-        default=None, discriminator="extractor_type"
-    )
+    extractor: ExtractorConfig | None = Field(default=None)
     rename_format: str = Field(
         "{name} S{season:02d}E{episode:02d}", description="Rename format"
     )
