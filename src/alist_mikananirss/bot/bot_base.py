@@ -28,14 +28,14 @@ class BotFactory:
         if bot_type == BotType.TELEGRAM:
             from .tgbot import TelegramBot
 
-            bot_token = kwargs.get("bot_token")
+            bot_token = kwargs.get("token")
             user_id = kwargs.get("user_id")
             return TelegramBot(bot_token, user_id)
 
         elif bot_type == BotType.PUSHPLUS:
             from .pushplus_bot import PushPlusBot
 
-            user_token = kwargs.get("user_token")
+            user_token = kwargs.get("token")
             channel = kwargs.get("channel")
             return PushPlusBot(user_token, channel)
 
