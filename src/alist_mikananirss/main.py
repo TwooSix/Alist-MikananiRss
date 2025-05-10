@@ -18,7 +18,7 @@ from alist_mikananirss import (
     SubscribeDatabase,
 )
 from alist_mikananirss.alist import Alist
-from alist_mikananirss.bot import BotFactory, BotType, NotificationBot
+from alist_mikananirss.bot import BotFactory, NotificationBot
 from alist_mikananirss.extractor import Extractor, LLMExtractor, create_llm_provider
 
 
@@ -51,21 +51,23 @@ def init_notification(cfg: AppConfig):
     notification_bots = []
     if not cfg.notification.enable:
         return
+
     for bot_cfg in cfg.notification.bots:
-        if bot_cfg.bot_type == "telegram":
-            bot = BotFactory.create_bot(
-                BotType.TELEGRAM,
-                bot_token=bot_cfg.token,
-                user_id=bot_cfg.user_id,
-            )
+        bot_kwargs = bot_cfg.model_dump(exclude={"bot_type"})
+
+        try:
+            bot = BotFactory.create_bot(bot_cfg.bot_type, **bot_kwargs)
             notification_bots.append(NotificationBot(bot))
-        elif bot_cfg.bot_type == "pushplus":
-            bot = BotFactory.create_bot(
-                BotType.PUSHPLUS,
-                user_token=bot_cfg.token,
-                channel=bot_cfg.channel,
-            )
-            notification_bots.append(NotificationBot(bot))
+        except ValueError as e:
+            logger.error(f"Failed to create notification bot: {e}")
+
+    if not notification_bots:
+        logger.warning(
+            "Notification enabled but no valid bots were configured or created."
+        )
+        cfg.notification.enable = False
+        return
+
     NotificationSender.initialize(notification_bots, cfg.notification.interval_time)
 
 
@@ -111,26 +113,17 @@ async def run():
     # extractor
     if cfg.rename.enable:
         extractor_cfg = cfg.rename.extractor
-        type_ = extractor_cfg.extractor_type
-        extractor = None
-        if type_ == "openai":
+        provider_kwargs = extractor_cfg.model_dump(
+            exclude={"extractor_type", "output_type"}
+        )
+        try:
             llm_provider = create_llm_provider(
-                "openai",
-                api_key=extractor_cfg.api_key,
-                base_url=extractor_cfg.base_url,
-                model=extractor_cfg.model,
+                extractor_cfg.extractor_type, **provider_kwargs
             )
             extractor = LLMExtractor(llm_provider, extractor_cfg.output_type)
-        elif type_ == "deepseek":
-            llm_provider = create_llm_provider(
-                "deepseek",
-                api_key=extractor_cfg.api_key,
-                base_url=extractor_cfg.base_url,
-                model=extractor_cfg.model,
-            )
-            extractor = LLMExtractor(llm_provider, extractor_cfg.output_type)
-        else:
-            raise ValueError(f"Unsupported extractor type: {type_}")
+        except ValueError as e:
+            logger.error(f"Failed to create LLM provider: {e}")
+            raise
         Extractor.initialize(extractor)
 
         AnimeRenamer.initialize(alist_client, cfg.rename.rename_format)
