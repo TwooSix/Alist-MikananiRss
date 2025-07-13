@@ -1,4 +1,6 @@
-from unittest.mock import AsyncMock, patch, MagicMock
+import random
+from datetime import datetime
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -11,8 +13,6 @@ from alist_mikananirss.alist.tasks import (
     AlistTaskType,
     AlistTransferTask,
 )
-from datetime import datetime
-import random
 
 
 @pytest.fixture
@@ -197,3 +197,23 @@ def test_tf_task_extract(create_task_json):
     assert task.uuid == test_uuid
     assert task.target_path == test_target_drive + test_target_dir + "/" + test_filename
     assert task.task_type == AlistTaskType.TRANSFER
+
+    # openlist case
+    json_data = create_tf_task_json(
+        "tf1",
+        AlistTaskState.Running,
+        test_uuid,
+        test_target_drive,
+        test_target_dir,
+        "test.mp4",
+    )
+    json_data["name"] = (
+        "transfer [](/data/tmp/qBittorrent/f32e8969-8a6c-4878-8932-ca3318f9933e/Summer Pockets - S01E14 - [三明治摆烂组][简体内嵌][H264 8bit 1080P].mp4) to [/crypt-gd1](/)"
+    )
+    task2: AlistTransferTask = AlistTransferTask.from_json(json_data)
+    assert task2.uuid == "f32e8969-8a6c-4878-8932-ca3318f9933e"
+    assert (
+        task2.target_path
+        == "/crypt-gd1/Summer Pockets - S01E14 - [三明治摆烂组][简体内嵌][H264 8bit 1080P].mp4"
+    )
+    assert task2.task_type == AlistTaskType.TRANSFER
