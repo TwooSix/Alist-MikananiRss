@@ -3,9 +3,8 @@ from __future__ import annotations
 import re
 from abc import ABC
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Optional
 from datetime import datetime
+from enum import Enum
 
 
 # https://github.com/alist-org/alist/blob/86b35ae5cfec400871072356fec4dea88303195d/pkg/task/task.go#L27
@@ -49,6 +48,9 @@ class CreatorRole(Enum):
 
 DOWNLOAD_DES_PATTERN = re.compile(r"download\s+(.+?)\s+to \((.+?)\)")
 TRANSFER_DES_PATTERN = re.compile(r"transfer \[.*\]\((.+)\) to \[(.+)\]\((.+)\)")
+UUID_PATTERN = re.compile(
+    r"([a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12})"
+)
 
 
 class AlistTaskError(Exception):
@@ -134,13 +136,22 @@ class AlistTransferTask(AlistTask):
         self.task_type = AlistTaskType.TRANSFER
         match = re.match(TRANSFER_DES_PATTERN, self.name)
         if match:
+            # case exmaple:
+            # transfer [](/opt/alist/data/temp/qBittorrent/2788fc32-b898-4b54-8657-efa59962f637/[ANi] 歲月流逝飯菜依舊美味 - 09 [1080P][Baha][WEB-DL][AAC AVC][CHT].mp4) to [/Google](/Anime/时光流逝，饭菜依旧美味/Season 1)
+
+            # /opt/alist/data/temp/qBittorrent/2788fc32-b898-4b54-8657-efa59962f637/[ANi] 歲月流逝飯菜依舊美味 - 09 [1080P][Baha][WEB-DL][AAC AVC][CHT].mp4
             temp_filepath = match.group(1)
+            # /Google
             target_drive = match.group(2)
+            # /Anime/时光流逝，饭菜依旧美味/Season 1
             drive_subdir = match.group(3)
-            target_dirpath = f"{target_drive}{drive_subdir}"
-            elements = temp_filepath.split("/")
-            uuid = elements[elements.index("temp") + 2]
+            # /Google/Anime/时光流逝，饭菜依旧美味/Season 1
+            target_dirpath = f"{target_drive}{drive_subdir}".rstrip("/")
+            # 2788fc32-b898-4b54-8657-efa59962f637
+            uuid = re.search(UUID_PATTERN, temp_filepath).group(1)
+            # [ANi] 歲月流逝飯菜依舊美味 - 09 [1080P][Baha][WEB-DL][AAC AVC][CHT].mp4
             sub_path = temp_filepath[temp_filepath.rfind(uuid) + len(uuid) + 1 :]
+            # /Google/Anime/时光流逝，饭菜依旧美味/Season 1/[ANi] 歲月流逝飯菜依舊美味 - 09 [1080P][Baha][WEB-DL][AAC AVC][CHT].mp4
             target_file_path = f"{target_dirpath}/{sub_path}"
         else:
             raise InvalidTaskDescription(
@@ -180,3 +191,22 @@ class AlistDownloadTask(AlistTask):
 
     def __hash__(self):
         return hash(self.tid)
+
+
+if __name__ == "__main__":
+    # openlist
+    example_json = {
+        "id": "rubfcBLgOOZW8SFPHZbkj",
+        "name": "transfer [](/data/tmp/qBittorrent/f32e8969-8a6c-4878-8932-ca3318f9933e/Summer Pockets - S01E14 - [三明治摆烂组][简体内嵌][H264 8bit 1080P].mp4) to [/crypt-gd1](/)",
+        "creator": "admin",
+        "creator_role": 2,
+        "state": 1,
+        "status": "getting src object",
+        "progress": 0,
+        "start_time": "2025-07-11T07:48:41.4354376Z",
+        "end_time": None,
+        "total_bytes": 390419899,
+        "error": "",
+    }
+    task = AlistTransferTask.from_json(example_json)
+    print(task)
