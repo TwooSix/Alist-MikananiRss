@@ -2,11 +2,9 @@ name: Build and Publish to PyPI
 
 on:
   workflow_dispatch:
-  pull_request:
-    types:
-      - closed
-    branches:
-      - master
+  push:
+    tags:
+      - v*
 
 jobs:
   build-and-publish:
