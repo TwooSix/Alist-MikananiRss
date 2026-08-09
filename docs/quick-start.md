@@ -4,7 +4,13 @@
 
 1. 参照 [Openlist 官方文档](https://doc.oplist.org/guide) 部署 Openlist，并搭建好离线下载
 2. 准备好 RSS 订阅链接（如 [Mikan Project](https://mikanani.me)）
-3. 推荐准备好 LLM API Key（未配置时会使用本地正则解析 + TMDB 校验）
+3. 可选：准备 AI API Key，或安装并登录 Pi / Claude Code / Codex Agent（均未配置时元数据使用本地正则 + TMDB）
+
+非 Docker 安装不需要手工安装 Pi 或 Node.js。首次启动 Assistant 时，程序会
+自动下载当前版本锁定的官方 Pi 独立包、校验 SHA-256，并安装到持久化 runtime
+目录。已有的 Pi 或显式配置的 `executable` 会直接复用。Windows 缺少 Bash 时，
+程序会以同样方式准备经过固定 SHA-256 校验的官方 PortableGit，不修改系统安装
+或全局 PATH。Docker 镜像已预装 Pi，并使用镜像内的 Bash。
 
 ## 🚀 安装与启动
 
@@ -21,25 +27,31 @@ pip install openlist-ani
 在运行目录下新建 `config.toml`，填入以下内容：
 
 ```toml
+config_version = 2
+
 [rss]
 urls = ["RSS订阅链接"]
 
-[openlist]
-url = "http://localhost:5244"       # Openlist 访问地址
-token = ""                          # 令牌，见「设置 → 其他 → 令牌」
-download_path = "/PikPak/Anime"     # 下载保存路径
-offline_download_tool = "QBITTORRENT"  # 离线下载工具
+[downloader]
+download_path = "/PikPak/Anime"
+rename_format = "{anime_name} S{season:02d}E{episode:02d} {fansub} {quality} {languages}"
 
-[metadata_parser]
-provider = "llm"                    # 推荐 llm + tmdb；未配置 LLM 时默认 regex + tmdb
+[downloader.openlist]
+url = "http://localhost:5244"
+token = ""
+offline_download_tool = "qBittorrent"
 
-[metadata_validator]
-provider = "tmdb"
+[metadata]
+pipeline = ["regex", "tmdb"]
 
-[llm]
-openai_api_key = ""                 # LLM API Key；启用 AI 助理时也必填
-openai_base_url = "https://api.deepseek.com/v1"
-openai_model = "deepseek-chat"
+# 可选：启用 AI Metadata；Assistant 会通过内置 Pi 使用此 API。
+# [ai.sources.primary]
+# type = "api"
+# provider = "openai-compatible"
+# api_key = "sk-xxx"
+# base_url = "https://api.deepseek.com/v1"
+# model = "deepseek-chat"
+# 把 metadata.pipeline 改为 ["ai", "tmdb"] 后生效
 ```
 
 > 完整配置项请参考 [配置说明](configuration)
@@ -60,7 +72,7 @@ enabled = true
 
 [assistant.telegram]
 bot_token = ""        # 从 @BotFather 获取
-allowed_users = []    # 允许的用户 ID 列表（留空则允许所有人，建议设置具体 ID）
+allowed_users = [123456789]  # 必填；只有这些用户可以使用 Assistant
 ```
 
 ```bash

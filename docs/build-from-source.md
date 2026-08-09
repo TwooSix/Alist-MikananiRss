@@ -60,6 +60,11 @@ uv sync --no-dev --frozen
 uv sync --frozen
 ```
 
+Assistant 的默认 Pi harness 无需 Node.js/npm。首次启动时会自动下载并校验
+项目锁定的官方独立包；已有 Pi 或 source 中显式配置的 `executable` 会优先复用。
+Windows 缺少 Bash 时会同时准备固定版本和校验值的官方 PortableGit，仅放在项目
+runtime 目录中，不修改系统安装或全局 PATH。
+
 ## 第四步：创建配置文件
 
 复制示例配置文件：
@@ -74,6 +79,7 @@ cp config.toml.example config.toml
 # ============================================================
 # Openlist-Ani 完整配置文件
 # ============================================================
+config_version = 2
 
 # ---------- 后端 API ----------
 [backend]
@@ -101,28 +107,29 @@ interval_time = 300   # 抓取间隔（秒）
 http = ""     # HTTP 代理
 https = ""    # HTTPS 代理
 
-# ---------- Openlist 网盘 ----------
-[openlist]
-url = "http://localhost:5244"          # Openlist 访问地址
-token = ""                              # 令牌
-download_path = "/PikPak/Anime"         # 下载保存路径
-offline_download_tool = "QBITTORRENT"   # 离线下载工具（大小写不敏感）
+# ---------- 下载与 OpenList ----------
+[downloader]
+download_path = "/PikPak/Anime"
 rename_format = "{anime_name} S{season:02d}E{episode:02d} {fansub} {quality} {languages}"
 
-# ---------- 元数据解析与校验 ----------
-[metadata_parser]
-provider = "llm"      # 推荐 llm + tmdb；未配置 LLM 时默认 regex + tmdb
+[downloader.openlist]
+url = "http://localhost:5244"
+token = ""
+offline_download_tool = "qBittorrent"
 
-[metadata_validator]
-provider = "tmdb"
+[metadata]
+pipeline = ["regex", "tmdb"]
+# ai_source = "primary"
 
-# ---------- LLM（AI 重命名） ----------
-[llm]
-openai_api_key = ""                       # LLM API Key；启用 AI 助理时也必填
-openai_base_url = "https://api.deepseek.com/v1"
-openai_model = "deepseek-chat"
-tmdb_api_key = ""           # TMDB API Key（可选）
-tmdb_language = "zh-CN"
+[metadata.tmdb]
+language = "zh-CN"
+
+# [ai.sources.primary]
+# type = "api"
+# provider = "openai-compatible"
+# api_key = "sk-xxx"
+# base_url = "https://api.deepseek.com/v1"
+# model = "deepseek-chat"
 
 # ---------- 通知（可选） ----------
 [notification]
@@ -147,7 +154,7 @@ enabled = false
 
 [assistant.telegram]
 bot_token = ""
-allowed_users = []    # 允许的用户 ID 列表（留空则允许所有人，建议设置具体 ID）
+allowed_users = [123456789]  # 必填；只有这些用户可以使用 Assistant
 
 # ---------- Bangumi（可选） ----------
 [bangumi]
@@ -177,28 +184,30 @@ urls = ["https://mikanani.me/RSS/MyBangumi?token=你的token"]
 ### 2. Openlist 配置
 
 ```toml
-[openlist]
+[downloader]
+download_path = "/PikPak/Anime"
+
+[downloader.openlist]
 url = "http://localhost:5244"
 token = "你的令牌"
-download_path = "/PikPak/Anime"
-offline_download_tool = "QBITTORRENT"
+offline_download_tool = "qBittorrent"
 ```
 
-### 3. 推荐：LLM + TMDB
+### 3. 推荐：AI + TMDB
 
-推荐配置 LLM 做标题解析，并继续使用 TMDB 做校验；如果不配置 LLM API Key，主程序会使用默认的 `regex` + `tmdb`。
+推荐配置 AI source 做标题解析，并继续使用 TMDB 做校验；如果不配置 source，主程序使用默认的 `regex` + `tmdb`。
 
 ```toml
-[metadata_parser]
-provider = "llm"
+[metadata]
+pipeline = ["ai", "tmdb"]
+ai_source = "primary"
 
-[metadata_validator]
-provider = "tmdb"
-
-[llm]
-openai_api_key = "sk-xxx"
-openai_base_url = "https://api.deepseek.com/v1"
-openai_model = "deepseek-chat"
+[ai.sources.primary]
+type = "api"
+provider = "openai-compatible"
+api_key = "sk-xxx"
+base_url = "https://api.deepseek.com/v1"
+model = "deepseek-chat"
 ```
 
 ## 第六步：启动
@@ -233,8 +242,7 @@ uv run openlist-ani-assistant
 > - **CLI 模式**：本地终端交互界面，添加 `--cli` 参数启动
 >
 > ```bash
-> uv run openlist-ani-assistant --cli          # 本地 TUI 模式
-> uv run openlist-ani-assistant --cli --resume # 恢复上次会话
+> uv run openlist-ani-assistant --cli          # 本地 CLI 模式
 > ```
 
 ## 启用通知
@@ -304,8 +312,8 @@ Openlist-Ani/
 │   ├── adapters/             # HTTP、OpenList、RSS、元数据、通知与持久化
 │   ├── application/          # Scheduler、worker、ports 与应用服务
 │   ├── domain/               # release、metadata、job、naming、policies
-│   ├── assistant/            # AI 智能助理
-│   └── builtin_skills/       # 随包发布的内置助理技能
+│   └── assistant/            # AI 智能助理
+│       └── builtin_skills/   # 随包发布的内置助理技能
 ├── tests/                    # 测试用例
 ├── data/                     # 运行时数据
 ├── docker/                   # Docker 相关文件

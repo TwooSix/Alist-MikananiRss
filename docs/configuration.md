@@ -4,6 +4,8 @@
 
 ## 完整配置示例
 ```toml
+config_version = 2
+
 [backend]
 host = "127.0.0.1"  # Backend API bind address (127.0.0.1 = localhost only)
 port = 26666  # Backend API listening port
@@ -29,29 +31,37 @@ quality = ["2160p", "1080p", "720p", "480p", "360p"]
 http = ""  # HTTP proxy URL (e.g., "http://127.0.0.1:7890")
 https = ""  # HTTPS proxy URL (e.g., "http://127.0.0.1:7890")
 
-[openlist]
-url = "http://localhost:5244"
-token = ""
+[downloader]
 download_path = "/"
-offline_download_tool = "QBITTORRENT"  # Supported tools, case-insensitive
 rename_format = "{anime_name} S{season:02d}E{episode:02d} {fansub} {quality} {languages}"
 
-[metadata_parser]
-# 推荐使用 "llm" + [metadata_validator].provider = "tmdb"。
-# 未配置 LLM API Key 且省略本项时，运行时默认使用 "regex" + "tmdb"。
-# 已配置 openai_api_key 且省略本项时，运行时默认使用 "llm" + "tmdb"。
-provider = "llm"  # Title parser: "llm" or "regex"
+[downloader.openlist]
+url = "http://localhost:5244"
+token = ""
+offline_download_tool = "qBittorrent"  # Supported tools, case-insensitive
 
-[metadata_validator]
-provider = "tmdb"  # Metadata validator: "tmdb" or "none"
+[metadata]
+pipeline = ["regex", "tmdb"]
+# ai_source = "primary"  # Optional; first declared source is used by default
 
-[llm]
-openai_api_key = ""  # metadata_parser.provider = "llm" 或 assistant.enabled = true 时必填
-openai_base_url = "https://api.openai.com/v1"
-openai_model = "gpt-4o"
-tmdb_api_key = ""  # Built-in default key provided; only set this to override
-tmdb_language = "zh-CN"  # TMDB metadata language: zh-CN (Chinese), en-US (English), ja-JP (Japanese), etc.
-# provider_type = "openai"  # LLM provider: "openai" or "anthropic"
+[metadata.tmdb]
+# api_key = ""  # Built-in default key provided; only set this to override
+language = "zh-CN"
+
+# API source: Metadata calls the API directly; Assistant wraps it with Pi.
+# [ai.sources.primary]
+# type = "api"
+# provider = "openai-compatible"  # or "anthropic-messages"
+# api_key = "sk-xxx"
+# model = "gpt-5-mini"
+# base_url = "https://api.openai.com/v1"  # optional official default
+
+# Agent source: executable/model are optional and use native agent config.
+# [ai.sources.chat]
+# type = "agent"
+# agent = "pi"  # pi, claude-code, or codex
+# executable = "pi"
+# model = ""
 
 [notification]
 enabled = false  # Enable/disable notification system
@@ -83,16 +93,14 @@ batch_interval = 300.0  # 兼容字段；durable outbox 始终逐条发送，当
 
 [assistant]
 enabled = false  # Enable/disable assistant module
-# max_context_tokens = 128000
-# session_compact_threshold = 100000
-# skills_dir = "skills"
-# data_dir = "data/assistant"
+# backend = "primary"  # Optional; first declared source is used by default
+# skills_dir = "skills"  # Pi/Claude direct-load compatibility path
 
 # Telegram assistant configuration (optional)
 [assistant.telegram]
 enabled = false
 bot_token = ""  # Telegram bot token from @BotFather
-allowed_users = []  # List of allowed Telegram user IDs (empty = allow all)
+allowed_users = [123456789]  # Required; Telegram user IDs allowed to use Assistant
 
 [assistant.wechat]
 enabled = false
@@ -100,6 +108,7 @@ account_id = ""
 token = ""
 base_url = "https://ilinkai.weixin.qq.com"
 home_channel = ""
+allowed_users = ["user@im.wechat"]
 dm_policy = "open"
 
 [assistant.feishu]
@@ -114,12 +123,7 @@ webhook_path = "/feishu/webhook"  # 仅 connection_mode = "webhook" 时使用
 bot_open_id = ""
 require_mention = true
 state_dir = "data/messaging"
-allowed_users = []
-
-# [assistant.auto_dream]
-# enabled = true
-# min_hours = 24.0
-# min_sessions = 5
+allowed_users = ["ou_xxx"]
 
 [bangumi]
 access_token = ""  # Bangumi API Access Token (also supports env var BANGUMI_TOKEN)
@@ -226,15 +230,15 @@ quality = ["2160p", "1080p", "720p", "480p", "360p"]
 | `http` | string | `""` | HTTP 代理地址（如 `http://127.0.0.1:7890`） |
 | `https` | string | `""` | HTTPS 代理地址 |
 
-### Openlist
+### Downloader 与 OpenList
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
-| `url` | string | `"http://localhost:5244"` | Openlist 访问地址 |
-| `token` | string | `""` | 令牌，见「设置 → 其他 → 令牌」 |
-| `download_path` | string | `"/"` | 下载保存路径 |
-| `offline_download_tool` | string | `"QBITTORRENT"` | 离线下载工具（不区分大小写）。可选值：`aria2`、`qBittorrent`、`PikPak`、`115 Cloud`、`115 Open`、`123Pan`、`123 Open`、`SimpleHttp`、`Thunder`、`ThunderBrowser`、`ThunderX`、`Transmission` |
-| `rename_format` | string | 见下方 | 重命名格式模板 |
+| `downloader.download_path` | string | `"/"` | 下载保存路径 |
+| `downloader.rename_format` | string | 见下方 | 与 downloader 实现绑定的重命名格式模板 |
+| `downloader.openlist.url` | string | `"http://localhost:5244"` | OpenList 访问地址 |
+| `downloader.openlist.token` | string | `""` | 令牌，见「设置 → 其他 → 令牌」 |
+| `downloader.openlist.offline_download_tool` | string | `"qBittorrent"` | 离线下载工具（不区分大小写）。可选值：`aria2`、`qBittorrent`、`PikPak`、`115 Cloud`、`115 Open`、`123Pan`、`123 Open`、`SimpleHttp`、`Thunder`、`ThunderBrowser`、`ThunderX`、`Transmission` |
 
 #### 重命名格式
 
@@ -248,30 +252,42 @@ quality = ["2160p", "1080p", "720p", "480p", "360p"]
 - `{quality}` — 画质
 - `{languages}` — 语言
 
-### Metadata Parser（标题元数据解析）
+### Metadata pipeline
 
-推荐使用 `llm` + `tmdb`：LLM 负责从资源标题抽取番剧名、季度、集数等字段，TMDB 负责校验和校对。未配置 LLM API Key 且未显式设置 `metadata_parser.provider` 时，运行时默认使用 `regex` + `tmdb`，不阻塞基础下载流程。已配置 `[llm].openai_api_key` 且未显式设置 provider 时，运行时默认切换为 `llm` + `tmdb`。显式配置 `metadata_parser.provider = "regex"` 时不会被 LLM Key 覆盖。
-
-| 配置项 | 类型 | 默认值 | 说明 |
-|--------|------|--------|------|
-| `provider` | string | `"regex"` | 标题解析器。`"llm"` 使用 LLM 抽取标题字段，要求配置 `[llm].openai_api_key`；`"regex"` 使用本地正则抽取标题字段，不需要 LLM API Key。若省略本项但配置了 `[llm].openai_api_key`，运行时默认选择 `"llm"` |
-
-### Metadata Validator（元数据校验）
+`metadata.pipeline` 是有序步骤列表。未配置 AI source 时默认使用 `["regex", "tmdb"]`；需要 AI 提取时设置为 `["ai", "tmdb"]`。`metadata.ai_source` 只控制其中的 `ai` 步骤，省略时选择第一个声明的 source。设置了 `ai_source` 但 pipeline 不包含 `ai` 时仅告警。
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
-| `provider` | string | `"tmdb"` | 元数据校验器。`"tmdb"` 使用 `[llm]` 下的 `tmdb_api_key` 与 `tmdb_language` 做 TMDB 查询和剧集校验；`"none"` 跳过外部校验，直接使用 parser 输出 |
+| `pipeline` | list | 自动选择 | 支持 `regex`、`ai`、`tmdb`，按声明顺序执行 |
+| `ai_source` | string | 第一个 source | `ai` 步骤使用的 `[ai.sources.<名称>]` |
+| `tmdb.api_key` | string | 内置默认值 | TMDB API Key |
+| `tmdb.language` | string | `"zh-CN"` | TMDB 元数据语言 |
 
-### LLM
+Agent source 的 Metadata 调用是无工具、无历史的一次性会话。输出必须满足结构化 JSON 约束；非法输出会修复一次，仍失败则由现有 pipeline fallback 继续处理。
+
+### AI sources
+
+配置头固定为 `[ai.sources.<名称>]`，可以同时声明多个 source，不使用 profile 或数组。`metadata.ai_source` 和 `assistant.backend` 可以独立选择；二者省略时都选择第一个声明项，不做隐式故障转移。
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
-| `provider_type` | string | `"openai"` | LLM 提供者，可选 `"openai"` 或 `"anthropic"` |
-| `openai_api_key` | string | `""` | LLM API Key。`metadata_parser.provider = "llm"` 或 `assistant.enabled = true` 时必填 |
-| `openai_base_url` | string | `"https://api.openai.com/v1"` | OpenAI 兼容 API 地址 |
-| `openai_model` | string | `"gpt-4o"` | 使用的模型名称 |
-| `tmdb_api_key` | string | `"（内置默认值）"` | TMDB API Key（内置默认 Key，通常无需修改。如有自己的 Key 可覆盖） |
-| `tmdb_language` | string | `"zh-CN"` | TMDB 元数据语言（如 `zh-CN`、`en-US`、`ja-JP`） |
+| `type` | string | 必填 | `api` 或 `agent` |
+| `provider` | string | API 必填 | `openai-compatible` 或 `anthropic-messages` |
+| `api_key` | string | API 必填 | API 凭据，不会写入日志 |
+| `base_url` | string | 官方地址 | OpenAI 默认 `https://api.openai.com/v1`；Anthropic 默认 `https://api.anthropic.com` |
+| `model` | string | API 必填 | API source 的模型；Agent source 可省略以使用原生配置 |
+| `agent` | string | Agent 必填 | 内置 `pi`、`claude-code`、`codex`，或已安装 entry point 的名称 |
+| `executable` | string | Agent 默认命令 | 自定义 Agent 可执行文件路径 |
+
+API source 在 Metadata 中直接调用 API，在 Assistant 中始终由内置 Pi 注入 provider 配置。Agent source 在 Metadata 中运行隔离会话，在 Assistant 中调用对应 Agent 的会话接口。完全没有 `[ai.sources]` 时，Assistant 使用 Pi 原生认证和模型配置；Metadata 仅在显式包含 `ai` 时才尝试 Pi。
+
+Pi 的 `executable` 解析顺序为：source 显式配置、`OPENLIST_ANI_PI_EXECUTABLE`、PATH 中已有的 `pi`、程序托管的锁定版本。前面三项均不存在时，程序按当前操作系统和 CPU 下载 Pi 官方独立包，通过官方 `SHA256SUMS` 校验后原子安装到配置文件旁的 `data/assistant/runtime/pi/<版本>/`。安装有跨进程锁，不依赖 Node.js/npm，也不会修改配置文件或覆盖用户已有 Pi。只读目录、网络或校验失败时启动会给出可操作错误，不会运行未校验或半安装的文件。
+
+### 自动配置迁移
+
+`config_version` 当前为 `2`。没有版本号的历史配置按 v1 处理：启动时先获取迁移锁，在原目录生成逐字节备份 `config.toml.bak.v1.<时间>`，再连续执行版本迁移、Pydantic 校验和原子替换。成功迁移一次后不会重复备份。只读挂载无法备份时不会覆盖原文件，而是使用内存迁移结果启动并持续告警。
+
+v1 的 `[llm]`、`[metadata_parser]`、`[metadata_validator]`、`[openlist]` 和 `[file_renamer]` 会分别迁移到 `[ai.sources.legacy-llm]`、`[metadata]` 和 `[downloader]`。新旧字段同时存在时新字段优先，旧字段仅补全缺失值。
 
 ### Notification（通知）
 
@@ -339,10 +355,20 @@ config = { app_id = "cli_xxx", app_secret = "your_app_secret" }
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
 | `enabled` | bool | `false` | 是否启用助理模块 |
-| `max_context_tokens` | int | `128000` | 最大上下文窗口大小 |
-| `session_compact_threshold` | int | `100000` | 会话历史压缩阈值（token 数） |
-| `skills_dir` | string | `"skills"` | 用户自定义 skills 目录；内置 skills 随程序包加载，同名自定义 skill 会覆盖内置版本 |
-| `data_dir` | string | `"data/assistant"` | 助理数据 / 记忆文件目录 |
+| `backend` | string | 第一个 source | Assistant 使用的 `[ai.sources.<名称>]`；API source 会自动交给 Pi |
+| `skills_dir` | string | `"skills"` | 用户自定义 Skills 目录；Pi 通过 `--skill`、Claude Code 通过 `--plugin-dir` 直接加载，不复制到会话目录 |
+
+Assistant 不再实现自己的模型循环、上下文压缩、subagent、memory consolidation
+或 Skill 索引。内置 Skills 打包为同一份标准 Agent 插件：Pi 直接接收 `--skill`
+目录，Claude Code 直接接收 `--plugin-dir`，Codex 首次使用时通过自己的
+`codex plugin marketplace add`/`codex plugin add` 注册并由 Codex 管理缓存。
+OAni 不再向临时会话目录复制或链接 Skills，也不读取 `SKILL.md` 建立第二份目录。
+
+`skills_dir` 保留用于兼容已有自定义 Skills：Pi 会直接传入整个目录；Claude
+Code 会将其中的 Skill 目录作为本地插件参数传入。Codex 当前没有等价的临时
+目录参数，因此 Codex 用户的额外 Skills 应安装到 Codex 原生插件或
+`.agents/skills` 位置；`skills_dir` 不会注入 Codex。脚本均在本地运行。
+Telegram、微信和飞书启用时必须配置非空 `allowed_users`。
 
 #### Telegram 助理
 
@@ -350,7 +376,7 @@ config = { app_id = "cli_xxx", app_secret = "your_app_secret" }
 |--------|------|--------|------|
 | `enabled` | bool | `false` | 是否启用 Telegram 助理 |
 | `bot_token` | string | `""` | Telegram Bot Token（从 @BotFather 获取） |
-| `allowed_users` | list | `[]` | 允许的用户 ID 列表（空 = 不限制） |
+| `allowed_users` | list | 无 | 必填；允许使用 Assistant 的用户 ID，空列表会阻止启动 |
 
 #### 微信 iLink 助理
 
@@ -364,6 +390,7 @@ account_id = "bot@im.bot"
 token = "your_bot_token"
 base_url = "https://ilinkai.weixin.qq.com"
 home_channel = "user@im.wechat"
+allowed_users = ["user@im.wechat"]
 ```
 
 | 配置项 | 类型 | 默认值 | 说明 |
@@ -373,6 +400,7 @@ home_channel = "user@im.wechat"
 | `token` | string | `""` | iLink Bot token；由 `openlist-ani-wechat-login` 打印 |
 | `base_url` | string | `"https://ilinkai.weixin.qq.com"` | iLink API 地址 |
 | `home_channel` | string | `""` | 允许微信助理交互的唯一会话；由 `openlist-ani-wechat-login` 捕获首条消息后打印 |
+| `allowed_users` | list | 无 | 必填；允许使用 Assistant 的微信发送者 ID，空列表会阻止启动 |
 | `dm_policy` | string | `"open"` | 私聊访问策略，当前文本实现保留该配置 |
 
 微信助理启动前也需要先执行 `openlist-ani-wechat-login`，并把打印出的 `account_id/token/base_url/home_channel` 填入配置。
@@ -402,17 +430,9 @@ app_secret = "your_app_secret"
 | `bot_open_id` | string | `""` | 可选；用于更精确地判断群聊 @机器人 |
 | `require_mention` | bool | `true` | 群聊中是否必须 @机器人 才处理 |
 | `state_dir` | string | `"data/messaging"` | `/set-notify-home` 通知目标保存目录 |
-| `allowed_users` | list | `[]` | 允许交互的飞书用户 ID 列表；空 = 不限制 |
+| `allowed_users` | list | 无 | 必填；允许交互的飞书用户 ID，空列表会阻止启动 |
 
 在开放平台启用机器人和接收消息事件后，把机器人加入目标私聊或群聊，然后启动助理。私聊中可直接发送消息；群聊中请 @机器人发送消息。需要接收通知时，在目标会话发送 `/set-notify-home` 完成绑定。
-
-#### auto_dream（自动记忆整合）
-
-| 配置项 | 类型 | 默认值 | 说明 |
-|--------|------|--------|------|
-| `enabled` | bool | `true` | 是否启用自动记忆整合 |
-| `min_hours` | float | `24.0` | 两次整合之间的最小间隔（小时） |
-| `min_sessions` | int | `5` | 触发整合所需的最小会话数 |
 
 ### Bangumi
 

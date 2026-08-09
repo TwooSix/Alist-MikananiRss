@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +11,9 @@ from tomlkit import dumps as toml_dumps
 from openlist_ani.logger import FATAL_LEVEL, logger
 
 from .environment import ProxyEnvironmentApplier
+from .migration import migrate_config
 from .models import (
+    AIConfig,
     AssistantConfig,
     BackendConfig,
     BangumiConfig,
@@ -21,6 +22,7 @@ from .models import (
     LLMConfig,
     LogConfig,
     MetadataParserConfig,
+    MetadataPipelineConfig,
     MetadataValidatorConfig,
     MikanConfig,
     NotificationConfig,
@@ -45,10 +47,21 @@ class ConfigManager:
             self.save()
             return
         try:
-            raw = tomllib.loads(self.config_path.read_text(encoding="utf-8"))
-            self._config = UserConfig.model_validate(raw)
+            migration = migrate_config(self.config_path)
+            self._config = migration.config
             self._load_failed = False
             ProxyEnvironmentApplier().apply(self._config.proxy)
+            if migration.migrated and migration.persisted:
+                logger.info(
+                    f"Configuration migrated to version "
+                    f"{self._config.config_version}. Backup: {migration.backup_path}"
+                )
+            elif migration.migrated:
+                logger.warning(
+                    f"Configuration {self.config_path} was migrated in memory but "
+                    "could not be backed up and rewritten (the file may be read-only). "
+                    "The legacy file will be migrated again on the next start."
+                )
         except Exception as error:
             self._load_failed = True
             logger.log(
@@ -64,7 +77,7 @@ class ConfigManager:
     def save(self) -> None:
         try:
             self.config_path.parent.mkdir(parents=True, exist_ok=True)
-            payload = self._config.model_dump()
+            payload = self._config.model_dump(exclude_none=True)
             self.config_path.write_text(toml_dumps(payload), encoding="utf-8")
         except Exception as error:
             logger.error(
@@ -95,12 +108,30 @@ class ConfigManager:
         return self.data.downloader
 
     @property
+    def ai(self) -> AIConfig:
+        return self.data.ai
+
+    @property
+    def metadata(self) -> MetadataPipelineConfig:
+        return self.data.metadata
+
+    @property
     def file_renamer(self) -> FileRenamerConfig:
         return self.data.file_renamer
 
     @property
     def openlist(self) -> OpenListConfig:
-        return self.data.openlist
+        # Direct Python callers from v1 may still mutate ``data.openlist``.
+        # Config files never reach this branch because migration removes the
+        # root table before validation.
+        legacy = self.data.openlist
+        if (
+            legacy.token
+            or legacy.url != "http://localhost:5244"
+            or legacy.offline_download_tool != "qBittorrent"
+        ):
+            return legacy
+        return self.data.downloader.openlist
 
     @property
     def llm(self) -> LLMConfig:

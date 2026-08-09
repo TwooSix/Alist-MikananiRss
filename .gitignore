@@ -17,6 +17,8 @@ data/
 # config
 *.toml
 !pyproject.toml
+*.toml.bak.v*
+.config.toml.migrate.lock
 .vscode/
 
 # test

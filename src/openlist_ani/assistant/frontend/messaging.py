@@ -2,20 +2,21 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Iterable
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
 from openlist_ani.logger import logger
 
-from openlist_ani.assistant.core.message_queue import PendingMessage
-from openlist_ani.assistant.core.models import EventType
+from openlist_ani.assistant.contracts import (
+    AssistantLoop,
+    EventType,
+    LoopEvent,
+    PendingMessage,
+)
 from openlist_ani.assistant.frontend.base import Frontend
+from openlist_ani.assistant.frontend.progress import narration_preview, progress_line
 from openlist_ani.assistant.logging_format import format_log_text
 from openlist_ani.integrations.messaging.models import InboundMessage
 from openlist_ani.integrations.messaging.state_store import MessagingStateStore
-
-if TYPE_CHECKING:
-    from openlist_ani.assistant.core.loop import AgenticLoop
-    from openlist_ani.assistant.skill.catalog import SkillCatalog
 
 
 class TextMessenger(Protocol):
@@ -40,7 +41,7 @@ class AllowedTargetAuthorizer:
         self._key = key
 
     def is_authorized(self, message: InboundMessage) -> bool:
-        return not self._allowed_values or self._key(message) in self._allowed_values
+        return self._key(message) in self._allowed_values
 
 
 class AllowedUserAuthorizer(AllowedTargetAuthorizer):
@@ -53,6 +54,14 @@ class AllowedChatAuthorizer(AllowedTargetAuthorizer):
         super().__init__(allowed_chats, lambda message: message.target.chat_id)
 
 
+class AllOfAuthorizer:
+    def __init__(self, *authorizers: MessageAuthorizer) -> None:
+        self._authorizers = authorizers
+
+    def is_authorized(self, message: InboundMessage) -> bool:
+        return all(item.is_authorized(message) for item in self._authorizers)
+
+
 class MessagingFrontend(Frontend):
     """Generic text messaging frontend for WeChat and Feishu."""
 
@@ -61,13 +70,12 @@ class MessagingFrontend(Frontend):
         *,
         platform: str,
         messenger: TextMessenger,
-        loop: AgenticLoop,
-        loop_factory: Callable[[], AgenticLoop] | None = None,
+        loop: AssistantLoop,
+        loop_factory: Callable[[], AssistantLoop] | None = None,
         state_store: MessagingStateStore | None = None,
         allowed_users: list[str] | None = None,
         authorizer: MessageAuthorizer | None = None,
         enable_notify_home_command: bool = True,
-        catalog: SkillCatalog | None = None,
     ) -> None:
         super().__init__(loop)
         self.platform = platform
@@ -76,8 +84,7 @@ class MessagingFrontend(Frontend):
         self._state_store = state_store
         self._authorizer = authorizer or AllowedUserAuthorizer(allowed_users or [])
         self._enable_notify_home_command = enable_notify_home_command
-        self._catalog = catalog
-        self._chat_loops: dict[str, AgenticLoop] = {}
+        self._chat_loops: dict[str, AssistantLoop] = {}
         self._active_turns: set[str] = set()
 
     async def run(self) -> None:
@@ -129,6 +136,10 @@ class MessagingFrontend(Frontend):
                 f"seq={queued.seq}, queue_len={len(loop.message_queue)}, "
                 f"pending_prompts={loop.message_queue.pending_prompt_count()}"
             )
+            await self._messenger.send_text(
+                message.target.chat_id,
+                f"请求已排队（#{queued.seq}），当前任务完成后会继续处理。",
+            )
             return
 
         self._active_turns.add(session_key)
@@ -161,53 +172,100 @@ class MessagingFrontend(Frontend):
     async def _process_single_turn(
         self,
         message: InboundMessage,
-        loop: AgenticLoop,
+        loop: AssistantLoop,
         text: str,
         *,
         session_key: str,
         turn_started_at: float,
     ) -> None:
-        final_parts: list[str] = []
+        final_text = ""
+        error_text = ""
+        narration_parts: list[str] = []
+        progress_messages: set[str] = set()
         async for event in loop.process(text):
-            if event.type == EventType.TEXT_DONE and event.text:
-                final_parts.append(event.text)
+            if event.type == EventType.DONE and event.text:
+                final_text = event.text
             elif event.type == EventType.ERROR and event.text:
-                final_parts.append(f"Error: {event.text}")
-            elif event.type == EventType.INTERMEDIATE_MESSAGE and event.text:
-                await self._messenger.send_text(message.target.chat_id, event.text)
-        response = "\n".join(final_parts).strip() or "No response."
-        await self._messenger.send_text(message.target.chat_id, response)
+                error_text = f"Error: {event.text}"
+            elif event.type == EventType.TEXT_DELTA and event.text:
+                narration_parts.append(event.text)
+            elif event.type in {
+                EventType.THINKING,
+                EventType.SKILL_SELECTED,
+                EventType.SCRIPT_STARTED,
+                EventType.SCRIPT_FINISHED,
+                EventType.RETRYING,
+                EventType.CONFIRMATION_REQUIRED,
+            }:
+                # If a tool event follows assistant text, that text was public
+                # execution narration rather than the final answer. Show it
+                # once as part of the verifiable progress stream.
+                narration = narration_preview("".join(narration_parts))
+                narration_parts.clear()
+                if narration:
+                    rendered_narration = f"💭 {narration}"
+                    if rendered_narration not in progress_messages:
+                        progress_messages.add(rendered_narration)
+                        await self._send_rich_or_text(
+                            message.target.chat_id,
+                            title="Assistant 处理进度",
+                            text=rendered_narration,
+                            template="blue",
+                        )
+                progress = progress_line(event)
+                if progress and progress not in progress_messages:
+                    progress_messages.add(progress)
+                    await self._send_rich_or_text(
+                        message.target.chat_id,
+                        title="Assistant 处理进度",
+                        text=progress,
+                        template="blue",
+                    )
+        response = final_text.strip() or error_text or "No response."
+        await self._send_rich_or_text(
+            message.target.chat_id,
+            title="Assistant 结果",
+            text=response,
+            template="green",
+        )
         logger.info(f"{self.platform} response sent.")
         logger.debug(
             f"{self.platform} turn finished: session_key={session_key}, "
-            f"chat_id={message.target.chat_id}, final_parts={len(final_parts)}, "
-            f"final_chars={sum(len(part) for part in final_parts)}, "
+            f"chat_id={message.target.chat_id}, final_chars={len(response)}, "
             f"elapsed_ms={int((time.monotonic() - turn_started_at) * 1000)}"
         )
 
-    async def _get_loop(self, message: InboundMessage) -> AgenticLoop:
+    async def _send_rich_or_text(
+        self,
+        chat_id: str | None,
+        *,
+        title: str,
+        text: str,
+        template: str,
+    ) -> None:
+        send_card = getattr(self._messenger, "send_card", None)
+        if self.platform == "feishu" and callable(send_card):
+            try:
+                if await send_card(
+                    chat_id,
+                    title=title,
+                    text=text,
+                    template=template,
+                ):
+                    return
+            except Exception as error:  # noqa: BLE001
+                logger.warning(
+                    f"Feishu card send failed; falling back to text: {error}"
+                )
+        await self._messenger.send_text(chat_id, text)
+
+    async def _get_loop(self, message: InboundMessage) -> AssistantLoop:
         session_key = self._session_key(message)
         if session_key in self._chat_loops:
             return self._chat_loops[session_key]
 
         loop = self._loop_factory() if self._loop_factory else self._loop
         self._chat_loops[session_key] = loop
-        storage = loop.session_storage
-        if storage is None:
-            return loop
-
-        existing = await storage.list_sessions()
-        matching = [
-            s
-            for s in existing
-            if s.metadata.get("frontend") == self.platform
-            and s.metadata.get("chat_id") == message.target.chat_id
-            and s.metadata.get("user_id") == message.target.user_id
-        ]
-        if matching:
-            await loop.resume(matching[0].session_id)
-        else:
-            await storage.start_new_session(metadata=self._session_metadata(message))
         return loop
 
     async def _handle_builtin_command(self, message: InboundMessage) -> bool:
@@ -237,13 +295,22 @@ class MessagingFrontend(Frontend):
         if text == "/clear":
             loop = await self._get_loop(message)
             loop.reset()
-            if loop.session_storage:
-                await loop.session_storage.start_new_session(
-                    metadata=self._session_metadata(message)
-                )
             await self._messenger.send_text(
                 message.target.chat_id, "New session started."
             )
+            return True
+
+        if text == "/cancel":
+            loop = await self._get_loop(message)
+            await loop.cancel()
+            await self._messenger.send_text(
+                message.target.chat_id, "已取消当前请求并清空等待队列。"
+            )
+            return True
+
+        if text == "/status":
+            loop = await self._get_loop(message)
+            await self._messenger.send_text(message.target.chat_id, loop.status())
             return True
 
         if text.startswith("/") and await self._handle_skill_command(message):
@@ -252,39 +319,31 @@ class MessagingFrontend(Frontend):
         return False
 
     async def _handle_skill_command(self, message: InboundMessage) -> bool:
-        if self._catalog is None:
-            return False
         parts = message.text.strip().split(None, 1)
         command = parts[0].lstrip("/").lower() if parts else ""
         user_text = parts[1] if len(parts) > 1 else ""
-        skill = self._catalog.get_skill(command)
-        if skill is None:
-            skill = self._catalog.get_skill(command.replace("_", "-"))
-        if skill is None:
+        if command == "skill":
+            skill_parts = user_text.split(None, 1)
+            if not skill_parts:
+                await self._messenger.send_text(
+                    message.target.chat_id, "用法：/skill <name> [request]"
+                )
+                return True
+            command = skill_parts[0]
+            user_text = skill_parts[1] if len(skill_parts) > 1 else ""
+        skill_name = command.replace("_", "-")
+        if not skill_name:
             return False
-        skill_content = self._catalog.get_skill_content(skill.name) or ""
-        augmented = "\n".join(
-            [
-                f"<command-name>/{skill.name}</command-name>",
-                f'<skill name="{skill.name}">',
-                f"Base directory for this skill: {skill.base_dir}",
-                "",
-                skill_content,
-                "</skill>",
-                "",
-                user_text,
-            ]
-        ).strip()
+        augmented = (
+            f"Use the installed Agent Skill named '{skill_name}' for this request."
+            + (f"\n\nUser request: {user_text}" if user_text else "")
+        )
         await self._process_user_turn(message, augmented)
         return True
 
     def _session_key(self, message: InboundMessage) -> str:
         return f"{self.platform}:{message.target.chat_id}:{message.target.user_id}"
 
-    def _session_metadata(self, message: InboundMessage) -> dict[str, object]:
-        return {
-            "frontend": self.platform,
-            "chat_id": message.target.chat_id,
-            "chat_type": message.target.chat_type,
-            "user_id": message.target.user_id,
-        }
+
+def _friendly_progress(event_type: EventType, text: str) -> str:
+    return progress_line(LoopEvent(event_type, text))

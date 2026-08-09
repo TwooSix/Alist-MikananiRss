@@ -35,7 +35,9 @@ ENV PATH="/opt/openlist-ani/.venv/bin:$PATH" \
 COPY --from=builder --chmod=0555 /opt/openlist-ani/.venv /opt/openlist-ani/.venv
 COPY --from=builder --chmod=0555 /entrypoint.sh /entrypoint.sh
 
-RUN apk add --no-cache ripgrep && \
+RUN apk add --no-cache nodejs npm ripgrep && \
+    npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.82.1 && \
+    npm cache clean --force && \
     addgroup -S -g 1000 openlistani && \
     adduser -S -D -H -u 1000 -G openlistani openlistani && \
     mkdir -p /data /logs /skills && \
@@ -44,6 +46,7 @@ RUN apk add --no-cache ripgrep && \
 
 ENV CONFIG_PATH=/config.toml
 ENV ENABLE_ASSISTANT=false
+ENV PI_SKIP_VERSION_CHECK=1
 
 USER openlistani
 WORKDIR /

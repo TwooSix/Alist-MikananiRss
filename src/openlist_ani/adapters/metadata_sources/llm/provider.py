@@ -18,7 +18,7 @@ from .engine import LLMTitleExtractEngine
 
 
 class LlmMetadataProvider:
-    name = "llm"
+    name = "ai"
 
     def __init__(
         self,

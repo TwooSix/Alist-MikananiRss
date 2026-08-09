@@ -12,12 +12,19 @@ from openlist_ani.application.ports import (
 )
 
 
+@dataclass(frozen=True)
+class DownloadBackendBundle:
+    downloader: DownloadAdapter
+    organizer: Organizer
+
+
 @dataclass
 class AdapterRegistry:
     feeds: list[FeedAdapter] = field(default_factory=list)
     metadata: dict[str, MetadataProvider] = field(default_factory=dict)
     downloaders: dict[str, DownloadAdapter] = field(default_factory=dict)
     organizers: dict[str, Organizer] = field(default_factory=dict)
+    download_backends: dict[str, DownloadBackendBundle] = field(default_factory=dict)
 
     def register_feed(self, adapter: FeedAdapter) -> None:
         if any(item.name == adapter.name for item in self.feeds):
@@ -32,6 +39,20 @@ class AdapterRegistry:
 
     def register_organizer(self, name: str, adapter: Organizer) -> None:
         self._put(self.organizers, name, adapter, "organizer")
+
+    def register_download_backend(
+        self,
+        name: str,
+        *,
+        downloader: DownloadAdapter,
+        organizer: Organizer,
+    ) -> None:
+        key = name.strip().lower()
+        if key in self.download_backends:
+            raise ValueError(f"Download backend already registered: {name}")
+        self.register_downloader(downloader)
+        self.register_organizer(name, organizer)
+        self.download_backends[key] = DownloadBackendBundle(downloader, organizer)
 
     def feed_for(self, url: str) -> FeedAdapter:
         for adapter in self.feeds:

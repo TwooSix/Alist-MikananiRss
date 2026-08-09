@@ -7,16 +7,13 @@ Defines the interface that all frontends (Telegram, CLI) must implement.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from openlist_ani.assistant.core.loop import AgenticLoop
+from openlist_ani.assistant.contracts import AssistantLoop, EventType
 
 
 class Frontend(ABC):
     """Abstract frontend for the assistant."""
 
-    def __init__(self, loop: AgenticLoop) -> None:
+    def __init__(self, loop: AssistantLoop) -> None:
         self._loop = loop
 
     @abstractmethod
@@ -34,15 +31,13 @@ class Frontend(ABC):
         ...
 
     async def handle_message(self, user_text: str) -> None:
-        """Process a user message through the agentic loop.
+        """Process a user message through the harness bridge.
 
         Consumes LoopEvent objects and forwards text responses.
 
         Args:
             user_text: The user's input.
         """
-        from openlist_ani.assistant.core.models import EventType
-
         async for event in self._loop.process(user_text):
-            if event.type == EventType.TEXT_DONE:
+            if event.type == EventType.DONE:
                 await self.send_response(event.text)

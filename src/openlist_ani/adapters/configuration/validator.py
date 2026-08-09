@@ -56,7 +56,7 @@ class ConfigValidator:
         warnings: list[str] = []
 
         self._validate_core_config(errors)
-        self._validate_metadata_dependencies(errors)
+        self._validate_metadata_dependencies(errors, warnings)
         self._validate_notification_config(errors, warnings)
         self._validate_assistant_config(errors, warnings)
         self._log_validation_results(errors, warnings)
@@ -67,24 +67,55 @@ class ConfigValidator:
         if not self._data.rss.urls:
             errors.append("No RSS URLs configured. Please add RSS URLs in [rss] urls.")
 
-        if not self._data.openlist.url:
-            errors.append("OpenList URL is not configured in [openlist] url.")
+        openlist = self._data.downloader.openlist
+        # Direct Python users may still construct the deprecated v1 field; all
+        # file-based configuration is migrated before reaching this point.
+        if self._data.openlist.token and not openlist.token:
+            openlist = self._data.openlist
 
-        if not self._data.openlist.token:
+        if not openlist.url:
             errors.append(
-                "OpenList token is not configured in [openlist] token. "
+                "OpenList URL is not configured in [downloader.openlist] url."
+            )
+
+        if not openlist.token:
+            errors.append(
+                "OpenList token is not configured in [downloader.openlist] token. "
                 "Authentication will fail without a valid token."
             )
 
-    def _validate_metadata_dependencies(self, errors: list[str]) -> None:
-        if "llm" not in self._data.metadata_provider_names():
-            return
-        if not self._data.llm.openai_api_key:
-            errors.append(
-                "The metadata provider pipeline contains 'llm' but "
-                "[llm] openai_api_key "
-                "is missing."
+    def _validate_metadata_dependencies(
+        self, errors: list[str], warnings: list[str]
+    ) -> None:
+        from openlist_ani.assistant.harness.adapters import agent_adapter_names
+
+        providers = self._data.metadata_provider_names()
+        if self._data.metadata.ai_source and "ai" not in providers:
+            warnings.append(
+                "metadata.ai_source is configured but metadata.pipeline does not "
+                "contain 'ai'; the source selection will be ignored."
             )
+
+        # Compatibility for direct callers which still build v1 models.  A
+        # migrated file never reaches this branch.
+        if (
+            not self._data.ai.sources
+            and self._data.metadata_parser.provider == "llm"
+            and not self._data.llm.openai_api_key
+        ):
+            errors.append(
+                "The legacy metadata parser is 'llm' but [llm] "
+                "openai_api_key is missing. Migrate to [ai.sources]."
+            )
+
+        available_agents = set(agent_adapter_names())
+        for source_name, source in self._data.ai.sources.items():
+            if source.type == "agent" and source.agent not in available_agents:
+                available = ", ".join(sorted(available_agents)) or "<none>"
+                errors.append(
+                    f"ai.sources.{source_name} selects unknown agent "
+                    f"'{source.agent}'. Available agents: {available}."
+                )
 
     def _validate_notification_config(
         self, errors: list[str], warnings: list[str]
@@ -150,12 +181,6 @@ class ConfigValidator:
         if not self._data.assistant.enabled:
             return
 
-        if not self._data.llm.openai_api_key:
-            errors.append(
-                "Assistant is enabled but API key is missing. "
-                "Assistant requires LLM. Please set [llm] openai_api_key."
-            )
-
         telegram_enabled = self._assistant_telegram_enabled()
         wechat_enabled = self._data.assistant.wechat.enabled
         feishu_enabled = self._data.assistant.feishu.enabled
@@ -167,9 +192,9 @@ class ConfigValidator:
             )
             return
 
-        self._validate_telegram_assistant(telegram_enabled, errors, warnings)
+        self._validate_telegram_assistant(telegram_enabled, errors)
         self._validate_wechat_assistant(wechat_enabled, errors)
-        self._validate_feishu_assistant(feishu_enabled, errors, warnings)
+        self._validate_feishu_assistant(feishu_enabled, errors)
 
     def _assistant_telegram_enabled(self) -> bool:
         return bool(
@@ -177,9 +202,7 @@ class ConfigValidator:
             or self._data.assistant.telegram.bot_token
         )
 
-    def _validate_telegram_assistant(
-        self, enabled: bool, errors: list[str], warnings: list[str]
-    ) -> None:
+    def _validate_telegram_assistant(self, enabled: bool, errors: list[str]) -> None:
         if not enabled:
             return
         telegram_cfg = self._data.assistant.telegram
@@ -189,9 +212,9 @@ class ConfigValidator:
                 "Please set [assistant.telegram] bot_token."
             )
         if not telegram_cfg.allowed_users:
-            warnings.append(
-                "Assistant allowed_users is empty - all Telegram users can interact. "
-                "Consider adding specific user IDs in [assistant.telegram] allowed_users."
+            errors.append(
+                "Telegram assistant requires at least one allowed user. Set "
+                "[assistant.telegram] allowed_users = [123456789]."
             )
 
     def _validate_wechat_assistant(self, enabled: bool, errors: list[str]) -> None:
@@ -209,10 +232,13 @@ class ConfigValidator:
             errors.append(
                 f"WeChat assistant is enabled but home_channel is missing. {hint}"
             )
+        if not wechat_cfg.allowed_users:
+            errors.append(
+                "WeChat assistant requires at least one allowed user. Set "
+                '[assistant.wechat] allowed_users = ["user@im.wechat"].'
+            )
 
-    def _validate_feishu_assistant(
-        self, enabled: bool, errors: list[str], warnings: list[str]
-    ) -> None:
+    def _validate_feishu_assistant(self, enabled: bool, errors: list[str]) -> None:
         if not enabled:
             return
         feishu_cfg = self._data.assistant.feishu
@@ -227,9 +253,9 @@ class ConfigValidator:
                 "Please set [assistant.feishu] app_secret."
             )
         if not feishu_cfg.allowed_users:
-            warnings.append(
-                "Feishu assistant allowed_users is empty - all admitted Feishu "
-                "users can interact."
+            errors.append(
+                "Feishu assistant requires at least one allowed user. Set "
+                '[assistant.feishu] allowed_users = ["ou_xxx"].'
             )
 
     def _log_validation_results(self, errors: list[str], warnings: list[str]) -> None:

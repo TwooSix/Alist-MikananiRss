@@ -5,7 +5,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from openlist_ani.builtin_skills.skills.oani.script import parse_rss
+from openlist_ani.assistant.builtin_skills.plugins.oani.skills.oani.scripts import (
+    parse_rss,
+)
 
 
 class FakeBackendClient:

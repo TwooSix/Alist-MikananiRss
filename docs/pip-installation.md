@@ -26,6 +26,13 @@ pip install openlist-ani
 | `openlist-ani` | 主程序（RSS 监控 + 自动下载 + 重命名） |
 | `openlist-ani-assistant` | AI 智能助理（Telegram Bot 或本地 CLI） |
 
+默认 Pi Assistant 不需要额外安装 Node.js/npm。第一次启动时，程序会下载
+官方锁定版本的独立包，使用官方 `SHA256SUMS` 校验后原子安装到配置文件旁的
+`data/assistant/runtime/pi/`。后续启动直接复用；显式 `executable` 或 PATH 中
+已有的 Pi 优先。Windows 缺少 Bash 时还会自动准备官方 PortableGit 到
+`data/assistant/runtime/git-bash/`，不修改系统安装或全局 PATH。两种下载都校验
+固定 SHA-256；下载或写入失败时不会留下半安装状态，并提示手工安装方式。
+
 ## 第二步：创建配置文件
 
 在你想要运行的目录下新建 `config.toml` 文件。以下是**完整配置模板**，请根据需要修改：
@@ -34,6 +41,7 @@ pip install openlist-ani
 # ============================================================
 # Openlist-Ani 完整配置文件
 # ============================================================
+config_version = 2
 
 # ---------- 后端 API ----------
 [backend]
@@ -61,30 +69,31 @@ interval_time = 300   # 抓取间隔，单位秒（默认 5 分钟）
 http = ""     # HTTP 代理，如 "http://127.0.0.1:7890"
 https = ""    # HTTPS 代理
 
-# ---------- Openlist 网盘 ----------
-[openlist]
-url = "http://localhost:5244"          # Openlist 访问地址
-token = ""                              # 令牌，见「设置 → 其他 → 令牌」
-download_path = "/PikPak/Anime"         # 下载保存路径
-offline_download_tool = "QBITTORRENT"   # 离线下载工具（大小写不敏感）
+# ---------- 下载与 OpenList ----------
+[downloader]
+download_path = "/PikPak/Anime"
 rename_format = "{anime_name} S{season:02d}E{episode:02d} {fansub} {quality} {languages}"
 
-# ---------- 元数据解析与校验 ----------
-[metadata_parser]
-provider = "llm"      # 推荐 llm + tmdb；未配置 LLM 时默认 regex + tmdb
+[downloader.openlist]
+url = "http://localhost:5244"
+token = ""
+offline_download_tool = "qBittorrent"
 
-[metadata_validator]
-provider = "tmdb"
+# ---------- 元数据 ----------
+[metadata]
+pipeline = ["regex", "tmdb"]
+# ai_source = "primary"
 
-# ---------- LLM（AI 重命名） ----------
-[llm]
-openai_api_key = ""                       # LLM API Key；启用 AI 助理时也必填
-openai_base_url = "https://api.deepseek.com/v1"   # API 地址（支持 OpenAI 兼容接口）
-openai_model = "deepseek-chat"            # 模型名称
+[metadata.tmdb]
+language = "zh-CN"
 
-# TMDB（可选，用于获取番剧元数据提高重命名准确性）
-tmdb_api_key = ""           # TMDB API Key，从 https://www.themoviedb.org/settings/api 获取
-tmdb_language = "zh-CN"     # 元数据语言
+# ---------- AI source（可选） ----------
+# [ai.sources.primary]
+# type = "api"
+# provider = "openai-compatible"
+# api_key = "sk-xxx"
+# base_url = "https://api.deepseek.com/v1"
+# model = "deepseek-chat"
 
 # ---------- 通知（可选） ----------
 [notification]
@@ -110,7 +119,7 @@ enabled = false   # 设为 true 启用助理
 
 [assistant.telegram]
 bot_token = ""        # Telegram Bot Token，从 @BotFather 获取
-allowed_users = []    # 允许的用户 ID 列表（留空则允许所有人，建议设置具体 ID）
+allowed_users = [123456789]  # 必填；只有这些用户可以使用 Assistant
 
 # ---------- Bangumi（可选） ----------
 [bangumi]
@@ -146,33 +155,35 @@ urls = ["https://mikanani.me/RSS/MyBangumi?token=你的token"]
 确保你的 Openlist 已部署并开启了离线下载功能：
 
 ```toml
-[openlist]
-url = "http://localhost:5244"          # Openlist 地址
-token = "你的令牌"                      # 令牌
+[downloader]
 download_path = "/PikPak/Anime"         # 下载路径
-offline_download_tool = "QBITTORRENT"   # 离线下载工具
+
+[downloader.openlist]
+url = "http://localhost:5244"
+token = "你的令牌"
+offline_download_tool = "qBittorrent"
 ```
 
 > **令牌获取**：登录 Openlist 后台 → 设置 → 其他 → 令牌
 
-### 3. 推荐：LLM + TMDB
+### 3. 推荐：AI + TMDB
 
-推荐配置 LLM 做标题解析，并继续使用 TMDB 做校验；如果不配置 LLM API Key，主程序会使用默认的 `regex` + `tmdb`，但解析效果通常不如 LLM。
+推荐配置 AI source 做标题解析，并继续使用 TMDB 做校验；如果不配置 source，主程序使用默认的 `regex` + `tmdb`。
 
 ```toml
-[metadata_parser]
-provider = "llm"
+[metadata]
+pipeline = ["ai", "tmdb"]
+ai_source = "primary"
 
-[metadata_validator]
-provider = "tmdb"
-
-[llm]
-openai_api_key = "sk-xxx"
-openai_base_url = "https://api.deepseek.com/v1"
-openai_model = "deepseek-chat"
+[ai.sources.primary]
+type = "api"
+provider = "openai-compatible"
+api_key = "sk-xxx"
+base_url = "https://api.deepseek.com/v1"
+model = "deepseek-chat"
 ```
 
-> 支持所有 OpenAI 兼容 API
+> API source 支持 OpenAI compatible 和 Anthropic Messages；也可把 source 配成 pi、claude-code 或 codex Agent。
 
 ## 第四步：启动主程序
 
@@ -249,8 +260,7 @@ openlist-ani-assistant
 > - **CLI 模式**：本地终端交互界面，添加 `--cli` 参数启动
 >
 > ```bash
-> openlist-ani-assistant --cli          # 本地 TUI 模式
-> openlist-ani-assistant --cli --resume # 恢复上次会话
+> openlist-ani-assistant --cli          # 本地 CLI 模式
 > ```
 
 ## 第七步（可选）：配置 Bangumi 和 Mikan，用于 Assistant 支持更多功能

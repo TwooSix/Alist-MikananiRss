@@ -647,6 +647,7 @@ class TestConfigValidation:
         mgr._config.assistant.wechat.account_id = "bot@im.bot"
         mgr._config.assistant.wechat.token = "token"
         mgr._config.assistant.wechat.home_channel = "user@im.wechat"
+        mgr._config.assistant.wechat.allowed_users = ["user@im.wechat"]
         mgr.save()
         assert ConfigValidator(mgr.data, mgr.load_failed).validate() is True
 
@@ -679,6 +680,7 @@ class TestConfigValidation:
         mgr._config.assistant.feishu.enabled = True
         mgr._config.assistant.feishu.app_id = "cli_xxx"
         mgr._config.assistant.feishu.app_secret = "secret"
+        mgr._config.assistant.feishu.allowed_users = ["ou_xxx"]
         mgr.save()
         assert ConfigValidator(mgr.data, mgr.load_failed).validate() is True
 
@@ -698,7 +700,7 @@ class TestConfigValidation:
         assert ConfigValidator(mgr.data, mgr.load_failed).validate() is False
 
     def test_validate_assistant_enabled_no_allowed_users(self, tmp_path, monkeypatch):
-        """Assistant enabled without allowed_users → warning (not error)."""
+        """Assistant enabled without allowed_users is rejected."""
         monkeypatch.chdir(tmp_path)
         mgr = ConfigManager("config.toml")
         mgr._config.rss.urls = ["https://feed.example/rss"]
@@ -710,11 +712,12 @@ class TestConfigValidation:
         mgr._config.assistant.telegram.bot_token = "bot-token"
         mgr._config.assistant.telegram.allowed_users = []
         mgr.save()
-        # Empty allowed_users is allowed (= allow all) but produces a warning
-        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is True
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is False
 
-    def test_validate_assistant_enabled_no_llm_key(self, tmp_path, monkeypatch):
-        """Assistant enabled without LLM key → error (assistant depends on LLM)."""
+    def test_validate_assistant_enabled_no_ai_source_uses_native_pi(
+        self, tmp_path, monkeypatch
+    ):
+        """Assistant without a source is valid and uses Pi native config."""
         monkeypatch.chdir(tmp_path)
         mgr = ConfigManager("config.toml")
         mgr._config.rss.urls = ["https://feed.example/rss"]
@@ -726,7 +729,7 @@ class TestConfigValidation:
         mgr._config.assistant.telegram.bot_token = "bot-token"
         mgr._config.assistant.telegram.allowed_users = [123]
         mgr.save()
-        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is False
+        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is True
 
     def test_validate_assistant_enabled_valid(self, tmp_path, monkeypatch):
         """Assistant with all dependencies → pass."""

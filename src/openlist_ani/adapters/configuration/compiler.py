@@ -12,12 +12,12 @@ from .models import UserConfig
 
 def compile_core_settings(config: UserConfig) -> CoreSettings:
     return CoreSettings(
-        download_path=config.openlist.download_path,
-        rename_format=config.openlist.rename_format,
+        download_path=config.downloader.download_path,
+        rename_format=config.downloader.rename_format,
         rss_interval_seconds=config.rss.interval_time,
         metadata_providers=config.metadata_provider_names(),
-        downloader=config.downloader.provider,
-        organizer=config.file_renamer.provider,
+        downloader="openlist",
+        organizer="openlist",
         strict_filtering=config.rss.strict,
         metadata_filter=MetadataFilterSettings(
             exclude_fansub=list(config.rss.filter.exclude_fansub),

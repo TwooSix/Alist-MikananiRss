@@ -212,6 +212,17 @@ async def test_send_text_uses_official_lark_sdk(tmp_path, monkeypatch):
     assert sent["request"]["body"]["receive_id"] == "oc_1"
     assert json.loads(sent["request"]["body"]["content"]) == {"text": "hello"}
 
+    assert (
+        await messenger.send_card(
+            "oc_1", title="Progress", text="Parsing RSS", template="blue"
+        )
+        is True
+    )
+    assert sent["request"]["body"]["msg_type"] == "interactive"
+    card = json.loads(sent["request"]["body"]["content"])
+    assert card["header"]["title"]["content"] == "Progress"
+    assert card["body"]["elements"][0]["content"] == "Parsing RSS"
+
 
 @pytest.mark.asyncio
 async def test_websocket_client_is_constructed_inside_worker_thread(

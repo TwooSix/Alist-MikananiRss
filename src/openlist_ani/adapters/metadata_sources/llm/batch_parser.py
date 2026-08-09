@@ -16,7 +16,26 @@ async def parse_title_batch_via_llm(
     ]
     try:
         content = await llm.complete_chat(messages)
-        return extract_batch_results(content, len(titles))
+        results = extract_batch_results(content, len(titles))
+        if any(item.success for item in results):
+            return results
+        repair_messages = [
+            {
+                "role": "system",
+                "content": BATCH_SYSTEM_PROMPT
+                + "\nRepair the supplied invalid response. Return only the required JSON array.",
+            },
+            {
+                "role": "user",
+                "content": (
+                    build_batch_user_message(titles)
+                    + "\n\nInvalid response to repair:\n"
+                    + content
+                ),
+            },
+        ]
+        repaired = await llm.complete_chat(repair_messages)
+        return extract_batch_results(repaired, len(titles))
     except Exception as e:
         logger.warning(f"Batch LLM parsing failed: {e}")
         return [TitleParseResponse(success=False, error=str(e)) for _ in titles]

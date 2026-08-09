@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import pytest
+from pydantic import ValidationError
+
 from openlist_ani.adapters.configuration.models import (
     AssistantConfig,
     FeishuAssistantConfig,
@@ -30,6 +33,7 @@ def test_validate_frontend_config_accepts_wechat_setup_output():
             account_id="bot@im.bot",
             token="token",
             home_channel="user@im.wechat",
+            allowed_users=["user@im.wechat"],
         )
     )
 
@@ -43,16 +47,37 @@ def test_validate_frontend_config_requires_feishu_app_credentials():
 
     assert any("app_id" in error for error in errors)
     assert any("app_secret" in error for error in errors)
+    assert any("allowed user" in error for error in errors)
+
+
+def test_validate_frontend_config_rejects_empty_telegram_allowlist():
+    cfg = AssistantConfig(
+        telegram=TelegramAssistantConfig(enabled=True, bot_token="token")
+    )
+
+    errors = _validate_frontend_config(cfg)
+
+    assert any("allowed user" in error for error in errors)
+
+
+def test_remote_allowlists_reject_invalid_placeholder_values():
+    with pytest.raises(ValidationError, match="positive user IDs"):
+        TelegramAssistantConfig(allowed_users=[0])
+    with pytest.raises(ValidationError, match="empty user IDs"):
+        WechatAssistantConfig(allowed_users=["  "])
+    with pytest.raises(ValidationError, match="empty user IDs"):
+        FeishuAssistantConfig(allowed_users=[""])
 
 
 def test_enabled_frontend_names_allow_telegram_and_wechat_to_coexist():
     cfg = AssistantConfig(
-        telegram=TelegramAssistantConfig(bot_token="token"),
+        telegram=TelegramAssistantConfig(bot_token="token", allowed_users=[123]),
         wechat=WechatAssistantConfig(
             enabled=True,
             account_id="bot@im.bot",
             token="wechat-token",
             home_channel="user@im.wechat",
+            allowed_users=["user@im.wechat"],
         ),
     )
 

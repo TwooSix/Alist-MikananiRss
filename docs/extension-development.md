@@ -1,6 +1,26 @@
 # 核心扩展开发指南
 
-扩展仅作为仓库内置 adapter 提交，不加载任意第三方 Python 包。新增实现后在 `bootstrap/backend.py` 的 `_build_registry` 显式注册，启动时若名称重复会立即失败。
+业务扩展仅作为仓库内置 adapter 提交。新增实现后在
+`bootstrap/backend.py` 的 `_build_registry` 显式注册，启动时若名称重复会立即失败。
+Agent harness 是唯一例外，可以通过明确的 Python entry point 安装，不需要
+修改前端、Metadata pipeline 或 Skill 系统。
+
+## Agent Adapter
+
+新 Agent 继承 `openlist_ani.assistant.harness.adapters.AgentAdapter`，实现
+`open_session()` 和 `run_structured()`，并在扩展包中声明：
+
+```toml
+[project.entry-points."openlist_ani.agent_adapters"]
+example = "example_package:ExampleAgentAdapter"
+```
+
+Adapter 只负责原生进程协议、会话恢复、事件转换以及该 Agent 的原生 Skill
+入口。Pi 使用 `--skill`，Claude Code 使用 `--plugin-dir`，Codex 使用自身的
+`codex plugin` 注册流程；不得复制或链接 Skill 到临时会话目录，也不得将
+`SKILL.md` 正文拼进 system prompt、重新引入 OAni Tool Registry 或模型循环。
+新 Agent 如支持临时目录参数，实现 `session_arguments()`；如必须通过原生插件
+管理器配置，实现 `ensure_native_skills()`。
 
 ## RSS 来源
 
@@ -61,10 +81,10 @@ class ExampleMetadataProvider:
 
 ```toml
 [metadata]
-providers = ["regex", "example-metadata", "tmdb"]
+pipeline = ["regex", "example-metadata", "tmdb"]
 ```
 
-未配置 `[metadata]` 时，旧 `[metadata_parser]` 与 `[metadata_validator]` 会编译为等价列表。
+历史配置会在启动时先备份，再迁移为当前 `metadata.pipeline` 结构；扩展只需面向当前配置版本。
 
 ## 下载后端与 Organizer
 

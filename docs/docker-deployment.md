@@ -15,6 +15,7 @@
 # ============================================================
 # Openlist-Ani 完整配置文件
 # ============================================================
+config_version = 2
 
 # ---------- 后端 API ----------
 [backend]
@@ -41,28 +42,31 @@ interval_time = 300
 http = ""
 https = ""
 
-# ---------- Openlist 网盘 ----------
-[openlist]
-url = "http://localhost:5244"
-token = ""
+# ---------- 下载与 OpenList ----------
+[downloader]
 download_path = "/PikPak/Anime"
-offline_download_tool = "QBITTORRENT"
 rename_format = "{anime_name} S{season:02d}E{episode:02d} {fansub} {quality} {languages}"
 
-# ---------- 元数据解析与校验 ----------
-[metadata_parser]
-provider = "llm"      # 推荐 llm + tmdb；未配置 LLM 时默认 regex + tmdb
+[downloader.openlist]
+url = "http://localhost:5244"
+token = ""
+offline_download_tool = "qBittorrent"
 
-[metadata_validator]
-provider = "tmdb"
+# ---------- 元数据 ----------
+[metadata]
+pipeline = ["regex", "tmdb"]
+# ai_source = "primary"
 
-# ---------- LLM（AI 重命名） ----------
-[llm]
-openai_api_key = ""   # 启用 AI 助理时也必填
-openai_base_url = "https://api.deepseek.com/v1"
-openai_model = "deepseek-chat"
-tmdb_api_key = ""
-tmdb_language = "zh-CN"
+[metadata.tmdb]
+language = "zh-CN"
+
+# ---------- AI source（可选） ----------
+# [ai.sources.primary]
+# type = "api"
+# provider = "openai-compatible"
+# api_key = "sk-xxx"
+# base_url = "https://api.deepseek.com/v1"
+# model = "deepseek-chat"
 
 # ---------- 通知（可选） ----------
 [notification]
@@ -87,7 +91,7 @@ enabled = false
 
 [assistant.telegram]
 bot_token = ""
-allowed_users = []    # 允许的用户 ID 列表（留空则允许所有人，建议设置具体 ID）
+allowed_users = [123456789]  # 必填；只有这些用户可以使用 Assistant
 
 # ---------- Bangumi（可选） ----------
 [bangumi]
@@ -125,30 +129,32 @@ urls = ["https://mikanani.me/RSS/MyBangumi?token=你的token"]
 ### 2. Openlist 配置
 
 ```toml
-[openlist]
+[downloader]
+download_path = "/PikPak/Anime"
+
+[downloader.openlist]
 url = "http://localhost:5244"
 token = "你的令牌"
-download_path = "/PikPak/Anime"
-offline_download_tool = "QBITTORRENT"
+offline_download_tool = "qBittorrent"
 ```
 
 > **令牌获取**：登录 Openlist 后台 → 设置 → 其他 → 令牌
 
-### 3. 推荐：LLM + TMDB
+### 3. 推荐：AI + TMDB
 
-推荐配置 LLM 做标题解析，并继续使用 TMDB 做校验；如果不配置 LLM API Key，主程序会使用默认的 `regex` + `tmdb`。
+推荐配置 AI source 做标题解析，并继续使用 TMDB 做校验；如果不配置 source，主程序使用默认的 `regex` + `tmdb`。
 
 ```toml
-[metadata_parser]
-provider = "llm"
+[metadata]
+pipeline = ["ai", "tmdb"]
+ai_source = "primary"
 
-[metadata_validator]
-provider = "tmdb"
-
-[llm]
-openai_api_key = "sk-xxx"
-openai_base_url = "https://api.deepseek.com/v1"
-openai_model = "deepseek-chat"
+[ai.sources.primary]
+type = "api"
+provider = "openai-compatible"
+api_key = "sk-xxx"
+base_url = "https://api.deepseek.com/v1"
+model = "deepseek-chat"
 ```
 
 ## 第四步：启动容器
@@ -212,7 +218,7 @@ docker compose up -d
 | `-e ENABLE_ASSISTANT=true` | 启用 AI 智能助理（同时运行主程序和助理） |
 | `-v ./config.toml:/config.toml` | 挂载配置文件 |
 | `-v ./data:/data` | 挂载数据目录（持久化数据库、日志等） |
-| `-v ./skills:/skills` | 挂载用户自定义 skills 目录；内置 skills 随镜像加载，同名自定义 skill 会覆盖内置版本 |
+| `-v ./skills:/skills` | 挂载用户自定义 Skills；Pi/Claude Code 直接加载该目录，Codex 的额外 Skills 使用其原生插件位置 |
 
 > `--network host` 的好处：容器与宿主机共享网络，`localhost` 直接指向宿主机，无需额外的网络配置。配置文件和本机运行时完全一致。
 

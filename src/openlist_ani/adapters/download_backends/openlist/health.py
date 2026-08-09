@@ -46,7 +46,8 @@ class OpenListHealthCheck:
             logger.warning(
                 f"The configured offline download tool '{tool_str}' is not "
                 f"available on the server. Available tools: {available_names}. "
-                "Please check [openlist] offline_download_tool in config.toml."
+                "Please check [downloader.openlist] offline_download_tool in "
+                "config.toml."
             )
             return False
 

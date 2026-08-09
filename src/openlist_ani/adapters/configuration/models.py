@@ -16,6 +16,9 @@ from pydantic import (
 )
 
 DEFAULT_TMDB_API_KEY = "8ed20a12d9f37dcf9484a505c8be696c"
+CURRENT_CONFIG_VERSION = 2
+OPENAI_COMPATIBLE_BASE_URL = "https://api.openai.com/v1"
+ANTHROPIC_MESSAGES_BASE_URL = "https://api.anthropic.com"
 
 _OPENLIST_TOOL_NAMES = {
     item.casefold(): item
@@ -42,6 +45,8 @@ _SUPPORTED_RENAME_FIELDS = frozenset(
 MetadataParserProvider = Literal["llm", "regex"]
 MetadataValidatorProvider = Literal["tmdb", "none"]
 LLMProviderType = Literal["openai", "anthropic"]
+AISourceType = Literal["api", "agent"]
+AIProvider = Literal["openai-compatible", "anthropic-messages"]
 
 
 class ConfigModel(BaseModel):
@@ -127,10 +132,15 @@ class RSSConfig(ConfigModel):
 class OpenListConfig(ConfigModel):
     url: str = "http://localhost:5244"
     token: str = ""
-    download_path: str = "/"
+    # Retained as non-serialised compatibility attributes.  In config v2 these
+    # values live on [downloader].
+    download_path: str = Field(default="/", exclude=True)
     offline_download_tool: str = "qBittorrent"
-    rename_format: str = (
-        "{anime_name} S{season:02d}E{episode:02d} {fansub} {quality} {languages}"
+    rename_format: str = Field(
+        default=(
+            "{anime_name} S{season:02d}E{episode:02d} " "{fansub} {quality} {languages}"
+        ),
+        exclude=True,
     )
 
     @field_validator("offline_download_tool", mode="before")
@@ -166,11 +176,114 @@ class OpenListConfig(ConfigModel):
 
 
 class DownloaderConfig(ConfigModel):
-    provider: str = "openlist"
+    download_path: str = "/"
+    rename_format: str = (
+        "{anime_name} S{season:02d}E{episode:02d} {fansub} {quality} {languages}"
+    )
+    openlist: OpenListConfig = Field(default_factory=OpenListConfig)
+    # Compatibility attribute for callers compiled against config v1.
+    provider: str = Field(default="openlist", exclude=True)
+
+    @field_validator("rename_format")
+    @classmethod
+    def _validate_rename_format(cls, value: str) -> str:
+        return OpenListConfig(rename_format=value).rename_format
 
 
 class FileRenamerConfig(ConfigModel):
     provider: str = "openlist"
+
+
+class AISourceConfig(ConfigModel):
+    """One named API endpoint or external agent harness."""
+
+    type: AISourceType
+    provider: AIProvider | Literal[""] = ""
+    agent: str = ""
+    api_key: str = ""
+    base_url: str = ""
+    model: str = ""
+    executable: str = ""
+
+    @field_validator("type", "provider", "agent", mode="before")
+    @classmethod
+    def _normalize_source_choice(cls, value: Any) -> Any:
+        return _normalize_choice(value)
+
+    @model_validator(mode="after")
+    def _validate_shape(self) -> AISourceConfig:
+        if self.type == "api":
+            if not self.provider:
+                raise ValueError("API source requires 'provider'.")
+            if self.agent:
+                raise ValueError("API source cannot configure 'agent'.")
+            if self.executable:
+                raise ValueError("API source cannot configure 'executable'.")
+            if not self.api_key.strip():
+                raise ValueError("API source requires a non-empty 'api_key'.")
+            if not self.model.strip():
+                raise ValueError("API source requires a non-empty 'model'.")
+            if not self.base_url:
+                self.base_url = (
+                    OPENAI_COMPATIBLE_BASE_URL
+                    if self.provider == "openai-compatible"
+                    else ANTHROPIC_MESSAGES_BASE_URL
+                )
+            return self
+
+        if not self.agent:
+            raise ValueError("Agent source requires 'agent'.")
+        forbidden = []
+        if self.provider:
+            forbidden.append("provider")
+        if self.api_key:
+            forbidden.append("api_key")
+        if self.base_url:
+            forbidden.append("base_url")
+        if forbidden:
+            raise ValueError(
+                "Agent source cannot configure API fields: " + ", ".join(forbidden)
+            )
+        return self
+
+    @property
+    def provider_type(self) -> str:
+        """Translate the public provider name to the existing SDK adapter name."""
+        if self.provider == "openai-compatible":
+            return "openai"
+        if self.provider == "anthropic-messages":
+            return "anthropic"
+        raise ValueError("Agent sources do not have an API provider type.")
+
+
+class AIConfig(ConfigModel):
+    sources: dict[str, AISourceConfig] = Field(default_factory=dict)
+
+    @field_validator("sources")
+    @classmethod
+    def _validate_source_names(
+        cls, sources: dict[str, AISourceConfig]
+    ) -> dict[str, AISourceConfig]:
+        for name in sources:
+            if not name.strip():
+                raise ValueError("AI source names cannot be empty.")
+        return sources
+
+    def resolve(
+        self, name: str | None, *, consumer: str
+    ) -> tuple[str, AISourceConfig] | None:
+        if not self.sources:
+            return None
+        if name is None or not name.strip():
+            return next(iter(self.sources.items()))
+        try:
+            return name, self.sources[name]
+        except KeyError as error:
+            available = ", ".join(self.sources)
+            raise ValueError(
+                f"Unknown AI source '{name}' selected by {consumer}. "
+                f"Available sources: {available}."
+            ) from error
 
 
 class LLMConfig(ConfigModel):
@@ -213,15 +326,41 @@ class MetadataValidatorConfig(ConfigModel):
 
 
 class MetadataPipelineConfig(ConfigModel):
-    """Optional ordered provider pipeline used by the refactored core."""
+    """Ordered metadata pipeline and the AI implementation used by its ai step."""
 
-    providers: list[str] = Field(default_factory=list)
+    pipeline: list[str] = Field(default_factory=list)
+    ai_source: str = ""
+    tmdb: "TMDBConfig" = Field(default_factory=lambda: TMDBConfig())
+    # Input compatibility for direct library users.  File migration removes it.
+    providers: list[str] = Field(default_factory=list, exclude=True)
+
+    @field_validator("pipeline")
+    @classmethod
+    def _normalize_providers(cls, providers: list[str]) -> list[str]:
+        normalized = [
+            "ai" if item.strip().lower() == "llm" else item.strip().lower()
+            for item in providers
+            if item.strip()
+        ]
+        return list(dict.fromkeys(normalized))
 
     @field_validator("providers")
     @classmethod
-    def _normalize_providers(cls, providers: list[str]) -> list[str]:
+    def _normalize_legacy_providers(cls, providers: list[str]) -> list[str]:
         normalized = [item.strip().lower() for item in providers if item.strip()]
         return list(dict.fromkeys(normalized))
+
+
+class TMDBConfig(ConfigModel):
+    api_key: str = DEFAULT_TMDB_API_KEY
+    language: str = "zh-CN"
+
+    @field_validator("api_key", mode="before")
+    @classmethod
+    def _default_api_key_when_blank(cls, value: str) -> str:
+        if isinstance(value, str) and not value.strip():
+            return DEFAULT_TMDB_API_KEY
+        return value
 
 
 class NotificationBotDetails(ConfigModel):
@@ -311,12 +450,26 @@ class NotificationConfig(ConfigModel):
     bots: list[BotConfig] = Field(default_factory=list)
 
 
+def _validate_remote_user_ids(values: list[str], *, platform: str) -> list[str]:
+    normalized = [value.strip() for value in values]
+    if any(not value for value in normalized):
+        raise ValueError(f"{platform} allowed_users cannot contain empty user IDs.")
+    return list(dict.fromkeys(normalized))
+
+
 class TelegramAssistantConfig(ConfigModel):
     """Configuration for Telegram assistant bot."""
 
     enabled: bool = False
     bot_token: str = ""
     allowed_users: list[int] = Field(default_factory=list)
+
+    @field_validator("allowed_users")
+    @classmethod
+    def _validate_allowed_users(cls, values: list[int]) -> list[int]:
+        if any(value <= 0 for value in values):
+            raise ValueError("Telegram allowed_users must contain positive user IDs.")
+        return list(dict.fromkeys(values))
 
 
 class WechatAssistantConfig(ConfigModel):
@@ -329,6 +482,11 @@ class WechatAssistantConfig(ConfigModel):
     home_channel: str = ""
     allowed_users: list[str] = Field(default_factory=list)
     dm_policy: str = "open"
+
+    @field_validator("allowed_users")
+    @classmethod
+    def _validate_allowed_users(cls, values: list[str]) -> list[str]:
+        return _validate_remote_user_ids(values, platform="WeChat")
 
 
 class FeishuAssistantConfig(ConfigModel):
@@ -347,27 +505,21 @@ class FeishuAssistantConfig(ConfigModel):
     state_dir: str = "data/messaging"
     allowed_users: list[str] = Field(default_factory=list)
 
-
-class AutoDreamConfig(ConfigModel):
-    """Configuration for auto-dream memory consolidation."""
-
-    enabled: bool = True
-    min_hours: float = 24.0  # Minimum hours since last consolidation
-    min_sessions: int = 5  # Minimum sessions since last consolidation
+    @field_validator("allowed_users")
+    @classmethod
+    def _validate_allowed_users(cls, values: list[str]) -> list[str]:
+        return _validate_remote_user_ids(values, platform="Feishu")
 
 
 class AssistantConfig(ConfigModel):
     """Configuration for assistant module."""
 
     enabled: bool = False
-    max_context_tokens: int = 128_000
-    session_compact_threshold: int = 100_000
-    skills_dir: str = "skills"  # Skill search directory
-    data_dir: str = "data/assistant"  # Memory file directory
+    backend: str = ""
+    skills_dir: str = "skills"  # Direct custom Skill path for Pi/Claude
     telegram: TelegramAssistantConfig = Field(default_factory=TelegramAssistantConfig)
     wechat: WechatAssistantConfig = Field(default_factory=WechatAssistantConfig)
     feishu: FeishuAssistantConfig = Field(default_factory=FeishuAssistantConfig)
-    auto_dream: AutoDreamConfig = Field(default_factory=AutoDreamConfig)
 
 
 class LogConfig(ConfigModel):
@@ -410,14 +562,11 @@ class BackendConfig(ConfigModel):
 
 
 class UserConfig(ConfigModel):
+    config_version: Literal[2] = CURRENT_CONFIG_VERSION
+    ai: AIConfig = Field(default_factory=AIConfig)
     downloader: DownloaderConfig = DownloaderConfig()
-    file_renamer: FileRenamerConfig = FileRenamerConfig()
-    metadata_parser: MetadataParserConfig = MetadataParserConfig()
-    metadata_validator: MetadataValidatorConfig = MetadataValidatorConfig()
     metadata: MetadataPipelineConfig = MetadataPipelineConfig()
     rss: RSSConfig = RSSConfig()
-    openlist: OpenListConfig = OpenListConfig()
-    llm: LLMConfig = LLMConfig()
     notification: NotificationConfig = NotificationConfig()
     assistant: AssistantConfig = AssistantConfig()
     log: LogConfig = LogConfig()
@@ -425,15 +574,42 @@ class UserConfig(ConfigModel):
     bangumi: BangumiConfig = BangumiConfig()
     mikan: MikanConfig = MikanConfig()
     backend: BackendConfig = BackendConfig()
+    # Python API compatibility only.  These fields are excluded from v2 TOML
+    # serialisation and are never consumed by the v2 runtime.
+    file_renamer: FileRenamerConfig = Field(
+        default_factory=FileRenamerConfig, exclude=True
+    )
+    metadata_parser: MetadataParserConfig = Field(
+        default_factory=MetadataParserConfig, exclude=True
+    )
+    metadata_validator: MetadataValidatorConfig = Field(
+        default_factory=MetadataValidatorConfig, exclude=True
+    )
+    openlist: OpenListConfig = Field(default_factory=OpenListConfig, exclude=True)
+    llm: LLMConfig = Field(default_factory=LLMConfig, exclude=True)
 
     def metadata_provider_names(self) -> tuple[str, ...]:
-        """Return the canonical provider pipeline, including legacy fallback."""
+        """Return the canonical v2 provider pipeline."""
+        if self.metadata.pipeline:
+            return tuple(self.metadata.pipeline)
         if self.metadata.providers:
             return tuple(self.metadata.providers)
-        providers = [self.metadata_parser.provider]
-        if self.metadata_validator.provider != "none":
-            providers.append(self.metadata_validator.provider)
+        providers = ["ai" if self.ai.sources else "regex", "tmdb"]
         return tuple(dict.fromkeys(providers))
+
+    def resolve_metadata_ai_source(self) -> tuple[str, AISourceConfig] | None:
+        return self.ai.resolve(self.metadata.ai_source, consumer="metadata.ai_source")
+
+    def resolve_assistant_source(self) -> tuple[str, AISourceConfig] | None:
+        return self.ai.resolve(self.assistant.backend, consumer="assistant.backend")
+
+    @model_validator(mode="after")
+    def _validate_source_references(self) -> UserConfig:
+        if self.metadata.ai_source:
+            self.resolve_metadata_ai_source()
+        if self.assistant.backend:
+            self.resolve_assistant_source()
+        return self
 
     @model_validator(mode="before")
     @classmethod

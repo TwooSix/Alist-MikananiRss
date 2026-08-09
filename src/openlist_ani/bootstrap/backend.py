@@ -34,6 +34,8 @@ from openlist_ani.adapters.metadata_sources import (
     LlmMetadataProvider,
     RegexMetadataProvider,
 )
+from openlist_ani.adapters.configuration.models import AISourceConfig
+from openlist_ani.adapters.metadata_sources.llm.source import create_source_client
 from openlist_ani.adapters.metadata_sources.llm import (
     LLMClientSettings,
     create_llm_client,
@@ -126,8 +128,8 @@ async def _compose_runtime(config, core_settings: CoreSettings) -> _RuntimeAssem
     close_callbacks.append(database.close)
 
     openlist_client = OpenListClient(
-        base_url=config.openlist.url,
-        token=config.openlist.token,
+        base_url=config.downloader.openlist.url,
+        token=config.downloader.openlist.token,
     )
     close_callbacks.append(openlist_client.close)
     feed_session = aiohttp.ClientSession(
@@ -256,8 +258,8 @@ async def _check_openlist_health(assembly: _RuntimeAssembly, config) -> None:
     try:
         healthy = await OpenListHealthCheck(
             client=assembly.openlist_client,
-            base_url=config.openlist.url,
-            offline_download_tool=config.openlist.offline_download_tool,
+            base_url=config.downloader.openlist.url,
+            offline_download_tool=config.downloader.openlist.offline_download_tool,
         ).validate()
         if not healthy:
             assembly.runtime.set_degraded(
@@ -292,67 +294,70 @@ def _build_registry(
     requested_metadata = set(core_settings.metadata_providers)
     if "regex" in requested_metadata:
         registry.register_metadata(RegexMetadataProvider())
-    if "llm" in requested_metadata:
-        client = (
-            create_llm_client(
-                LLMClientSettings(
-                    provider_type=config.llm.provider_type,
-                    api_key=config.llm.openai_api_key,
-                    base_url=config.llm.openai_base_url,
-                    model=config.llm.openai_model,
-                )
-            )
-            if config.llm.openai_api_key
-            else None
-        )
+    if "ai" in requested_metadata:
+        client = _metadata_ai_client(config)
         registry.register_metadata(
             LlmMetadataProvider(
                 client,
-                disabled_reason=(None if client else "OpenAI API key not set"),
+                disabled_reason=(None if client else "AI source is not configured"),
             )
         )
     if "tmdb" in requested_metadata:
         registry.register_metadata(
             create_tmdb_metadata_provider(
                 MetadataValidatorSettings(
-                    tmdb_api_key=config.llm.tmdb_api_key,
-                    tmdb_language=config.llm.tmdb_language,
+                    tmdb_api_key=config.metadata.tmdb.api_key,
+                    tmdb_language=config.metadata.tmdb.language,
                 ),
                 llm_client=_validator_llm_client(
-                    config, use_llm="llm" in requested_metadata
+                    config, use_llm="ai" in requested_metadata
                 ),
                 cache=metadata_cache,
-                cache_version=f"1:{config.llm.tmdb_language}",
+                cache_version=f"2:{config.metadata.tmdb.language}",
                 max_concurrency=core_settings.metadata_concurrency,
             )
         )
 
-    registry.register_downloader(
-        OpenListDownloadAdapter(
-            client=openlist_client,
-            offline_download_tool=config.openlist.offline_download_tool,
-        )
-    )
-    registry.register_organizer(
+    registry.register_download_backend(
         "openlist",
-        OpenListOrganizerAdapter(openlist_client),
+        downloader=OpenListDownloadAdapter(
+            client=openlist_client,
+            offline_download_tool=config.downloader.openlist.offline_download_tool,
+        ),
+        organizer=OpenListOrganizerAdapter(openlist_client),
     )
     return registry
 
 
 def _validator_llm_client(config, *, use_llm: bool | None = None):
-    if use_llm is None:
-        use_llm = config.metadata_parser.provider.strip().lower() == "llm"
-    if not use_llm or not config.llm.openai_api_key:
-        return None
-    return create_llm_client(
-        LLMClientSettings(
-            provider_type=config.llm.provider_type,
-            api_key=config.llm.openai_api_key,
-            base_url=config.llm.openai_base_url,
-            model=config.llm.openai_model,
+    if not hasattr(config, "data"):
+        if use_llm is None:
+            use_llm = config.metadata_parser.provider.strip().lower() == "llm"
+        if not use_llm or not config.llm.openai_api_key:
+            return None
+        return create_llm_client(
+            LLMClientSettings(
+                provider_type=config.llm.provider_type,
+                api_key=config.llm.openai_api_key,
+                base_url=config.llm.openai_base_url,
+                model=config.llm.openai_model,
+            )
         )
+    if use_llm is None:
+        use_llm = "ai" in config.data.metadata_provider_names()
+    if not use_llm:
+        return None
+    return _metadata_ai_client(config)
+
+
+def _metadata_ai_client(config):
+    selected = config.data.resolve_metadata_ai_source()
+    source = (
+        selected[1]
+        if selected is not None
+        else AISourceConfig(type="agent", agent="pi")
     )
+    return create_source_client(source)
 
 
 def _create_validator_llm_client():

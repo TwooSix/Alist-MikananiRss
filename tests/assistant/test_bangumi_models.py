@@ -1,4 +1,4 @@
-from openlist_ani.assistant.skill_support.bangumi_model import (
+from openlist_ani.assistant.builtin_skills.support.bangumi_model import (
     BangumiImages,
     parse_calendar_day,
     parse_legacy_blog,
