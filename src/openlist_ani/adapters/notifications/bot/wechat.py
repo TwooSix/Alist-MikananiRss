@@ -5,6 +5,8 @@ from .base import BotBase
 
 
 class WechatBot(BotBase):
+    message_limit = 2000
+
     def __init__(
         self,
         *,
@@ -15,12 +17,16 @@ class WechatBot(BotBase):
         messenger: WechatIlinkMessenger | None = None,
     ) -> None:
         self.chat_id = chat_id
+        self.account_id = account_id
         self._messenger = messenger or WechatIlinkMessenger(
             account_id=account_id,
             token=token,
             base_url=base_url,
             interactive_login=False,
         )
+
+    def notification_identity(self) -> str:
+        return f"{self.account_id}:{self.chat_id}"
 
     async def start(self) -> None:
         await self._messenger.ensure_auth()

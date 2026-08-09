@@ -88,7 +88,7 @@ def test_legacy_resources_and_checkpoint_are_imported_once(tmp_path):
             connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[
                 0
             ]
-            == 3
+            == 4
         )
     assert len(list((tmp_path / "backups").glob("data-v1-*.db"))) == 1
 
@@ -194,5 +194,12 @@ def test_v2_database_is_upgraded_with_lease_columns(tmp_path):
             connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[
                 0
             ]
-            == 3
+            == 4
+        )
+        assert (
+            connection.execute(
+                "SELECT 1 FROM sqlite_master "
+                "WHERE type = 'table' AND name = 'notification_deliveries'"
+            ).fetchone()
+            is not None
         )

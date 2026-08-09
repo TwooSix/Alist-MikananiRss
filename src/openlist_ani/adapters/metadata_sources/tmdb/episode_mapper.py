@@ -1,19 +1,22 @@
 """Episode mapping strategies for aligning fansub season/episode to TMDB.
 
 Strategies (in execution order):
-1. DirectMatch    — fansub S/E directly exist in TMDB
-2. SpecialEpisode — episode==0, use LLM to match TMDB Season 0 specials
-3. CourMapping    — fansub invented its own seasons based on broadcast cours
-   3a. Relative   — fansub resets episode numbering per cour
-   3b. Absolute   — fansub keeps accumulating episode numbers across cours
-4. AbsoluteEpisode — fansub stays in S01 but accumulates episodes; TMDB has multiple seasons
+1. NamedSeason    — a meaningful TMDB season name is visible in the release title
+2. DirectMatch    — fansub S/E directly exist in TMDB
+3. SpecialEpisode — episode==0, use LLM to match TMDB Season 0 specials
+4. CourMapping    — fansub invented its own seasons based on broadcast cours
+   4a. Relative   — fansub resets episode numbering per cour
+   4b. Absolute   — fansub keeps accumulating episode numbers across cours
+5. AbsoluteEpisode — fansub stays in S01 but accumulates episodes; TMDB has multiple seasons
 """
 
 from __future__ import annotations
 
 import json
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 from typing import TYPE_CHECKING, Any
 
 from openlist_ani.logger import logger
@@ -44,6 +47,21 @@ class MappingContext:
     tmdb_client: TMDBClient
     release_title: str = ""
     llm_client: LLMClient | None = None
+
+
+_GENERIC_SEASON_NAME_RE = re.compile(
+    r"(?:season|series|cour|part)\d+|"
+    r"(?:第)?[0-9一二三四五六七八九十百两壹贰叁肆伍陆柒捌玖]+(?:季|期|部|部分|篇)",
+    re.IGNORECASE,
+)
+_GENERIC_SEASON_NAMES = {
+    "mainstory",
+    "specials",
+    "本篇",
+    "正篇",
+    "特别篇",
+    "特別篇",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -371,8 +389,96 @@ class EpisodeMapper:
         ]
 
     async def map(self, ctx: MappingContext) -> EpisodeMapping | None:
+        # AI parsers have to default an unnumbered title to S01.  That is
+        # ambiguous for shows which TMDB stores as one long-running series.
+        # For example, TMDB stores BLEACH's original 366 episodes as S01 and
+        # "千年血战篇" as S02.  A release numbered "千年血戰篇 - 41" would
+        # otherwise pass DirectMatch as the unrelated S01E41.  A distinctive
+        # TMDB season name in the release title is stronger evidence than that
+        # merely valid numeric pair, so resolve it before all numeric fallbacks.
+        named_season = _match_named_season(ctx)
+        if named_season is not None:
+            if 1 <= ctx.fansub_episode <= named_season.episode_count:
+                return EpisodeMapping(
+                    season=named_season.season_number,
+                    episode=ctx.fansub_episode,
+                    strategy="season_title",
+                )
+
+            # Do not fall through to a numerically valid episode in another
+            # season.  TMDB may simply not have added the new episode yet.
+            logger.warning(
+                "TMDB named season matched but episode is out of range: "
+                f"title={ctx.release_title!r}, "
+                f"season={named_season.season_number}, "
+                f"episode={ctx.fansub_episode}, "
+                f"episode_count={named_season.episode_count}"
+            )
+            return None
+
         for strategy in self._strategies:
             result = await strategy.try_map(ctx)
             if result:
                 return result
         return None
+
+
+def _match_named_season(ctx: MappingContext) -> SeasonInfo | None:
+    """Find a distinctive TMDB season name embedded in an S01-defaulted title.
+
+    Exact matching is preferred.  A conservative fuzzy window also handles a
+    one-character simplified/traditional Chinese difference such as 战/戰.
+    Generic labels ("Season 2", "第 2 季", "本篇") carry no title identity and
+    are deliberately ignored.
+    """
+    if ctx.fansub_season != 1 or not ctx.release_title:
+        return None
+
+    title = _normalize_season_text(ctx.release_title)
+    if not title:
+        return None
+
+    matches: list[tuple[float, int, SeasonInfo]] = []
+    for season in ctx.sorted_seasons:
+        if season.season_number <= 0 or _is_generic_season_name(season.name):
+            continue
+        name = _normalize_season_text(season.name)
+        if len(name) < 3:
+            continue
+        score = _season_name_match_score(name, title)
+        if score >= 0.8:
+            matches.append((score, len(name), season))
+
+    if not matches:
+        return None
+    matches.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    best = matches[0]
+    if len(matches) > 1:
+        second = matches[1]
+        if best[:2] == second[:2]:
+            return None
+    return best[2]
+
+
+def _is_generic_season_name(value: str) -> bool:
+    normalized = _normalize_season_text(value)
+    return bool(
+        not normalized
+        or normalized in _GENERIC_SEASON_NAMES
+        or _GENERIC_SEASON_NAME_RE.fullmatch(normalized)
+    )
+
+
+def _normalize_season_text(value: str) -> str:
+    return "".join(char.casefold() for char in value if char.isalnum())
+
+
+def _season_name_match_score(name: str, title: str) -> float:
+    if name in title:
+        return 1.0
+    if len(name) < 5 or len(title) < len(name):
+        return 0.0
+    return max(
+        SequenceMatcher(a=name, b=title[index : index + len(name)]).ratio()
+        for index in range(len(title) - len(name) + 1)
+    )

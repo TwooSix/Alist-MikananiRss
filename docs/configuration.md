@@ -65,7 +65,7 @@ language = "zh-CN"
 
 [notification]
 enabled = false  # Enable/disable notification system
-batch_interval = 300.0  # 兼容字段；durable outbox 始终逐条发送，当前值会被忽略
+batch_interval = 300.0  # 持久化聚合窗口（秒）；0 表示逐条立即发送
 
 # Telegram bot configuration (optional)
 # [[notification.bots]]
@@ -248,6 +248,7 @@ quality = ["2160p", "1080p", "720p", "480p", "360p"]
 - `{anime_name}` — 番剧名
 - `{season}` — 季度（`:02d` 表示两位数字补零）
 - `{episode}` — 集数
+- `{year}` — TMDB 剧集条目的首播年份；TMDB 无日期或降级失败时为空
 - `{fansub}` — 字幕组
 - `{quality}` — 画质
 - `{languages}` — 语言
@@ -294,7 +295,9 @@ v1 的 `[llm]`、`[metadata_parser]`、`[metadata_validator]`、`[openlist]` 和
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
 | `enabled` | bool | `false` | 是否启用通知系统 |
-| `batch_interval` | float | `300.0` | 旧配置兼容字段；durable outbox 始终逐条发送，当前值会被忽略 |
+| `batch_interval` | float | `300.0` | 持久化聚合窗口（秒）；从最早待发项开始计时，`0` 表示逐条立即发送，不能为负数 |
+
+通知批次保存在 SQLite outbox 中，重启不会丢失。不同渠道独立记录成功与重试状态；批次超过渠道安全长度时会按完整条目拆成尽可能少的消息。
 
 #### Telegram 通知
 

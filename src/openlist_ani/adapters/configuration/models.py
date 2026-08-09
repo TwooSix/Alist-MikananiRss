@@ -39,7 +39,7 @@ _OPENLIST_TOOL_NAMES = {
 }
 
 _SUPPORTED_RENAME_FIELDS = frozenset(
-    {"anime_name", "season", "episode", "fansub", "quality", "languages"}
+    {"anime_name", "season", "episode", "year", "fansub", "quality", "languages"}
 )
 
 MetadataParserProvider = Literal["llm", "regex"]
@@ -444,8 +444,10 @@ class NotificationConfig(ConfigModel):
     """Configuration for notification system."""
 
     enabled: bool = False
-    batch_interval: float = (
-        300.0  # Batch notifications interval in seconds (default: 5 minutes, 0 to disable)
+    batch_interval: float = Field(
+        default=300.0,
+        ge=0,
+        description="Batch interval in seconds; 0 sends each event immediately.",
     )
     bots: list[BotConfig] = Field(default_factory=list)
 

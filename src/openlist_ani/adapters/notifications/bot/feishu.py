@@ -7,6 +7,8 @@ from .base import BotBase
 
 
 class FeishuBot(BotBase):
+    message_limit = 10000
+
     def __init__(
         self,
         *,
@@ -20,12 +22,16 @@ class FeishuBot(BotBase):
     ) -> None:
         self.receive_id = receive_id
         self.receive_id_type = receive_id_type
+        self.app_id = app_id
         self._messenger = messenger or FeishuMessenger(
             app_id=app_id,
             app_secret=app_secret,
             domain=domain,
             store=MessagingStateStore(state_dir),
         )
+
+    def notification_identity(self) -> str:
+        return f"{self.app_id}:{self.receive_id_type}:{self.receive_id}"
 
     async def send_message(self, message: str) -> bool:
         return await self._messenger.send_text(

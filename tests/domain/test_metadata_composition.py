@@ -31,6 +31,7 @@ def test_metadata_merge_is_field_level_and_priority_ordered():
             values=ReleaseMetadata(
                 anime_name="Canonical Name",
                 season=2,
+                year=2024,
                 external_ids={"tmdb": "42"},
             ),
             authoritative=True,
@@ -48,6 +49,7 @@ def test_metadata_merge_is_field_level_and_priority_ordered():
     assert document.values.anime_name == "Canonical Name"
     assert document.values.season == 2
     assert document.values.episode == 3
+    assert document.values.year == 2024
     assert document.values.external_ids == {"tmdb": "42"}
     assert [item.source for item in document.evidence["anime_name"]] == [
         "regex",

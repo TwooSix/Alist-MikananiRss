@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS resources (
@@ -100,6 +100,27 @@ CREATE TABLE IF NOT EXISTS notification_outbox (
 );
 CREATE INDEX IF NOT EXISTS idx_outbox_claim
     ON notification_outbox(status, next_attempt_at, created_at);
+
+CREATE TABLE IF NOT EXISTS notification_deliveries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    outbox_id INTEGER NOT NULL,
+    target_key TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at TEXT,
+    last_error TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    delivered_at TEXT,
+    lease_token TEXT,
+    lease_expires_at TEXT,
+    UNIQUE(outbox_id, target_key),
+    FOREIGN KEY(outbox_id) REFERENCES notification_outbox(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_notification_delivery_claim
+    ON notification_deliveries(target_key, status, next_attempt_at, created_at);
+CREATE INDEX IF NOT EXISTS idx_notification_delivery_lease
+    ON notification_deliveries(status, lease_expires_at);
 
 CREATE TABLE IF NOT EXISTS schema_migrations (
     version INTEGER PRIMARY KEY,

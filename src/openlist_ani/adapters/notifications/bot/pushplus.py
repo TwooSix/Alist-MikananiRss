@@ -13,6 +13,8 @@ class PushPlusChannel(Enum):
 
 
 class PushPlusBot(BotBase):
+    message_limit = 10000
+
     def __init__(self, user_token: str, channel: str | None = None) -> None:
         self.user_token = user_token
         if channel:
@@ -22,6 +24,9 @@ class PushPlusBot(BotBase):
                 raise ValueError(f"Invalid channel: {channel}")
         else:
             self.channel = PushPlusChannel.WECHAT
+
+    def notification_identity(self) -> str:
+        return f"{self.user_token}:{self.channel.value}"
 
     async def send_message(self, message: str) -> bool:
         api_url = f"http://www.pushplus.plus/send/{self.user_token}"

@@ -29,6 +29,7 @@ class ReleaseMetadata:
     anime_name: str | None = None
     season: int | None = None
     episode: int | None = None
+    year: int | None = None
     fansub: str | None = None
     quality: VideoQuality | None = None
     languages: list[LanguageType] = field(default_factory=list)
@@ -54,6 +55,7 @@ class ReleaseMetadata:
             anime_name=value.get("anime_name"),
             season=value.get("season"),
             episode=value.get("episode"),
+            year=value.get("year"),
             fansub=value.get("fansub"),
             quality=quality if quality != VideoQuality.UNKNOWN else None,
             languages=[item for item in languages if item != LanguageType.UNKNOWN],

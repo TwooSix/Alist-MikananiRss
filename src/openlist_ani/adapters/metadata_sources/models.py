@@ -30,6 +30,7 @@ class TitleParseResponse(BaseModel):
 class TMDBMatch(BaseModel):
     tmdb_id: int
     anime_name: str
+    year: int | None = None
     confidence: str = "unknown"
 
 

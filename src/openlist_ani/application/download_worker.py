@@ -8,6 +8,7 @@ from openlist_ani.application.lease import run_with_job_heartbeat
 from openlist_ani.application.ports import (
     DownloadAdapter,
     DownloadedAsset,
+    DownloadedSidecar,
     JobRepository,
     Organizer,
 )
@@ -119,6 +120,10 @@ class DownloadWorkerPool:
                 "base_path": base_path,
                 "directory_path": asset.directory_path,
                 "filename": asset.filename,
+                "sidecars": [
+                    {"filename": item.filename, "suffix": item.suffix}
+                    for item in asset.sidecars
+                ],
             }
         )
         job.advance(JobStep.ORGANIZE)
@@ -133,6 +138,13 @@ class DownloadWorkerPool:
             asset = DownloadedAsset(
                 directory_path=job.artifact["directory_path"],
                 filename=job.artifact["filename"],
+                sidecars=tuple(
+                    DownloadedSidecar(
+                        filename=item["filename"],
+                        suffix=item.get("suffix", ""),
+                    )
+                    for item in job.artifact.get("sidecars", [])
+                ),
                 checkpoint=dict(job.checkpoint),
             )
             target_filename = job.artifact.get("target_filename")
@@ -142,13 +154,19 @@ class DownloadWorkerPool:
                 )
                 job.artifact["target_filename"] = target_filename
                 await self._jobs.save(job)
+            async def checkpoint(payload: dict) -> None:
+                job.artifact["organize_plan"] = dict(payload)
+                await self._jobs.save(job)
+
             organized = await self._organizer.organize(
                 job,
                 asset,
                 target_filename,
+                checkpoint,
             )
             job.output_path = organized.path
             job.artifact["renamed_path"] = organized.path
+            job.artifact["renamed_sidecars"] = list(organized.sidecar_filenames)
         job.advance(JobStep.FINALIZE)
         job.status = JobStatus.RUNNING
         await self._jobs.save(job)

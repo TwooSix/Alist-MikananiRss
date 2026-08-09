@@ -3,7 +3,12 @@ from .job_repository import LostJobLease, SqliteFeedStateRepository, SqliteJobRe
 from .library_repository import SqliteLibraryRepository
 from .metadata_cache_repository import SqliteMetadataCacheRepository
 from .migrations import LegacyMigrationRunner
-from .outbox_repository import LostOutboxLease, OutboxItem, SqliteOutboxRepository
+from .outbox_repository import (
+    LostOutboxLease,
+    OutboxDelivery,
+    OutboxItem,
+    SqliteOutboxRepository,
+)
 
 __all__ = [
     "Database",
@@ -11,6 +16,7 @@ __all__ = [
     "LostJobLease",
     "LostOutboxLease",
     "OutboxItem",
+    "OutboxDelivery",
     "SqliteFeedStateRepository",
     "SqliteJobRepository",
     "SqliteLibraryRepository",

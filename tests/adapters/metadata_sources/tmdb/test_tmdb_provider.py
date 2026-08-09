@@ -52,7 +52,7 @@ def _document(episode=15):
 
 async def test_tmdb_provider_applies_authoritative_identity_and_episode_mapping():
     identities = _IdentityResolver(
-        TMDBMatch(tmdb_id=3822, anime_name="Canonical Example")
+        TMDBMatch(tmdb_id=3822, anime_name="Canonical Example", year=2024)
     )
     episodes = _EpisodeValidator(
         EpisodeMapping(season=2, episode=3, strategy="absolute")
@@ -67,6 +67,7 @@ async def test_tmdb_provider_applies_authoritative_identity_and_episode_mapping(
     values = result[0].document.values
     assert values.anime_name == "Canonical Example"
     assert (values.season, values.episode) == (2, 3)
+    assert values.year == 2024
     assert values.external_ids == {"tmdb": "3822"}
     assert identities.names == ["Example"]
     assert episodes.calls[0]["release_title"] == "Example - 15"

@@ -104,6 +104,7 @@ class TmdbMetadataProvider:
                             anime_name=identity.anime_name,
                             season=mapping.season,
                             episode=mapping.episode,
+                            year=identity.year,
                             external_ids={"tmdb": str(identity.tmdb_id)},
                         )
 

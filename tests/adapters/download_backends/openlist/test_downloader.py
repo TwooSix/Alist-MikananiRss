@@ -98,6 +98,10 @@ def _successful_remote(client, filename="raw episode [1080p].mkv"):
             [],
             [SimpleNamespace(name=filename, is_dir=False, size=100)],
             [],
+            [SimpleNamespace(name=filename, is_dir=False, size=100)],
+            [],
+            [],
+            [SimpleNamespace(name=filename, is_dir=False, size=100)],
         ]
     )
 
@@ -128,6 +132,54 @@ async def test_download_moves_detected_file_and_persists_checkpoints():
     )
     client.remove_path.assert_awaited_once_with(
         "/anime/.oani-download-tmp", ["workflow-1"]
+    )
+
+
+async def test_download_moves_related_subtitles_with_video():
+    adapter, client = _adapter()
+    files = [
+        SimpleNamespace(name="raw.mkv", is_dir=False, size=1000),
+        SimpleNamespace(name="raw.zh.ass", is_dir=False, size=10),
+        SimpleNamespace(name="unrelated.ass", is_dir=False, size=10),
+    ]
+    moved_files = [files[0], files[1]]
+    client.add_offline_download = AsyncMock(
+        return_value=[OpenlistTask(id="offline-1", name="offline")]
+    )
+    client.get_offline_download_undone = AsyncMock(return_value=[])
+    client.get_offline_download_done = AsyncMock(
+        return_value=[
+            OpenlistTask(
+                id="offline-1",
+                name="offline",
+                state=OpenlistTaskState.SUCCEEDED,
+            )
+        ]
+    )
+    client.get_offline_download_transfer_undone = AsyncMock(return_value=[])
+    client.get_offline_download_transfer_done = AsyncMock(return_value=[])
+    client.list_files = AsyncMock(
+        side_effect=[
+            files,
+            files,
+            files,
+            [],
+            files,
+            [],
+            [files[2]],
+            moved_files,
+        ]
+    )
+
+    result = await _run(adapter, _job())
+
+    assert [(item.filename, item.suffix) for item in result.sidecars] == [
+        ("raw.zh.ass", ".zh")
+    ]
+    client.move_file.assert_awaited_once_with(
+        "/anime/.oani-download-tmp/workflow-1",
+        "/anime/Example/Season 1",
+        ["raw.mkv", "raw.zh.ass"],
     )
 
 
@@ -207,6 +259,68 @@ async def test_download_recovers_move_completed_before_checkpoint():
     assert result.filename == "ep01.mkv"
     client.move_file.assert_not_awaited()
     assert result.checkpoint["workflow_state"] == "done"
+
+
+async def test_download_resumes_persisted_conflict_plan_after_partial_rename():
+    adapter, client = _adapter()
+    resolved_video = "raw (1).mkv"
+    resolved_subtitle = "raw.zh (1).ass"
+    client.list_files = AsyncMock(
+        side_effect=[
+            [
+                SimpleNamespace(name=resolved_video, is_dir=False, size=100),
+                SimpleNamespace(name="raw.zh.ass", is_dir=False, size=10),
+            ],
+            [
+                SimpleNamespace(name=resolved_video, is_dir=False, size=100),
+                SimpleNamespace(name="raw.zh.ass", is_dir=False, size=10),
+            ],
+            [
+                SimpleNamespace(name=resolved_video, is_dir=False, size=100),
+                SimpleNamespace(name=resolved_subtitle, is_dir=False, size=10),
+            ],
+            [],
+            [],
+            [
+                SimpleNamespace(name=resolved_video, is_dir=False, size=100),
+                SimpleNamespace(name=resolved_subtitle, is_dir=False, size=10),
+            ],
+        ]
+    )
+    job = _job(
+        checkpoint={
+            "workflow_state": "file_detected",
+            "temp_path": "/anime/.oani-download-tmp/workflow-1",
+            "downloaded_filename": "raw.mkv",
+            "downloaded_sidecars": [
+                {"relative_path": "raw.zh.ass", "suffix": ".zh"}
+            ],
+            "file_parent_path": "/anime/.oani-download-tmp/workflow-1",
+            "resolved_filename": resolved_video,
+            "move_plan": [
+                {
+                    "kind": "video",
+                    "source": "raw.mkv",
+                    "filename": resolved_video,
+                },
+                {
+                    "kind": "subtitle",
+                    "source": "raw.zh.ass",
+                    "filename": resolved_subtitle,
+                    "suffix": ".zh",
+                },
+            ],
+        }
+    )
+
+    result = await _run(adapter, job)
+
+    assert result.filename == resolved_video
+    assert result.sidecars[0].filename == resolved_subtitle
+    client.rename_file.assert_awaited_once_with(
+        "/anime/.oani-download-tmp/workflow-1/raw.zh.ass",
+        resolved_subtitle,
+    )
 
 
 async def test_failed_remote_task_is_retryable_and_checkpoint_is_reset():

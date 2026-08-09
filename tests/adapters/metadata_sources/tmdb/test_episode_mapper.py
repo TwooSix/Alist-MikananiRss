@@ -51,3 +51,47 @@ async def test_episode_mapper_maps_absolute_numbering_inside_later_season():
     assert mapping is not None
     assert mapping.season == 2
     assert mapping.episode == 8
+
+
+async def test_episode_mapper_prefers_named_tmdb_season_over_valid_default_season():
+    mapper = EpisodeMapper()
+    mapping = await mapper.map(
+        MappingContext(
+            tmdb_id=30984,
+            fansub_season=1,
+            fansub_episode=41,
+            sorted_seasons=[
+                SeasonInfo(season_number=1, episode_count=366, name="本篇"),
+                SeasonInfo(season_number=2, episode_count=50, name="千年血战篇"),
+            ],
+            tmdb_client=FakeTMDBClient(),
+            release_title=(
+                "[ANi] BLEACH 死神 千年血戰篇-禍進譚- - 41 "
+                "[1080P][Baha][WEB-DL][AAC AVC][CHT].mp4"
+            ),
+        )
+    )
+
+    assert mapping is not None
+    assert mapping.season == 2
+    assert mapping.episode == 41
+    assert mapping.strategy == "season_title"
+
+
+async def test_episode_mapper_does_not_fall_back_when_named_season_is_out_of_range():
+    mapper = EpisodeMapper()
+    mapping = await mapper.map(
+        MappingContext(
+            tmdb_id=30984,
+            fansub_season=1,
+            fansub_episode=41,
+            sorted_seasons=[
+                SeasonInfo(season_number=1, episode_count=366, name="本篇"),
+                SeasonInfo(season_number=2, episode_count=40, name="千年血战篇"),
+            ],
+            tmdb_client=FakeTMDBClient(),
+            release_title="[ANi] BLEACH 死神 千年血战篇-祸进谭- - 41",
+        )
+    )
+
+    assert mapping is None

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 
-from openlist_ani.application.ports import DownloadedAsset
+from openlist_ani.application.ports import DownloadedAsset, DownloadedSidecar
 from openlist_ani.domain import DownloadJob
 
 from .client import OpenListClient
@@ -74,5 +74,12 @@ class OpenListDownloadAdapter:
         return DownloadedAsset(
             directory_path=task.downloader_data["materialized_directory_path"],
             filename=task.downloader_data["materialized_filename"],
+            sidecars=tuple(
+                DownloadedSidecar(
+                    filename=item["filename"],
+                    suffix=item.get("suffix", ""),
+                )
+                for item in task.downloader_data.get("materialized_sidecars", [])
+            ),
             checkpoint=dict(task.downloader_data),
         )

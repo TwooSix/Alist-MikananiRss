@@ -31,6 +31,7 @@ def format_release_stem(
         "anime_name": sanitize_filename(metadata.anime_name or "Unknown"),
         "season": metadata.season or 1,
         "episode": metadata.episode or 1,
+        "year": metadata.year or "",
         "fansub": metadata.fansub or "",
         "quality": str(metadata.quality) if metadata.quality else "",
         "languages": "".join(str(item) for item in metadata.languages),

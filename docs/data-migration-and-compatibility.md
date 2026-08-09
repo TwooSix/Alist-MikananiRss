@@ -25,13 +25,13 @@ Docker 同时启用 assistant 时，entrypoint 会先完成迁移，再启动两
 
 - `resources` 的所有旧列、类型和 `title` 唯一语义保留。
 - 新增列为 `job_id`、`final_path`、`metadata_json` 和 `provenance_json`。
-- 当前 schema 版本为 v3；`jobs` 和 `notification_outbox` 新增内部 lease token/过期时间列，用于运行期自动回收中断任务，不属于公开兼容接口。
+- 当前 schema 版本为 v4；新增 `notification_deliveries`，按 outbox 事件和通知渠道保存投递、重试及租约状态；`jobs` 和旧 outbox 列保持兼容。
 - `metadata_json`/`provenance_json` 中的新证据会携带 `value`、`previous_value` 和 `overrode`。旧 JSON 缺少这些键时按 `null`、`null`、`false` 读取，不需要数据库迁移或重写历史资源。
 - assistant 继续直接查询同一个 `data/data.db/resources`。
 - 现有 `/api/rss`、`/api/downloads`、`/api/parse_rss`、`/api/resolve_magnet` 和 `/api/resolve_torrent` 路径及响应字段保留。
 - 新增 `/health/live` 和 `/health/ready`。
 - 旧配置不会在启动时自动重写。
-- `notification.batch_interval` 仍能被旧配置模型读取；新核心为保证 outbox 的持久化语义，实际逐条投递通知，不再把已领取行转交给内存批次后提前标记完成。
+- `notification.batch_interval` 重新启用持久化有界批次；`0` 保持旧的逐条即时投递，正数从最早待发事件开始计时。
 
 旧配置的编译规则：
 
@@ -45,7 +45,7 @@ metadata_parser.provider + metadata_validator.provider
 ## 回滚
 
 1. 停止 backend 和 assistant，确保没有进程占用 `data/data.db`。
-2. 复制当前 v3 数据库到安全位置，以免丢失迁移后新增资源。
+2. 复制当前 v4 数据库到安全位置，以免丢失迁移后新增资源。
 3. 从 `data/backups/` 选择迁移前备份，替换 `data/data.db`。
 4. 使用旧版本程序启动；旧 `task_mementos.db/json` 仍在原位置。
 

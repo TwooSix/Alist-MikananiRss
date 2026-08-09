@@ -113,6 +113,16 @@ class TestNotificationConfig:
         assert cfg.batch_interval == pytest.approx(300.0)
         assert cfg.bots == []
 
+    def test_negative_batch_interval_is_rejected(self):
+        with pytest.raises(ValidationError):
+            NotificationConfig(batch_interval=-1)
+
+
+def test_rename_format_accepts_year_field():
+    cfg = DownloaderConfig(rename_format="{anime_name} ({year}) E{episode:02d}")
+
+    assert "{year}" in cfg.rename_format
+
 
 class TestAssistantConfig:
     def test_defaults(self):

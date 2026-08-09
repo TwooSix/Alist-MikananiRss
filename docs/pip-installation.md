@@ -98,7 +98,7 @@ language = "zh-CN"
 # ---------- 通知（可选） ----------
 [notification]
 enabled = false        # 设为 true 启用通知
-batch_interval = 300.0 # 兼容字段；durable outbox 始终逐条发送，当前值会被忽略
+batch_interval = 300.0 # 持久化聚合窗口（秒）；0 表示逐条立即发送
 
 # Telegram 通知（取消注释以启用）
 # [[notification.bots]]

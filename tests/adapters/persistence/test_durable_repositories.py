@@ -227,3 +227,123 @@ async def test_metadata_cache_is_persistent_and_bounded(tmp_path):
     assert await cache.get("tmdb", "first", "1") is None
     assert await cache.get("tmdb", "second", "1") == {"id": 2}
     await database.close()
+
+
+@pytest.mark.asyncio
+async def test_notification_deliveries_batch_by_oldest_event_and_track_targets(tmp_path):
+    path = tmp_path / "data.db"
+    LegacyMigrationRunner(path, tmp_path / "none.db", tmp_path / "none.json").run()
+    database = Database(path)
+    await database.start()
+    jobs = SqliteJobRepository(database)
+    outbox = SqliteOutboxRepository(database)
+
+    async def complete(title: str, url: str):
+        candidate = ReleaseCandidate.create(
+            source_name="test",
+            source_url="https://example.test/rss",
+            title=title,
+            download_url=url,
+        )
+        created = await jobs.add_candidate(candidate)
+        assert created is not None
+        claimed = (await jobs.claim(JobStep.METADATA, 1))[0]
+        claimed.metadata = MetadataDocument(
+            values=ReleaseMetadata(anime_name="Example", season=1, episode=1)
+        )
+        await jobs.complete_with_resource(claimed, f"/anime/{title}.mkv")
+
+    await complete("first", "magnet:first")
+    await complete("second", "magnet:second")
+    await outbox.initialize_targets(("paid", "free"))
+
+    assert await outbox.claim_due("paid", 300) == []
+    async with database.operation(write=True) as connection:
+        await connection.execute(
+            "UPDATE notification_outbox SET created_at = "
+            "CASE WHEN title = 'first' THEN '2020-01-01T00:00:00+00:00' "
+            "ELSE created_at END"
+        )
+
+    paid = await outbox.claim_due("paid", 300)
+    assert [item.title for item in paid] == ["first", "second"]
+    await outbox.delivery_succeeded(paid)
+
+    free = await outbox.claim_due("free", 300)
+    assert [item.title for item in free] == ["first", "second"]
+    await outbox.delivery_retry(free, "channel unavailable")
+
+    async with database.operation() as connection:
+        states = await (
+            await connection.execute(
+                "SELECT target_key, status FROM notification_deliveries "
+                "ORDER BY target_key, outbox_id"
+            )
+        ).fetchall()
+        outbox_states = await (
+            await connection.execute(
+                "SELECT DISTINCT status FROM notification_outbox"
+            )
+        ).fetchall()
+    assert [(row["target_key"], row["status"]) for row in states] == [
+        ("free", "retry_wait"),
+        ("free", "retry_wait"),
+        ("paid", "delivered"),
+        ("paid", "delivered"),
+    ]
+    assert {row["status"] for row in outbox_states} == {"pending"}
+
+    async with database.operation(write=True) as connection:
+        await connection.execute(
+            "UPDATE notification_deliveries SET next_attempt_at = "
+            "'2020-01-01T00:00:00+00:00' WHERE target_key = 'free'"
+        )
+    retried = await outbox.claim_due("free", 300)
+    await outbox.delivery_succeeded(retried)
+    async with database.operation() as connection:
+        final = await (
+            await connection.execute(
+                "SELECT DISTINCT status FROM notification_outbox"
+            )
+        ).fetchall()
+    assert {row["status"] for row in final} == {"delivered"}
+    await database.close()
+
+
+@pytest.mark.asyncio
+async def test_removed_notification_target_is_skipped_without_backfill(tmp_path):
+    path = tmp_path / "data.db"
+    LegacyMigrationRunner(path, tmp_path / "none.db", tmp_path / "none.json").run()
+    database = Database(path)
+    await database.start()
+    async with database.operation(write=True) as connection:
+        await connection.execute(
+            "INSERT INTO jobs (id, source_key, source_name, source_url, title, "
+            "download_url, candidate_json, status, step, downloader_name, "
+            "created_at, updated_at) VALUES "
+            "('job', 'source', 'test', 'rss', 'title', 'magnet:test', '{}', "
+            "'completed', 'finalize', 'openlist', "
+            "'2020-01-01T00:00:00+00:00', '2020-01-01T00:00:00+00:00')"
+        )
+        await connection.execute(
+            "INSERT INTO notification_outbox "
+            "(job_id, anime_name, title, created_at, updated_at) VALUES "
+            "('job', 'Example', 'title', "
+            "'2020-01-01T00:00:00+00:00', '2020-01-01T00:00:00+00:00')"
+        )
+    outbox = SqliteOutboxRepository(database)
+    await outbox.initialize_targets(("old", "kept"))
+    await outbox.initialize_targets(("kept", "new"))
+
+    async with database.operation() as connection:
+        rows = await (
+            await connection.execute(
+                "SELECT target_key, status FROM notification_deliveries "
+                "ORDER BY target_key"
+            )
+        ).fetchall()
+    assert [(row["target_key"], row["status"]) for row in rows] == [
+        ("kept", "pending"),
+        ("old", "skipped"),
+    ]
+    await database.close()

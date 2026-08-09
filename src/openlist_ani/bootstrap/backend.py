@@ -224,6 +224,7 @@ async def _create_runtime_assembly(
         outbox=outbox,
         sink=notification_manager,
         available=notification_available,
+        batch_interval=config.notification.batch_interval,
     )
     runtime = AppRuntime(
         scheduler=scheduler,
@@ -231,7 +232,7 @@ async def _create_runtime_assembly(
         download_workers=download_workers,
         notification_worker=notification_worker,
         download_concurrency=core_settings.download_concurrency,
-        notification_concurrency=core_settings.notification_concurrency,
+        notification_concurrency=1,
         shutdown_timeout=core_settings.shutdown_timeout_seconds,
         close_callbacks=close_callbacks,
     )
@@ -313,7 +314,7 @@ def _build_registry(
                     config, use_llm="ai" in requested_metadata
                 ),
                 cache=metadata_cache,
-                cache_version=f"2:{config.metadata.tmdb.language}",
+                cache_version=f"4:{config.metadata.tmdb.language}",
                 max_concurrency=core_settings.metadata_concurrency,
             )
         )
@@ -368,15 +369,10 @@ def _create_validator_llm_client():
 
 
 async def _create_notification_manager(config):
-    if config.notification.enabled and config.notification.batch_interval > 0:
-        logger.info(
-            "Durable outbox delivery is active; notifications are sent "
-            "individually instead of using the in-memory batch queue"
-        )
     manager = NotificationManagerFactory().create(
         NotificationSettings(
             enabled=config.notification.enabled,
-            batch_interval=0.0,
+            batch_interval=config.notification.batch_interval,
             bots=[
                 NotificationBotSettings(
                     type=bot.type,

@@ -32,9 +32,16 @@ class FeedFetchResult:
 
 
 @dataclass(frozen=True)
+class DownloadedSidecar:
+    filename: str
+    suffix: str
+
+
+@dataclass(frozen=True)
 class DownloadedAsset:
     directory_path: str
     filename: str
+    sidecars: tuple[DownloadedSidecar, ...] = ()
     checkpoint: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -46,6 +53,7 @@ class DownloadedAsset:
 class OrganizedAsset:
     directory_path: str
     filename: str
+    sidecar_filenames: tuple[str, ...] = ()
 
     @property
     def path(self) -> str:
@@ -114,6 +122,7 @@ class Organizer(Protocol):
         job: DownloadJob,
         asset: DownloadedAsset,
         target_filename: str,
+        checkpoint_callback: CheckpointCallback | None = None,
     ) -> OrganizedAsset: ...
 
 
@@ -195,9 +204,27 @@ class MetadataCacheRepository(Protocol):
 
 
 class NotificationSink(Protocol):
-    async def send_download_complete_notification(
-        self, anime_name: str, title: str
-    ) -> dict[str, bool]: ...
+    def targets(self) -> tuple[NotificationTarget, ...]: ...
+
+    def format_download_batches(
+        self,
+        target_key: str,
+        items: list[Any],
+    ) -> list[NotificationBatch]: ...
+
+    async def send_to_target(self, target_key: str, message: str) -> bool: ...
+
+
+@dataclass(frozen=True)
+class NotificationTarget:
+    key: str
+    message_limit: int
+
+
+@dataclass(frozen=True)
+class NotificationBatch:
+    message: str
+    items: tuple[Any, ...]
 
 
 class OutboxRepository(Protocol):
@@ -208,3 +235,17 @@ class OutboxRepository(Protocol):
     async def delivered(self, item: Any) -> None: ...
 
     async def retry(self, item: Any, error: str) -> None: ...
+
+    async def initialize_targets(self, target_keys: tuple[str, ...]) -> None: ...
+
+    async def claim_due(
+        self, target_key: str, batch_interval: float
+    ) -> list[Any]: ...
+
+    async def next_due_delay(
+        self, target_keys: tuple[str, ...], batch_interval: float
+    ) -> float | None: ...
+
+    async def delivery_succeeded(self, items: list[Any]) -> None: ...
+
+    async def delivery_retry(self, items: list[Any], error: str) -> None: ...

@@ -18,4 +18,4 @@ SQLite durable runtime 落地后，核心仍处于“新 worker 包装旧 parser
 - 新 RSS、metadata provider 或下载后端只需增加一个模块/小目录并在唯一 `AdapterRegistry` 显式注册。
 - 下载 checkpoint 和 organizer 直接使用 `DownloadJob`，不再发生领域对象来回转换。
 - 架构测试禁止旧目录（包括整个 `adapters/outbound`）、旧 import 路径、额外核心 Registry、application 反向依赖 adapters、domain 非标准库依赖和 legacy migration 类型泄漏。
-- HTTP、配置语义、数据库路径/schema 及 assistant 查询保持兼容；`notification.batch_interval` 继续可读但被 durable outbox 忽略。
+- HTTP、配置版本、数据库路径及 assistant 查询保持兼容；通知在 durable outbox 上恢复 `batch_interval` 的有界聚合语义。

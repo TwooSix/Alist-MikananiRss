@@ -28,6 +28,7 @@ https = ""  # HTTPS proxy URL (e.g., "http://127.0.0.1:7890")
 [downloader]
 download_path = "/"
 rename_format = "{anime_name} S{season:02d}E{episode:02d} {fansub} {quality} {languages}"
+# `year` is the TMDB series premiere year, e.g. "{anime_name} ({year}) S{season:02d}E{episode:02d}"
 
 [downloader.openlist]
 url = "http://localhost:5244"
@@ -59,7 +60,7 @@ language = "zh-CN"
 
 [notification]
 enabled = false  # Enable/disable notification system
-batch_interval = 300.0  # Legacy setting; durable outbox delivery sends each completed item immediately
+batch_interval = 300.0  # Durable bounded batch window in seconds; 0 sends each item immediately
 
 # Telegram bot configuration (optional)
 # [[notification.bots]]

@@ -94,6 +94,7 @@ urls = ["RSS订阅链接"]
 [downloader]
 download_path = "/PikPak/Anime"
 rename_format = "{anime_name} S{season:02d}E{episode:02d} {fansub} {quality} {languages}"
+# 可选年份："{anime_name} ({year}) S{season:02d}E{episode:02d}"
 
 [downloader.openlist]
 url = "http://localhost:5244"

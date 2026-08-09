@@ -116,6 +116,7 @@ class HeuristicCandidateSelector:
         return TMDBMatch(
             tmdb_id=selected.id,
             anime_name=_select_authoritative_name(anime_name, selected),
+            year=_candidate_year(selected),
             confidence="heuristic",
         )
 
@@ -169,6 +170,7 @@ class LLMCandidateSelector:
             return TMDBMatch(
                 tmdb_id=tmdb_id,
                 anime_name=_select_authoritative_name(anime_name, selected),
+                year=_candidate_year(selected),
                 confidence=parsed.get("confidence", "unknown"),
             )
         except Exception as e:
@@ -243,3 +245,11 @@ def _append_unique(values: list[str], value: str) -> None:
 def _select_authoritative_name(anime_name: str, candidate: TMDBCandidate) -> str:
     """Write back the TMDB localized title, matching the pre-PR LLM+TMDB behavior."""
     return candidate.name or candidate.original_name or anime_name
+
+
+def _candidate_year(candidate: TMDBCandidate) -> int | None:
+    value = (candidate.first_air_date or "").strip()
+    if len(value) < 4 or not value[:4].isdigit():
+        return None
+    year = int(value[:4])
+    return year if 1000 <= year <= 9999 else None

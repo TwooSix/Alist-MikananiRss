@@ -108,3 +108,7 @@ class OpenListFileConflictResolver:
             f"Cannot resolve filename conflict: '{filename}' "
             f"(tried up to ({self._MAX_CONFLICT_SUFFIX}))"
         )
+
+    def next_available_name(self, filename: str, existing_names: set[str]) -> str:
+        """Return a deterministic unused name without mutating remote storage."""
+        return self._next_available_name(filename, existing_names)

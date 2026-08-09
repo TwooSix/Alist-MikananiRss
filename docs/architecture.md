@@ -38,7 +38,7 @@ flowchart LR
 4. 现有黑名单、优先级、版本旁路和严格重名规则在元数据完整后执行。
 5. 默认 3 个下载 worker 原子领取任务，执行下载、整理、入库。
 6. `resources`、任务完成状态和通知 outbox 在同一事务内写入。相同原始标题在进入下载前会被占位，finalize 若仍遇到标题冲突，会把后到任务标记为 skipped，而不会伪装成已入库完成。
-7. 通知独立重试；通知失败不会改变下载完成状态。为避免批次尚在内存时进程退出造成丢失，durable runtime 会逐条投递 outbox；旧 `batch_interval` 配置仍可读取，但核心运行时不再启用内存批次。
+7. 通知独立重试；通知失败不会改变下载完成状态。outbox 事件按 `batch_interval` 形成有界持久化批次，每个渠道和消息分片独立记账，重启后只继续未成功的投递。
 
 ## 状态机与恢复
 
@@ -56,7 +56,7 @@ stateDiagram-v2
 
 每一步的运行状态为 `pending`、`running`、`retry_wait` 或终态。领取动作在短事务内把任务置为 `running`、增加当前步骤尝试次数，并写入随机 lease token 与过期时间。运行中的 worker 每 60 秒续租，默认租期 5 分钟；过期的 `running`/`sending` 会在进程不重启的情况下被其他 worker 重新领取。所有状态写入都校验 lease token，已失去租约的旧 worker 不能覆盖新 worker 的结果。启动时仍会立即恢复遗留的 `running` 和 outbox `sending`。步骤推进时重置尝试次数，因此某一步的瞬时故障不会消耗下一步的重试预算。
 
-OpenList 下载 checkpoint 在每次远程进度变化后写入 `jobs.checkpoint_json`。提交离线任务前先持久化 `submitting` 意图；若提交成功但 task ID 尚未落库，重启会用 job ID/临时目录从 OpenList task 列表恢复，而不是直接重复提交。移动文件前同样先持久化 `moving`；重启会核对源目录和目标目录，目标已存在且源已消失时直接补齐 checkpoint。整理前保存目标文件名，远程重命名成功后也通过目录内容恢复。最终写入通过 `source_key`、下载 URL、活动标题占位、`resources.job_id` 和 `notification_outbox.job_id` 保证幂等。
+OpenList 下载 checkpoint 在每次远程进度变化后写入 `jobs.checkpoint_json`。提交离线任务前先持久化 `submitting` 意图；若提交成功但 task ID 尚未落库，重启会用 job ID/临时目录从 OpenList task 列表恢复，而不是直接重复提交。移动文件前会持久化主视频及同 stem 外挂字幕的完整计划；重启逐文件核对源目录和目标目录。整理阶段同样先保存视频/字幕重命名计划，再执行远端操作。最终写入通过 `source_key`、下载 URL、活动标题占位、`resources.job_id` 和 `notification_outbox.job_id` 保证幂等。
 
 ## 元数据合并
 

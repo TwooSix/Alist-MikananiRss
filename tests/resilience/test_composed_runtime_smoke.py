@@ -47,7 +47,7 @@ rename_format = "{anime_name} S{season:02d}E{episode:02d}"
         health = assembly.runtime.health()
         assert health["status"] == "ready"
         assert health["ready"] is True
-        assert health["workers"] == {"running": 7, "expected": 7}
+        assert health["workers"] == {"running": 6, "expected": 6}
     finally:
         await assembly.runtime.stop()
 

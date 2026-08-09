@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import time
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 
 from .client import OpenListClient
 from openlist_ani.logger import logger
@@ -20,6 +21,21 @@ _VIDEO_EXTENSIONS = {
     ".mpg",
     ".mpeg",
 }
+
+_SUBTITLE_EXTENSIONS = {".ass", ".ssa", ".srt", ".vtt", ".sub", ".idx", ".sup"}
+_SUBTITLE_SUFFIX_BOUNDARIES = frozenset("._- [(")
+
+
+@dataclass(frozen=True)
+class DetectedSidecar:
+    relative_path: str
+    suffix: str
+
+
+@dataclass(frozen=True)
+class DetectedFiles:
+    video_relative_path: str
+    sidecars: tuple[DetectedSidecar, ...] = ()
 
 
 def _is_video_file(name: str) -> bool:
@@ -43,7 +59,7 @@ class OpenListFileDetector:
     async def detect(
         self,
         temp_path: str,
-    ) -> str | None:
+    ) -> DetectedFiles | None:
         start_time = time.monotonic()
         logger.debug(f"Detecting downloaded file in {temp_path}")
 
@@ -56,13 +72,42 @@ class OpenListFileDetector:
                     f"Detected downloaded file in {temp_path}: "
                     f"{selected} ({len(candidates)} video candidate(s))"
                 )
-                return selected
+                sidecars = await self._detect_sidecars(temp_path, selected)
+                return DetectedFiles(selected, tuple(sidecars))
 
             if time.monotonic() - start_time >= self._timeout_seconds:
                 logger.debug(f"Downloaded file detection timed out in {temp_path}")
                 return None
 
             await self._sleep(10)
+
+    async def _detect_sidecars(
+        self,
+        temp_path: str,
+        video_relative_path: str,
+    ) -> list[DetectedSidecar]:
+        parent, video_name = os.path.split(video_relative_path)
+        directory_path = (
+            f"{temp_path.rstrip('/')}/{parent}" if parent else temp_path
+        )
+        entries = await self._client.list_files(directory_path)
+        if not entries:
+            return []
+
+        video_stem = os.path.splitext(video_name)[0]
+        matched: list[DetectedSidecar] = []
+        for entry in entries:
+            if entry.is_dir:
+                continue
+            subtitle_stem, extension = os.path.splitext(entry.name)
+            if extension.lower() not in _SUBTITLE_EXTENSIONS:
+                continue
+            suffix = _subtitle_suffix(video_stem, subtitle_stem)
+            if suffix is None:
+                continue
+            relative_path = f"{parent}/{entry.name}" if parent else entry.name
+            matched.append(DetectedSidecar(relative_path, suffix))
+        return sorted(matched, key=lambda item: item.relative_path.casefold())
 
     async def _collect_video_files(
         self,
@@ -91,3 +136,16 @@ class OpenListFileDetector:
                 candidates.append((relative_name, size))
 
         return candidates
+
+
+def _subtitle_suffix(video_stem: str, subtitle_stem: str) -> str | None:
+    folded_video = video_stem.casefold()
+    folded_subtitle = subtitle_stem.casefold()
+    if folded_subtitle == folded_video:
+        return ""
+    if not folded_subtitle.startswith(folded_video):
+        return None
+    suffix = subtitle_stem[len(video_stem) :]
+    if not suffix or suffix[0] not in _SUBTITLE_SUFFIX_BOUNDARIES:
+        return None
+    return suffix
