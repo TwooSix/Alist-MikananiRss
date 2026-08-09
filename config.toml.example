@@ -94,7 +94,7 @@ batch_interval = 300.0  # Durable bounded batch window in seconds; 0 sends each 
 [assistant]
 enabled = false  # Enable/disable assistant module
 # backend = "primary"  # Optional; defaults to the first [ai.sources.*] table
-# skills_dir = "skills"  # Direct custom Skill path for Pi/Claude; Codex uses native plugins
+# skills_dir = "skills"  # Pi/Claude load directly; Codex gets a temporary link projection
 
 # Telegram assistant configuration (optional)
 [assistant.telegram]

@@ -376,18 +376,18 @@ config = { app_id = "cli_xxx", app_secret = "your_app_secret" }
 |--------|------|--------|------|
 | `enabled` | bool | `false` | 是否启用助理模块 |
 | `backend` | string | 第一个 source | Assistant 使用的 `[ai.sources.<名称>]`；API source 会自动交给 Pi |
-| `skills_dir` | string | `"skills"` | 用户自定义 Skills 目录；Pi 通过 `--skill`、Claude Code 通过 `--plugin-dir` 直接加载，不复制到会话目录 |
+| `skills_dir` | string | `"skills"` | 用户自定义 Skills 目录；Pi/Claude Code 直接加载，Codex 以符号链接投影到隔离会话 |
 
 Assistant 不再实现自己的模型循环、上下文压缩、subagent、memory consolidation
 或 Skill 索引。内置 Skills 打包为同一份标准 Agent 插件：Pi 直接接收 `--skill`
-目录，Claude Code 直接接收 `--plugin-dir`，Codex 首次使用时通过自己的
-`codex plugin marketplace add`/`codex plugin add` 注册并由 Codex 管理缓存。
-OAni 不再向临时会话目录复制或链接 Skills，也不读取 `SKILL.md` 建立第二份目录。
+目录，Claude Code 直接接收 `--plugin-dir`。Codex 没有等价的临时目录参数，OAni
+会在每个隔离会话的 `$CWD/.agents/skills` 中建立指向随包 Skill 目录的
+符号链接。该投影不复制 Skill 内容，也不注册持久 Codex 插件或修改用户配置。
 
 `skills_dir` 保留用于兼容已有自定义 Skills：Pi 会直接传入整个目录；Claude
-Code 会将其中的 Skill 目录作为本地插件参数传入。Codex 当前没有等价的临时
-目录参数，因此 Codex 用户的额外 Skills 应安装到 Codex 原生插件或
-`.agents/skills` 位置；`skills_dir` 不会注入 Codex。脚本均在本地运行。
+Code 会将其中的 Skill 目录作为本地插件参数传入；Codex 会将其与
+内置 Skills 合并到同一个临时链接投影中，同名 Skill 目录以用户版本为准。
+脚本均在本地运行。
 Telegram、微信和飞书启用时必须配置非空 `allowed_users`。
 
 #### Telegram 助理

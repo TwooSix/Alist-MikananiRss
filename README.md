@@ -40,7 +40,8 @@ API source（包括旧 `[llm]` 自动迁移得到的 source）会自动注入 Pi
 配置模型；完全没有 AI source 时才使用 Pi 自己的登录和模型配置。Docker 镜像
 已预装 Pi。如果使用 Claude Code 或 Codex source，则安装并登录对应的原生 CLI。
 内置 Skills 不再复制到临时会话目录：Pi 直接使用 `--skill`，Claude Code 使用
-`--plugin-dir`，Codex 在首次会话时通过自己的插件管理器注册随包插件。
+`--plugin-dir`，Codex 则在每个隔离会话的 `.agents/skills` 中建立指向
+随包 Skill 目录的临时符号链接，不复制内容或修改 Codex 的持久配置。
 
 ## 🚀 快速开始
 
@@ -140,8 +141,8 @@ uv run openlist-ani-assistant
 ```
 
 内置 Skills 会随程序包加载并由 Agent 原生发现。`./skills` 可向 Pi/Claude Code
-直接提供自定义 Skills；Codex 的额外 Skills 请使用 Codex 原生插件或
-`.agents/skills` 目录。
+直接提供自定义 Skills；Codex 会将其与内置 Skills 一起投影到隔离会话的
+`.agents/skills` 目录，同名 Skill 目录以用户版本为准。
 
 </details>
 

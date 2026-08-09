@@ -37,6 +37,22 @@ _CONFIRMATION_MESSAGE = "等待你确认后再执行写操作。"
 _CANCELLED_EVENT = "oani.cancelled"
 
 
+def _harness_environment(config_path: Path) -> dict[str, str]:
+    """Build the environment inherited by harnesses and Skill scripts.
+
+    Agent shells run packaged Skill scripts from their Skill directories. Those
+    directories can be read-only (notably in the Docker image and system-wide
+    wheel installs), so child processes must not initialize the application's
+    cwd-relative file logger there. This only changes the copied child
+    environment; logging in the Assistant and Backend processes is unaffected.
+    """
+
+    environment = os.environ.copy()
+    environment["CONFIG_PATH"] = str(config_path)
+    environment["OPENLIST_ANI_FILE_LOGGING"] = "0"
+    return environment
+
+
 class HarnessSession(ABC):
     @abstractmethod
     async def stream(self, prompt: str) -> AsyncGenerator[LoopEvent, None]: ...
@@ -186,9 +202,8 @@ class PiRPCSession(HarnessSession):
             command.append("--approve")
         command.extend(self._adapter.session_arguments(self._spec))
 
-        environment = os.environ.copy()
+        environment = _harness_environment(self._config_path)
         environment["PI_SKIP_VERSION_CHECK"] = "1"
-        environment["CONFIG_PATH"] = str(self._config_path)
         if sys.platform == "win32":
             # Skill CLIs emit JSON through Pi's shell pipe. Keep the byte
             # encoding deterministic instead of inheriting the active OEM
@@ -335,8 +350,7 @@ class _CommandAgentSession(HarnessSession):
         self._temporary.cleanup()
 
     async def _run_process(self, command: list[str], prompt: str) -> str:
-        environment = os.environ.copy()
-        environment["CONFIG_PATH"] = str(self._config_path)
+        environment = _harness_environment(self._config_path)
         try:
             process = await asyncio.create_subprocess_exec(
                 *command,
@@ -377,8 +391,7 @@ class _CommandAgentSession(HarnessSession):
         self, command: list[str], prompt: str
     ) -> AsyncGenerator[dict, None]:
         """Yield a command harness's JSONL output while the turn is running."""
-        environment = os.environ.copy()
-        environment["CONFIG_PATH"] = str(self._config_path)
+        environment = _harness_environment(self._config_path)
         try:
             process = await asyncio.create_subprocess_exec(
                 *command,

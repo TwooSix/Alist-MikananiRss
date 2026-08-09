@@ -605,7 +605,7 @@ class AssistantConfig(ConfigModel):
 
     enabled: bool = False
     backend: str = ""
-    skills_dir: str = "skills"  # Direct custom Skill path for Pi/Claude
+    skills_dir: str = "skills"  # Direct for Pi/Claude; projected for Codex
     telegram: TelegramAssistantConfig = Field(default_factory=TelegramAssistantConfig)
     wechat: WechatAssistantConfig = Field(default_factory=WechatAssistantConfig)
     feishu: FeishuAssistantConfig = Field(default_factory=FeishuAssistantConfig)

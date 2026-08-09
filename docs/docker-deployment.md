@@ -218,7 +218,7 @@ docker compose up -d
 | `-e ENABLE_ASSISTANT=true` | 启用 AI 智能助理（同时运行主程序和助理） |
 | `-v ./config.toml:/config.toml` | 挂载配置文件 |
 | `-v ./data:/data` | 挂载数据目录（持久化数据库、日志等） |
-| `-v ./skills:/skills` | 挂载用户自定义 Skills；Pi/Claude Code 直接加载该目录，Codex 的额外 Skills 使用其原生插件位置 |
+| `-v ./skills:/skills` | 挂载用户自定义 Skills；Pi/Claude Code 直接加载，Codex 投影到隔离会话的 `.agents/skills` |
 
 > `--network host` 的好处：容器与宿主机共享网络，`localhost` 直接指向宿主机，无需额外的网络配置。配置文件和本机运行时完全一致。
 
