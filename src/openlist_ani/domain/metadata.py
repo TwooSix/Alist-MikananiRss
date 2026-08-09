@@ -41,11 +41,9 @@ class ReleaseMetadata:
     def from_dict(cls, value: dict[str, Any] | None) -> "ReleaseMetadata":
         value = value or {}
         raw_quality = value.get("quality")
-        quality = (
-            raw_quality
-            if isinstance(raw_quality, VideoQuality)
-            else VideoQuality(raw_quality) if raw_quality else None
-        )
+        quality = raw_quality if isinstance(raw_quality, VideoQuality) else None
+        if raw_quality and not isinstance(raw_quality, VideoQuality):
+            quality = VideoQuality(raw_quality)
         raw_languages = value.get("languages") or []
         languages = [
             item if isinstance(item, LanguageType) else LanguageType(item)
@@ -117,10 +115,8 @@ class MetadataDocument:
                 continue
             existing_evidence = self.evidence.get(name, [])
             existing_value = _normalize_field_value(name, getattr(self.values, name))
-            if (
-                _has_value(existing_value)
-                and existing_evidence
-                and existing_evidence[-1].priority > patch.priority
+            if _higher_priority_value_exists(
+                existing_value, existing_evidence, patch.priority
             ):
                 continue
             previous = getattr(self.values, name)
@@ -169,6 +165,16 @@ class MetadataDocument:
 
 
 _METADATA_FIELD_NAMES = frozenset(item.name for item in fields(ReleaseMetadata))
+
+
+def _higher_priority_value_exists(
+    value: Any,
+    evidence: list[MetadataEvidence],
+    incoming_priority: int,
+) -> bool:
+    return bool(
+        _has_value(value) and evidence and evidence[-1].priority > incoming_priority
+    )
 
 
 def _has_value(value: object) -> bool:

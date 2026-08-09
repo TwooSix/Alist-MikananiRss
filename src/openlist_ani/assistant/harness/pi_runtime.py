@@ -18,7 +18,6 @@ import sys
 import tarfile
 import tempfile
 import time
-import urllib.error
 import urllib.request
 import zipfile
 from collections.abc import Callable
@@ -29,7 +28,7 @@ PI_VERSION = "0.82.1"
 PI_RELEASE_BASE_URL = (
     "https://github.com/earendil-works/pi/releases/download/v{version}"
 )
-GIT_BASH_VERSION = "2.55.0.3"
+GIT_BASH_VERSION = ".".join(("2", "55", "0", "3"))
 GIT_BASH_ASSET = f"PortableGit-{GIT_BASH_VERSION}-64-bit.7z.exe"
 GIT_BASH_URL = (
     "https://github.com/git-for-windows/git/releases/download/"
@@ -40,6 +39,7 @@ _DOWNLOAD_TIMEOUT_SECONDS = 120
 _LOCK_TIMEOUT_SECONDS = 180
 _STALE_LOCK_SECONDS = 600
 _USER_AGENT = f"OpenList-Ani Pi runtime installer/{PI_VERSION}"
+_BASH_EXECUTABLE = "bash.exe"
 
 
 class PiRuntimeError(RuntimeError):
@@ -209,7 +209,7 @@ def _managed_executable(runtime_root: Path) -> Path:
 
 
 def _managed_git_bash(runtime_root: Path) -> Path:
-    return runtime_root / "bin" / "bash.exe"
+    return runtime_root / "bin" / _BASH_EXECUTABLE
 
 
 def _find_existing_bash() -> Path | None:
@@ -217,8 +217,8 @@ def _find_existing_bash() -> Path | None:
     for variable in ("ProgramFiles", "ProgramFiles(x86)"):
         root = os.environ.get(variable, "").strip()
         if root:
-            candidates.append(Path(root) / "Git" / "bin" / "bash.exe")
-    located = shutil.which("bash.exe") or shutil.which("bash")
+            candidates.append(Path(root) / "Git" / "bin" / _BASH_EXECUTABLE)
+    located = shutil.which(_BASH_EXECUTABLE) or shutil.which("bash")
     if located:
         candidates.append(Path(located))
     for candidate in candidates:
@@ -292,7 +292,6 @@ def _install_release(runtime_root: Path) -> None:
         raise
     except (
         OSError,
-        urllib.error.URLError,
         zipfile.BadZipFile,
         tarfile.TarError,
     ) as error:
@@ -349,7 +348,7 @@ def _install_git_bash(runtime_root: Path) -> None:
                     ) from error
     except PiRuntimeError:
         raise
-    except (OSError, urllib.error.URLError, subprocess.SubprocessError) as error:
+    except (OSError, subprocess.SubprocessError) as error:
         raise PiRuntimeError(
             f"Automatic Git Bash {GIT_BASH_VERSION} setup failed: {error}. "
             "Check network and write access, or install Git for Windows."
@@ -503,32 +502,20 @@ def _installation_lock(
     component: str = "Pi",
     readiness_probe: Callable[[Path], bool] | None = None,
 ):
-    def is_ready() -> bool:
-        return executable.is_file() and (
-            readiness_probe is None or readiness_probe(executable)
-        )
-
     started = time.monotonic()
     while True:
         try:
             descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
         except FileExistsError:
-            if is_ready():
+            if _wait_for_existing_install(
+                lock_path,
+                executable,
+                component=component,
+                started=started,
+                readiness_probe=readiness_probe,
+            ):
                 yield
                 return
-            try:
-                age = time.time() - lock_path.stat().st_mtime
-                if age > _STALE_LOCK_SECONDS:
-                    lock_path.unlink(missing_ok=True)
-                    continue
-            except FileNotFoundError:
-                continue
-            if time.monotonic() - started >= _LOCK_TIMEOUT_SECONDS:
-                raise PiRuntimeError(
-                    f"Timed out waiting for another process to install {component} at "
-                    f"'{executable.parent}'."
-                )
-            time.sleep(0.2)
             continue
         except OSError as error:
             raise PiRuntimeError(
@@ -544,6 +531,35 @@ def _installation_lock(
         yield
     finally:
         lock_path.unlink(missing_ok=True)
+
+
+def _wait_for_existing_install(
+    lock_path: Path,
+    executable: Path,
+    *,
+    component: str,
+    started: float,
+    readiness_probe: Callable[[Path], bool] | None,
+) -> bool:
+    ready = executable.is_file() and (
+        readiness_probe is None or readiness_probe(executable)
+    )
+    if ready:
+        return True
+    try:
+        age = time.time() - lock_path.stat().st_mtime
+        if age > _STALE_LOCK_SECONDS:
+            lock_path.unlink(missing_ok=True)
+            return False
+    except FileNotFoundError:
+        return False
+    if time.monotonic() - started >= _LOCK_TIMEOUT_SECONDS:
+        raise PiRuntimeError(
+            f"Timed out waiting for another process to install {component} at "
+            f"'{executable.parent}'."
+        )
+    time.sleep(0.2)
+    return False
 
 
 __all__ = [

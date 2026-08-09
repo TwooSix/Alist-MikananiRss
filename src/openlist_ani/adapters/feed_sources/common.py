@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from collections.abc import Awaitable, Callable
 from urllib.parse import urlparse
 
@@ -13,7 +14,9 @@ from openlist_ani.application.ports import FeedFetchResult
 from openlist_ani.domain import ReleaseCandidate
 from openlist_ani.logger import logger
 
-EntryParser = Callable[[object], Awaitable[ReleaseCandidate | None]]
+EntryParser = Callable[
+    [object], ReleaseCandidate | None | Awaitable[ReleaseCandidate | None]
+]
 
 
 async def fetch_feed(
@@ -40,31 +43,52 @@ async def fetch_feed(
             )
         response.raise_for_status()
         document = feedparser.parse(await response.text())
-        entries = list(document.entries[:2000])
-        semaphore = asyncio.Semaphore(concurrency) if concurrency else None
-
-        async def parse(entry):
-            if semaphore is None:
-                return await parser(entry)
-            async with semaphore:
-                return await parser(entry)
-
-        candidates: list[ReleaseCandidate] = []
-        for offset in range(0, len(entries), 200):
-            results = await asyncio.gather(
-                *(parse(item) for item in entries[offset : offset + 200]),
-                return_exceptions=True,
-            )
-            for result in results:
-                if isinstance(result, Exception):
-                    logger.warning(f"Failed to parse RSS entry: {result}")
-                elif result is not None:
-                    candidates.append(result)
+        candidates = await _parse_entries(
+            list(document.entries[:2000]), parser, concurrency
+        )
         return FeedFetchResult(
             candidates=candidates,
             etag=response.headers.get("ETag"),
             last_modified=response.headers.get("Last-Modified"),
         )
+
+
+async def _parse_entries(
+    entries: list[object], parser: EntryParser, concurrency: int | None
+) -> list[ReleaseCandidate]:
+    semaphore = asyncio.Semaphore(concurrency) if concurrency else None
+    candidates: list[ReleaseCandidate] = []
+    for offset in range(0, len(entries), 200):
+        results = await asyncio.gather(
+            *(
+                _parse_entry(item, parser, semaphore)
+                for item in entries[offset : offset + 200]
+            ),
+            return_exceptions=True,
+        )
+        for result in results:
+            if isinstance(result, Exception):
+                logger.warning(f"Failed to parse RSS entry: {result}")
+            elif result is not None:
+                candidates.append(result)
+    return candidates
+
+
+async def _parse_entry(
+    entry: object,
+    parser: EntryParser,
+    semaphore: asyncio.Semaphore | None,
+) -> ReleaseCandidate | None:
+    if semaphore is None:
+        return await _resolve_entry(parser(entry))
+    async with semaphore:
+        return await _resolve_entry(parser(entry))
+
+
+async def _resolve_entry(
+    result: ReleaseCandidate | None | Awaitable[ReleaseCandidate | None],
+) -> ReleaseCandidate | None:
+    return await result if inspect.isawaitable(result) else result
 
 
 def torrent_url(entry) -> str | None:
@@ -100,7 +124,7 @@ class CommonFeedAdapter:
         etag: str | None = None,
         last_modified: str | None = None,
     ) -> FeedFetchResult:
-        async def parse(entry) -> ReleaseCandidate | None:
+        def parse(entry) -> ReleaseCandidate | None:
             title = getattr(entry, "title", None)
             download_url = torrent_url(entry)
             if not title or not download_url:

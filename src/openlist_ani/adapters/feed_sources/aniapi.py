@@ -28,7 +28,7 @@ class AniApiFeedAdapter:
         etag: str | None = None,
         last_modified: str | None = None,
     ) -> FeedFetchResult:
-        async def parse(entry) -> ReleaseCandidate | None:
+        def parse(entry) -> ReleaseCandidate | None:
             title = getattr(entry, "title", None)
             download_url = getattr(entry, "link", None)
             if not title or not download_url:

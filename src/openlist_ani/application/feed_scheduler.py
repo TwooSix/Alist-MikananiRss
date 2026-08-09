@@ -41,7 +41,7 @@ class FeedScheduler:
     def wake(self) -> None:
         self._wake.set()
 
-    async def stop(self) -> None:
+    async def stop(self) -> None:  # NOSONAR - awaitable lifecycle contract
         self._stop.set()
         self._wake.set()
 
@@ -60,7 +60,7 @@ class FeedScheduler:
                 raise
             except Exception as error:
                 logger.warning(f"Feed scheduler recovered from error: {error}")
-            await self._wait_for_wake(5.0)
+            await self._wait_for_wake()
 
     async def _fetch_one(self, url: str) -> None:
         async with self._semaphore:
@@ -95,9 +95,10 @@ class FeedScheduler:
                 await self._feed_state.mark_feed_failure(url, str(error))
                 logger.warning(f"RSS source failed; source={url}; error={error}")
 
-    async def _wait_for_wake(self, timeout: float) -> None:
+    async def _wait_for_wake(self) -> None:
         self._wake.clear()
         try:
-            await asyncio.wait_for(self._wake.wait(), timeout=timeout)
+            async with asyncio.timeout(5.0):
+                await self._wake.wait()
         except TimeoutError:
             pass

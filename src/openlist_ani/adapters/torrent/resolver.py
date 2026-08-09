@@ -506,6 +506,10 @@ class _BencodeDecoder:
         return self._blob[self._index]
 
 
+_TORRENT_NAME_UTF8_KEY = b"name.utf-8"
+_TORRENT_NAME_KEY = b"name"
+
+
 def _parse_torrent_blob_python(blob: bytes) -> tuple[str | None, list[TorrentFile]]:
     root = _BencodeDecoder(blob).decode()
     if not isinstance(root, dict):
@@ -513,30 +517,37 @@ def _parse_torrent_blob_python(blob: bytes) -> tuple[str | None, list[TorrentFil
     info = root.get(b"info")
     if not isinstance(info, dict):
         raise ValueError("torrent has no info dictionary")
-    title = _text(info.get(b"name.utf-8") or info.get(b"name"))
+    title = _torrent_name(info)
     if not title:
         raise ValueError("torrent has no usable name")
+    return title, _torrent_files(info, title)
 
-    files: list[TorrentFile] = []
+
+def _torrent_name(info: dict[bytes, object]) -> str:
+    return _text(info.get(_TORRENT_NAME_UTF8_KEY) or info.get(_TORRENT_NAME_KEY))
+
+
+def _torrent_files(info: dict[bytes, object], title: str) -> list[TorrentFile]:
     raw_files = info.get(b"files")
-    if isinstance(raw_files, list):
-        for raw_file in raw_files:
-            if not isinstance(raw_file, dict):
-                raise ValueError("torrent file entry must be a dictionary")
-            parts = raw_file.get(b"path.utf-8") or raw_file.get(b"path")
-            if not isinstance(parts, list):
-                raise ValueError("torrent file entry has no path")
-            path = "/".join(filter(None, (_text(part) for part in parts)))
-            size = raw_file.get(b"length")
-            if not path or not isinstance(size, int) or size < 0:
-                raise ValueError("torrent file entry is invalid")
-            files.append(TorrentFile(name=path, size=size))
-    else:
+    if not isinstance(raw_files, list):
         size = info.get(b"length")
         if not isinstance(size, int) or size < 0:
             raise ValueError("single-file torrent has no valid length")
-        files.append(TorrentFile(name=title, size=size))
-    return title, files
+        return [TorrentFile(name=title, size=size)]
+    return [_torrent_file(raw_file) for raw_file in raw_files]
+
+
+def _torrent_file(raw_file: object) -> TorrentFile:
+    if not isinstance(raw_file, dict):
+        raise ValueError("torrent file entry must be a dictionary")
+    parts = raw_file.get(b"path.utf-8") or raw_file.get(b"path")
+    if not isinstance(parts, list):
+        raise ValueError("torrent file entry has no path")
+    path = "/".join(filter(None, (_text(part) for part in parts)))
+    size = raw_file.get(b"length")
+    if not path or not isinstance(size, int) or size < 0:
+        raise ValueError("torrent file entry is invalid")
+    return TorrentFile(name=path, size=size)
 
 
 def _text(value: object) -> str:
@@ -582,36 +593,44 @@ def _validate_torrent_info(info: dict[bytes, object]) -> tuple[bool, bool]:
         raise ValueError(f"unsupported torrent meta version: {meta_version}")
     is_v2 = meta_version == 2
 
-    if not _text(info.get(b"name.utf-8") or info.get(b"name")):
+    if not _torrent_name(info):
         raise ValueError("torrent has no usable name")
     piece_length = info.get(b"piece length")
     if not isinstance(piece_length, int) or piece_length <= 0:
         raise ValueError("torrent has no valid piece length")
 
     if is_v2:
-        if piece_length < 16 * 1024 or piece_length & (piece_length - 1):
-            raise ValueError(
-                "v2 torrent piece length must be a power of two and at least 16 KiB"
-            )
-        if not isinstance(info.get(b"file tree"), dict):
-            raise ValueError("v2 torrent has no file tree")
+        _validate_v2_info(info, piece_length)
 
     if b"pieces" in info and not isinstance(info[b"pieces"], bytes):
         raise ValueError("torrent pieces field must be a byte string")
     has_v1 = not is_v2 or isinstance(info.get(b"pieces"), bytes)
     if has_v1:
-        pieces = info.get(b"pieces")
-        if not isinstance(pieces, bytes) or len(pieces) % 20:
-            raise ValueError("v1 torrent pieces length must be a multiple of 20")
-        single_file = isinstance(info.get(b"length"), int)
-        multiple_files = isinstance(info.get(b"files"), list)
-        if single_file == multiple_files:
-            raise ValueError("v1 torrent must contain exactly one of length or files")
-        if single_file and int(info[b"length"]) < 0:
-            raise ValueError("v1 torrent length cannot be negative")
-        if multiple_files and not info[b"files"]:
-            raise ValueError("v1 torrent files list cannot be empty")
+        _validate_v1_info(info)
     return is_v2, has_v1
+
+
+def _validate_v2_info(info: dict[bytes, object], piece_length: int) -> None:
+    if piece_length < 16 * 1024 or piece_length & (piece_length - 1):
+        raise ValueError(
+            "v2 torrent piece length must be a power of two and at least 16 KiB"
+        )
+    if not isinstance(info.get(b"file tree"), dict):
+        raise ValueError("v2 torrent has no file tree")
+
+
+def _validate_v1_info(info: dict[bytes, object]) -> None:
+    pieces = info.get(b"pieces")
+    if not isinstance(pieces, bytes) or len(pieces) % 20:
+        raise ValueError("v1 torrent pieces length must be a multiple of 20")
+    single_file = isinstance(info.get(b"length"), int)
+    multiple_files = isinstance(info.get(b"files"), list)
+    if single_file == multiple_files:
+        raise ValueError("v1 torrent must contain exactly one of length or files")
+    if single_file and int(info[b"length"]) < 0:
+        raise ValueError("v1 torrent length cannot be negative")
+    if multiple_files and not info[b"files"]:
+        raise ValueError("v1 torrent files list cannot be empty")
 
 
 def _torrent_blob_to_magnet_python(blob: bytes) -> str:
@@ -630,7 +649,9 @@ def _torrent_blob_to_magnet_python(blob: bytes) -> str:
     exact_topics: list[str] = []
     if has_v1:
         exact_topics.append(
-            f"urn:btih:{hashlib.sha1(encoded_info).hexdigest()}"  # noqa: S324
+            # BEP 3 defines the v1 info-hash as SHA-1 over the exact raw info
+            # dictionary. It is a content identifier, not a security primitive.
+            f"urn:btih:{hashlib.sha1(encoded_info).hexdigest()}"  # NOSONAR
         )
     if is_v2:
         exact_topics.append(f"urn:btmh:1220{hashlib.sha256(encoded_info).hexdigest()}")
@@ -638,7 +659,7 @@ def _torrent_blob_to_magnet_python(blob: bytes) -> str:
         raise ValueError("torrent info dictionary has no supported hash format")
 
     parameters: list[tuple[str, str]] = [("xt", item) for item in exact_topics]
-    title = _text(info.get(b"name.utf-8") or info.get(b"name"))
+    title = _torrent_name(info)
     if title:
         parameters.append(("dn", title))
     parameters.extend(("tr", tracker) for tracker in _torrent_trackers(root))

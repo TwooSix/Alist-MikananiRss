@@ -23,7 +23,10 @@ class TorrentToMagnetCandidateTransformer:
 
     async def transform(self, candidate: ReleaseCandidate) -> ReleaseCandidate:
         download_url = candidate.download_url.strip()
-        if not download_url.lower().startswith(("http://", "https://")):
+        # HTTP is deliberately accepted because torrent publishers often expose
+        # metadata on HTTP-only endpoints; the downloaded bytes are size-limited
+        # and validated as bencode before their protocol hash is computed.
+        if not download_url.lower().startswith(("http://", "https://")):  # NOSONAR
             return candidate
 
         magnet = await self._converter(download_url)

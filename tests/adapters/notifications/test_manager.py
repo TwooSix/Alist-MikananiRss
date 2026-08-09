@@ -23,8 +23,9 @@ class FailingBot(FakeBot):
 
 @pytest.mark.asyncio
 async def test_notification_startup_failure_is_propagated():
+    manager = NotificationManager([FailingBot()])
     with pytest.raises(RuntimeError, match="startup failed"):
-        await NotificationManager([FailingBot()]).start()
+        await manager.start()
 
 
 def test_oversized_batches_are_split_without_losing_items():

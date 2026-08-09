@@ -133,9 +133,9 @@ async def test_group_users_receive_isolated_agent_sessions():
         allowed_users=[1, 2],
     )
 
-    first = await frontend._get_loop(123, 1)
-    same = await frontend._get_loop(123, 1)
-    second_user = await frontend._get_loop(123, 2)
+    first = frontend._get_loop(123, 1)
+    same = frontend._get_loop(123, 1)
+    second_user = frontend._get_loop(123, 2)
 
     assert first is same
     assert first is not second_user

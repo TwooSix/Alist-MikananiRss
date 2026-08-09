@@ -42,7 +42,7 @@ class DownloadWorkerPool:
         self._directory_planner = ReleaseDirectoryPlanner()
         self._filename_planner = ReleaseFilenamePlanner(settings.rename_format)
 
-    async def stop(self) -> None:
+    async def stop(self) -> None:  # NOSONAR - awaitable lifecycle contract
         self._stop.set()
         self._work_available.set()
 

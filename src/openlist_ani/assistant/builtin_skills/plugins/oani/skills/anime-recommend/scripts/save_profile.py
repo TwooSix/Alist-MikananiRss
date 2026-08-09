@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import tempfile
 from pathlib import Path
@@ -18,6 +19,11 @@ async def run(profile: str = "", confirmed: bool = False, **kwargs) -> str:
     if not profile.strip():
         return "Error: 'profile' must contain the profile Markdown."
 
+    await asyncio.to_thread(_save_profile, profile.strip())
+    return "Anime taste profile saved."
+
+
+def _save_profile(profile: str) -> None:
     directory = assistant_data_dir() / "memory"
     directory.mkdir(parents=True, exist_ok=True)
     destination = directory / "anime_taste.md"
@@ -27,13 +33,12 @@ async def run(profile: str = "", confirmed: bool = False, **kwargs) -> str:
     temporary = Path(temporary_name)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(profile.strip() + "\n")
+            handle.write(profile + "\n")
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, destination)
     finally:
         temporary.unlink(missing_ok=True)
-    return "Anime taste profile saved."
 
 
 if __name__ == "__main__":

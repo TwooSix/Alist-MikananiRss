@@ -34,51 +34,17 @@ class OpenListOrganizerAdapter:
         target_filename: str,
         checkpoint_callback: CheckpointCallback | None = None,
     ) -> OrganizedAsset:
-        saved_plan = job.artifact.get("organize_plan")
-        if saved_plan:
-            plan = [dict(item) for item in saved_plan.get("files", [])]
-        else:
-            plan = await self._build_plan(asset, target_filename)
-            if checkpoint_callback is not None:
-                await checkpoint_callback({"files": plan})
+        plan = await self._load_plan(job, asset, target_filename, checkpoint_callback)
 
         if not plan or plan[0].get("kind") != "video":
             raise RuntimeError("Organizer rename plan has no video")
 
         renamed_any = False
         for item in plan:
-            source = item["source"]
-            target = item["target"]
-            entries = await self._client.list_files(asset.directory_path)
-            if entries is None:
-                raise RuntimeError(
-                    f"Cannot inspect organizer directory: {asset.directory_path}"
-                )
-            names = {entry.name for entry in entries}
-            if source == target and source in names:
-                continue
-            if source not in names and target in names:
-                continue
-            if source not in names:
-                raise RuntimeError(
-                    f"Rename source is missing: {asset.directory_path}/{source}"
-                )
-            if target in names:
-                raise RuntimeError(
-                    f"Rename source and target both exist: {source} -> {target}"
-                )
-
-            source_path = f"{asset.directory_path.rstrip('/')}/{source}"
-            logger.debug(
-                f"OpenList rename: job={job.id}, source={source}, target={target}"
+            renamed_any = (
+                await self._rename_plan_item(job, asset.directory_path, item)
+                or renamed_any
             )
-            if not await self._client.rename_file(source_path, target):
-                refreshed = await self._client.list_files(asset.directory_path)
-                refreshed_names = {entry.name for entry in refreshed or []}
-                if source not in refreshed_names and target in refreshed_names:
-                    continue
-                raise RuntimeError(f"Failed to rename '{source}' to '{target}'")
-            renamed_any = True
 
         if renamed_any:
             await self._sleep(5)
@@ -88,6 +54,53 @@ class OpenListOrganizerAdapter:
             item["target"] for item in plan if item.get("kind") == "subtitle"
         )
         return OrganizedAsset(asset.directory_path, video, sidecars)
+
+    async def _load_plan(
+        self,
+        job: DownloadJob,
+        asset: DownloadedAsset,
+        target_filename: str,
+        checkpoint_callback: CheckpointCallback | None,
+    ) -> list[dict[str, str]]:
+        if saved_plan := job.artifact.get("organize_plan"):
+            return [dict(item) for item in saved_plan.get("files", [])]
+        plan = await self._build_plan(asset, target_filename)
+        if checkpoint_callback is not None:
+            await checkpoint_callback({"files": plan})
+        return plan
+
+    async def _rename_plan_item(
+        self,
+        job: DownloadJob,
+        directory_path: str,
+        item: dict[str, str],
+    ) -> bool:
+        source = item["source"]
+        target = item["target"]
+        entries = await self._client.list_files(directory_path)
+        if entries is None:
+            raise RuntimeError(f"Cannot inspect organizer directory: {directory_path}")
+        names = {entry.name for entry in entries}
+        if source == target and source in names:
+            return False
+        if source not in names and target in names:
+            return False
+        if source not in names:
+            raise RuntimeError(f"Rename source is missing: {directory_path}/{source}")
+        if target in names:
+            raise RuntimeError(
+                f"Rename source and target both exist: {source} -> {target}"
+            )
+
+        source_path = f"{directory_path.rstrip('/')}/{source}"
+        logger.debug(f"OpenList rename: job={job.id}, source={source}, target={target}")
+        if await self._client.rename_file(source_path, target):
+            return True
+        refreshed = await self._client.list_files(directory_path)
+        refreshed_names = {entry.name for entry in refreshed or []}
+        if source not in refreshed_names and target in refreshed_names:
+            return False
+        raise RuntimeError(f"Failed to rename '{source}' to '{target}'")
 
     async def _build_plan(
         self,

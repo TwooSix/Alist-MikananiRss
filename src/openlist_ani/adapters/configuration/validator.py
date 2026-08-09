@@ -57,7 +57,7 @@ class ConfigValidator:
         self._validate_core_config(errors)
         self._validate_metadata_dependencies(errors)
         self._validate_notification_config(errors, warnings)
-        self._validate_assistant_config(errors, warnings)
+        self._validate_assistant_config(errors)
         self._log_validation_results(errors, warnings)
 
         return not errors
@@ -173,9 +173,7 @@ class ConfigValidator:
                 "can be delivered."
             )
 
-    def _validate_assistant_config(
-        self, errors: list[str], warnings: list[str]
-    ) -> None:
+    def _validate_assistant_config(self, errors: list[str]) -> None:
         if not self._data.assistant.enabled:
             return
 

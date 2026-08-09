@@ -23,7 +23,7 @@ class NotificationWorker:
         self._batch_interval = max(0.0, batch_interval)
         self._stop = asyncio.Event()
 
-    async def stop(self) -> None:
+    async def stop(self) -> None:  # NOSONAR - awaitable lifecycle contract
         self._stop.set()
         self._available.set()
 
@@ -34,20 +34,7 @@ class NotificationWorker:
                 target_keys = tuple(target.key for target in targets)
                 await self._outbox.initialize_targets(target_keys)
 
-                delivered = False
-                if self._sink is not None:
-                    results = await asyncio.gather(
-                        *(self._deliver_target(target.key) for target in targets),
-                        return_exceptions=True,
-                    )
-                    for result in results:
-                        if isinstance(result, BaseException):
-                            logger.warning(
-                                f"Notification target worker recovered: {result}"
-                            )
-                        else:
-                            delivered = delivered or result
-                if delivered:
+                if await self._deliver_targets(targets):
                     continue
 
                 delay = await self._outbox.next_due_delay(
@@ -61,6 +48,21 @@ class NotificationWorker:
                     f"Notification worker recovered: worker={worker_id}; error={error}"
                 )
                 await self._wait(5.0)
+
+    async def _deliver_targets(self, targets) -> bool:
+        if self._sink is None:
+            return False
+        results = await asyncio.gather(
+            *(self._deliver_target(target.key) for target in targets),
+            return_exceptions=True,
+        )
+        delivered = False
+        for result in results:
+            if isinstance(result, BaseException):
+                logger.warning(f"Notification target worker recovered: {result}")
+            else:
+                delivered = delivered or result
+        return delivered
 
     async def _deliver_target(self, target_key: str) -> bool:
         assert self._sink is not None

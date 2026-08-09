@@ -61,10 +61,12 @@ async def test_lost_heartbeat_cancels_in_flight_operation():
         finally:
             cancelled.set()
 
+    in_flight = operation()
+    jobs = [_job()]
     with pytest.raises(RuntimeError, match="lease lost"):
         await run_with_job_heartbeat(
-            operation(),
-            jobs=[_job()],
+            in_flight,
+            jobs=jobs,
             repository=repository,
             interval_seconds=0.05,
         )

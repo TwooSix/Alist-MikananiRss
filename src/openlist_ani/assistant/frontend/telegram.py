@@ -61,6 +61,7 @@ _TYPING_INTERVAL_SECONDS = 4.0
 # Shared status text constants
 _STATUS_THINKING = "⏳ 正在理解请求…"
 _MAX_PROGRESS_LINES = 6
+_UNAUTHORIZED_MESSAGE = "Unauthorized."
 
 # ── MarkdownV2 escape ──────────────────────────────────────────────
 # Characters that must be escaped in MarkdownV2:
@@ -106,7 +107,7 @@ class TelegramFrontend(Frontend):
         self._active_turns: set[tuple[int, int]] = set()
         self._pending_confirmations: set[tuple[int, int]] = set()
 
-    async def _get_loop(self, chat_id: int, user_id: int) -> AssistantLoop:
+    def _get_loop(self, chat_id: int, user_id: int) -> AssistantLoop:
         """Get or create the harness bridge for a Telegram chat."""
         key = (chat_id, user_id)
         if key not in self._chat_loops:
@@ -213,7 +214,7 @@ class TelegramFrontend(Frontend):
             return True
         logger.warning("Telegram command rejected: unauthorized user")
         if message is not None:
-            await message.reply_text("Unauthorized.")
+            await message.reply_text(_UNAUTHORIZED_MESSAGE)
         return False
 
     # ── Debounced message editing ─────────────────────────────────
@@ -382,7 +383,7 @@ class TelegramFrontend(Frontend):
                 f"Telegram authorization failed: chat_id={update.message.chat_id}, "
                 f"user_id={user_id}"
             )
-            await update.message.reply_text("Unauthorized.")
+            await update.message.reply_text(_UNAUTHORIZED_MESSAGE)
             return
 
         logger.info(
@@ -615,7 +616,7 @@ class TelegramFrontend(Frontend):
                 f"Telegram authorization failed: chat_id={update.message.chat_id}, "
                 f"user_id={user_id}"
             )
-            await update.message.reply_text("Unauthorized.")
+            await update.message.reply_text(_UNAUTHORIZED_MESSAGE)
             return
 
         text = update.message.text
@@ -646,7 +647,7 @@ class TelegramFrontend(Frontend):
             return
         user_id = query.from_user.id if query.from_user else 0
         if not self._is_authorized(user_id):
-            await query.answer("Unauthorized.", show_alert=True)
+            await query.answer(_UNAUTHORIZED_MESSAGE, show_alert=True)
             return
         session_key = (query.message.chat_id, user_id)
         if session_key not in self._pending_confirmations:
@@ -706,7 +707,7 @@ class TelegramFrontend(Frontend):
         if user_id is None:
             user_id = update.message.from_user.id if update.message.from_user else 0
         session_key = (chat_id, user_id)
-        loop = await self._get_loop(chat_id, user_id)
+        loop = self._get_loop(chat_id, user_id)
 
         if session_key in self._active_turns:
             queued = loop.message_queue.enqueue(PendingMessage(content=message_text))
@@ -837,7 +838,7 @@ class TelegramFrontend(Frontend):
 
         chat_id = update.message.chat_id
         user_id = update.message.from_user.id if update.message.from_user else 0
-        loop = await self._get_loop(chat_id, user_id)
+        loop = self._get_loop(chat_id, user_id)
         self._pending_confirmations.discard((chat_id, user_id))
         loop.reset()
 
@@ -851,7 +852,7 @@ class TelegramFrontend(Frontend):
         if not await self._authorize_update(update):
             return
         user_id = update.message.from_user.id if update.message.from_user else 0
-        loop = await self._get_loop(update.message.chat_id, user_id)
+        loop = self._get_loop(update.message.chat_id, user_id)
         self._pending_confirmations.discard((update.message.chat_id, user_id))
         await loop.cancel()
         await update.message.reply_text("已取消当前请求并清空等待队列。")
@@ -864,5 +865,5 @@ class TelegramFrontend(Frontend):
         if not await self._authorize_update(update):
             return
         user_id = update.message.from_user.id if update.message.from_user else 0
-        loop = await self._get_loop(update.message.chat_id, user_id)
+        loop = self._get_loop(update.message.chat_id, user_id)
         await update.message.reply_text(loop.status())

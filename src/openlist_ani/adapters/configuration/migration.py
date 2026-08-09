@@ -235,35 +235,44 @@ def _migrate_metadata(
     if raw_pipeline is not None:
         pipeline = _normalise_pipeline(list(raw_pipeline))
     else:
-        parser = _table(document.get("metadata_parser"))
-        validator = _table(document.get("metadata_validator"))
-        explicit_parser = _string(parser.get("provider")) if parser else ""
-        if explicit_parser:
-            first = (
-                "ai" if explicit_parser.lower() == "llm" else explicit_parser.lower()
-            )
-        else:
-            first = "ai" if source_name else "regex"
-        pipeline = [first]
-        validator_name = (
-            _string(validator.get("provider")) if validator else "tmdb"
-        ) or "tmdb"
-        if validator_name.lower() != "none":
-            pipeline.append(validator_name.lower())
-        pipeline = _normalise_pipeline(pipeline)
+        pipeline = _legacy_metadata_pipeline(document, source_name)
     metadata["pipeline"] = pipeline
 
     if "ai" in pipeline and source_name and "ai_source" not in metadata:
         metadata["ai_source"] = source_name
 
+    _migrate_tmdb_settings(metadata, legacy_llm)
+
+
+def _legacy_metadata_pipeline(
+    document: TOMLDocument, source_name: str | None
+) -> list[str]:
+    parser = _table(document.get("metadata_parser"))
+    validator = _table(document.get("metadata_validator"))
+    explicit_parser = _string(parser.get("provider")) if parser else ""
+    if explicit_parser:
+        first = "ai" if explicit_parser.lower() == "llm" else explicit_parser.lower()
+    else:
+        first = "ai" if source_name else "regex"
+    pipeline = [first]
+    validator_name = (
+        _string(validator.get("provider")) if validator else "tmdb"
+    ) or "tmdb"
+    if validator_name.lower() != "none":
+        pipeline.append(validator_name.lower())
+    return _normalise_pipeline(pipeline)
+
+
+def _migrate_tmdb_settings(metadata: TomlTable, legacy_llm: TomlTable | None) -> None:
     tmdb = _ensure_table(metadata, "tmdb")
-    if legacy_llm is not None:
-        key = _string(legacy_llm.get("tmdb_api_key"))
-        language = _string(legacy_llm.get("tmdb_language"))
-        if key and "api_key" not in tmdb:
-            tmdb["api_key"] = key
-        if language and "language" not in tmdb:
-            tmdb["language"] = language
+    if legacy_llm is None:
+        return
+    key = _string(legacy_llm.get("tmdb_api_key"))
+    language = _string(legacy_llm.get("tmdb_language"))
+    if key and "api_key" not in tmdb:
+        tmdb["api_key"] = key
+    if language and "language" not in tmdb:
+        tmdb["language"] = language
 
 
 def _migrate_assistant(document: TOMLDocument, source_name: str | None) -> None:
@@ -335,7 +344,7 @@ def _string(value: object | None) -> str:
 
 
 def _table_values(table: TomlTable) -> dict[str, object]:
-    return {key: value for key, value in table.unwrap().items()}
+    return dict(table.unwrap().items())
 
 
 def _create_backup(path: Path, original: bytes, version: int) -> Path:

@@ -75,49 +75,73 @@ class TmdbMetadataProvider:
         episode_cache: dict[tuple[int, int, int], EpisodeMapping | None] = {}
 
         for index, cache_key in misses:
-            candidate = candidates[index]
-            document = documents[index]
-            value = document.values
-            error = "metadata incomplete before TMDB"
-            authoritative: ReleaseMetadata | None = None
-            if value.minimum_complete() and value.anime_name:
-                identity = identities.get(value.anime_name.strip())
-                if identity is None:
-                    error = "TMDB match not found for parsed anime name"
-                else:
-                    mapping = await self._episode_mapping(
-                        identity,
-                        season=value.season or 1,
-                        episode=value.episode or 1,
-                        anime_name=value.anime_name,
-                        release_title=candidate.title,
-                        cache=episode_cache,
-                    )
-                    if mapping is None:
-                        error = (
-                            "TMDB season/episode mapping failed: "
-                            f"S{value.season or 1:02d}E{value.episode or 1:02d} "
-                            "has no authoritative match"
-                        )
-                    else:
-                        authoritative = ReleaseMetadata(
-                            anime_name=identity.anime_name,
-                            season=mapping.season,
-                            episode=mapping.episode,
-                            year=identity.year,
-                            external_ids={"tmdb": str(identity.tmdb_id)},
-                        )
-
-            if authoritative is None:
-                output[index] = _failure_resolution(
-                    document, error, attempt_counts[index]
-                )
-                continue
-            _apply_patch(document, authoritative)
-            await self._put_cached(cache_key, authoritative)
-            output[index] = MetadataResolution(document=document)
+            output[index] = await self._resolve_miss(
+                candidate=candidates[index],
+                document=documents[index],
+                attempt_count=attempt_counts[index],
+                cache_key=cache_key,
+                identities=identities,
+                episode_cache=episode_cache,
+            )
 
         return [item for item in output if item is not None]
+
+    async def _resolve_miss(
+        self,
+        *,
+        candidate: ReleaseCandidate,
+        document: MetadataDocument,
+        attempt_count: int,
+        cache_key: str,
+        identities: dict[str, TMDBMatch],
+        episode_cache: dict[tuple[int, int, int], EpisodeMapping | None],
+    ) -> MetadataResolution:
+        authoritative, error = await self._authoritative_metadata(
+            candidate, document, identities, episode_cache
+        )
+        if authoritative is None:
+            return _failure_resolution(document, error, attempt_count)
+        _apply_patch(document, authoritative)
+        await self._put_cached(cache_key, authoritative)
+        return MetadataResolution(document=document)
+
+    async def _authoritative_metadata(
+        self,
+        candidate: ReleaseCandidate,
+        document: MetadataDocument,
+        identities: dict[str, TMDBMatch],
+        episode_cache: dict[tuple[int, int, int], EpisodeMapping | None],
+    ) -> tuple[ReleaseMetadata | None, str]:
+        value = document.values
+        if not value.minimum_complete() or not value.anime_name:
+            return None, "metadata incomplete before TMDB"
+        identity = identities.get(value.anime_name.strip())
+        if identity is None:
+            return None, "TMDB match not found for parsed anime name"
+        mapping = await self._episode_mapping(
+            identity,
+            season=value.season or 1,
+            episode=value.episode or 1,
+            anime_name=value.anime_name,
+            release_title=candidate.title,
+            cache=episode_cache,
+        )
+        if mapping is None:
+            return None, (
+                "TMDB season/episode mapping failed: "
+                f"S{value.season or 1:02d}E{value.episode or 1:02d} "
+                "has no authoritative match"
+            )
+        return (
+            ReleaseMetadata(
+                anime_name=identity.anime_name,
+                season=mapping.season,
+                episode=mapping.episode,
+                year=identity.year,
+                external_ids={"tmdb": str(identity.tmdb_id)},
+            ),
+            "",
+        )
 
     async def _resolve_identities(self, names: set[str]) -> dict[str, TMDBMatch]:
         async def resolve(name: str) -> tuple[str, TMDBMatch | None]:

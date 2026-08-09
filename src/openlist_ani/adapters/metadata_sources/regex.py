@@ -356,7 +356,7 @@ class RegexMetadataProvider:
             output.append(MetadataResolution(document=document))
         return output
 
-    async def close(self) -> None:
+    async def close(self) -> None:  # NOSONAR - metadata provider contract
         return None
 
 

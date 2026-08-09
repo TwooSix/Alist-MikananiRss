@@ -27,7 +27,7 @@ def run_cli(run: Callable) -> None:
         payload = json.loads(raw_payload)
         if not isinstance(payload, dict):
             raise ValueError("--json must contain an object")
-    except (json.JSONDecodeError, ValueError) as error:
+    except ValueError as error:
         print(f"Invalid arguments: {error}", file=sys.stderr)
         raise SystemExit(2) from error
 

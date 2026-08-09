@@ -62,7 +62,8 @@ async def test_same_title_is_reserved_before_parallel_download(tmp_path):
             download_url="magnet:?xt=urn:btih:second",
         )
     )
-    assert first is not None and second is not None
+    assert first is not None
+    assert second is not None
 
     claimed = await jobs.claim(JobStep.METADATA, 20)
     for job in claimed:
@@ -215,7 +216,7 @@ async def test_candidate_transform_failure_is_rescheduled_before_download(tmp_pa
     stored = await jobs.get(job.id)
     assert stored.status == JobStatus.RETRY_WAIT
     assert stored.step == JobStep.METADATA
-    assert "candidate transform failed: invalid torrent" == stored.last_error
+    assert stored.last_error == "candidate transform failed: invalid torrent"
     assert not download_available.is_set()
     await database.close()
 

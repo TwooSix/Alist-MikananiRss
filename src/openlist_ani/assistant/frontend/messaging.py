@@ -18,6 +18,15 @@ from openlist_ani.assistant.logging_format import format_log_text
 from openlist_ani.integrations.messaging.models import InboundMessage
 from openlist_ani.integrations.messaging.state_store import MessagingStateStore
 
+_PROGRESS_EVENT_TYPES = {
+    EventType.THINKING,
+    EventType.SKILL_SELECTED,
+    EventType.SCRIPT_STARTED,
+    EventType.SCRIPT_FINISHED,
+    EventType.RETRYING,
+    EventType.CONFIRMATION_REQUIRED,
+}
+
 
 class TextMessenger(Protocol):
     platform: str
@@ -124,7 +133,7 @@ class MessagingFrontend(Frontend):
 
     async def _process_user_turn(self, message: InboundMessage, text: str) -> None:
         session_key = self._session_key(message)
-        loop = await self._get_loop(message)
+        loop = self._get_loop(message)
         if session_key in self._active_turns:
             queued = loop.message_queue.enqueue(PendingMessage(content=text))
             logger.info(
@@ -183,44 +192,14 @@ class MessagingFrontend(Frontend):
         narration_parts: list[str] = []
         progress_messages: set[str] = set()
         async for event in loop.process(text):
-            if event.type == EventType.DONE and event.text:
-                final_text = event.text
-            elif event.type == EventType.ERROR and event.text:
-                error_text = f"Error: {event.text}"
-            elif event.type == EventType.TEXT_DELTA and event.text:
-                narration_parts.append(event.text)
-            elif event.type in {
-                EventType.THINKING,
-                EventType.SKILL_SELECTED,
-                EventType.SCRIPT_STARTED,
-                EventType.SCRIPT_FINISHED,
-                EventType.RETRYING,
-                EventType.CONFIRMATION_REQUIRED,
-            }:
-                # If a tool event follows assistant text, that text was public
-                # execution narration rather than the final answer. Show it
-                # once as part of the verifiable progress stream.
-                narration = narration_preview("".join(narration_parts))
-                narration_parts.clear()
-                if narration:
-                    rendered_narration = f"💭 {narration}"
-                    if rendered_narration not in progress_messages:
-                        progress_messages.add(rendered_narration)
-                        await self._send_rich_or_text(
-                            message.target.chat_id,
-                            title="Assistant 处理进度",
-                            text=rendered_narration,
-                            template="blue",
-                        )
-                progress = progress_line(event)
-                if progress and progress not in progress_messages:
-                    progress_messages.add(progress)
-                    await self._send_rich_or_text(
-                        message.target.chat_id,
-                        title="Assistant 处理进度",
-                        text=progress,
-                        template="blue",
-                    )
+            final_text, error_text = await self._consume_turn_event(
+                event,
+                chat_id=message.target.chat_id,
+                final_text=final_text,
+                error_text=error_text,
+                narration_parts=narration_parts,
+                progress_messages=progress_messages,
+            )
         response = final_text.strip() or error_text or "No response."
         await self._send_rich_or_text(
             message.target.chat_id,
@@ -233,6 +212,49 @@ class MessagingFrontend(Frontend):
             f"{self.platform} turn finished: session_key={session_key}, "
             f"chat_id={message.target.chat_id}, final_chars={len(response)}, "
             f"elapsed_ms={int((time.monotonic() - turn_started_at) * 1000)}"
+        )
+
+    async def _consume_turn_event(
+        self,
+        event: LoopEvent,
+        *,
+        chat_id: str | None,
+        final_text: str,
+        error_text: str,
+        narration_parts: list[str],
+        progress_messages: set[str],
+    ) -> tuple[str, str]:
+        if event.type == EventType.DONE and event.text:
+            return event.text, error_text
+        if event.type == EventType.ERROR and event.text:
+            return final_text, f"Error: {event.text}"
+        if event.type == EventType.TEXT_DELTA and event.text:
+            narration_parts.append(event.text)
+            return final_text, error_text
+        if event.type not in _PROGRESS_EVENT_TYPES:
+            return final_text, error_text
+
+        narration = narration_preview("".join(narration_parts))
+        narration_parts.clear()
+        if narration:
+            await self._send_progress_once(
+                chat_id, f"💭 {narration}", progress_messages
+            )
+        if progress := progress_line(event):
+            await self._send_progress_once(chat_id, progress, progress_messages)
+        return final_text, error_text
+
+    async def _send_progress_once(
+        self, chat_id: str | None, text: str, sent: set[str]
+    ) -> None:
+        if text in sent:
+            return
+        sent.add(text)
+        await self._send_rich_or_text(
+            chat_id,
+            title="Assistant 处理进度",
+            text=text,
+            template="blue",
         )
 
     async def _send_rich_or_text(
@@ -259,7 +281,7 @@ class MessagingFrontend(Frontend):
                 )
         await self._messenger.send_text(chat_id, text)
 
-    async def _get_loop(self, message: InboundMessage) -> AssistantLoop:
+    def _get_loop(self, message: InboundMessage) -> AssistantLoop:
         session_key = self._session_key(message)
         if session_key in self._chat_loops:
             return self._chat_loops[session_key]
@@ -293,7 +315,7 @@ class MessagingFrontend(Frontend):
             return True
 
         if text == "/clear":
-            loop = await self._get_loop(message)
+            loop = self._get_loop(message)
             loop.reset()
             await self._messenger.send_text(
                 message.target.chat_id, "New session started."
@@ -301,7 +323,7 @@ class MessagingFrontend(Frontend):
             return True
 
         if text == "/cancel":
-            loop = await self._get_loop(message)
+            loop = self._get_loop(message)
             await loop.cancel()
             await self._messenger.send_text(
                 message.target.chat_id, "已取消当前请求并清空等待队列。"
@@ -309,7 +331,7 @@ class MessagingFrontend(Frontend):
             return True
 
         if text == "/status":
-            loop = await self._get_loop(message)
+            loop = self._get_loop(message)
             await self._messenger.send_text(message.target.chat_id, loop.status())
             return True
 

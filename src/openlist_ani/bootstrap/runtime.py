@@ -34,7 +34,7 @@ class AppRuntime:
         self._resources_closed = False
         self._degraded: dict[str, str] = {}
 
-    async def start(self) -> None:
+    async def start(self) -> None:  # NOSONAR - awaitable lifecycle contract
         if self._resources_closed:
             raise RuntimeError("Cannot restart a closed runtime")
         if self._running:
@@ -105,7 +105,11 @@ class AppRuntime:
         degraded = dict(self._degraded)
         if self._running and running != expected:
             degraded["workers"] = f"running={running}, expected={expected}"
-        health_status = "degraded" if degraded else ("ready" if ready else "not_ready")
+        health_status = "not_ready"
+        if degraded:
+            health_status = "degraded"
+        elif ready:
+            health_status = "ready"
         return {
             "status": health_status,
             "ready": ready,

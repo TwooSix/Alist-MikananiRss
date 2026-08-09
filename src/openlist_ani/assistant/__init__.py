@@ -268,6 +268,55 @@ def _create_messaging_frontends(
     return frontends
 
 
+def _ensure_valid_frontend_config(assistant_cfg: Any, *, is_cli: bool) -> None:
+    if is_cli:
+        return
+    frontend_errors = _validate_frontend_config(assistant_cfg)
+    if not frontend_errors:
+        return
+    for error in frontend_errors:
+        logger.log(FATAL_LEVEL, error)
+    raise SystemExit(1)
+
+
+async def _prepare_agent_runtime(source: Any, config_path: Path) -> None:
+    agent_name = "pi" if source is None or source.type == "api" else source.agent
+    if agent_name != "pi":
+        return
+    from .harness.adapters import get_agent_adapter
+    from .harness.pi_runtime import ensure_pi_shell
+
+    configured_executable = (
+        source.executable if source is not None and source.type == "agent" else ""
+    )
+    logger.info("Preparing the Pi agent runtime...")
+    executable = await get_agent_adapter("pi").resolve_executable(
+        configured_executable,
+        config_path=config_path,
+    )
+    logger.info(f"Pi agent runtime is ready: {executable}")
+    if sys.platform == "win32":
+        logger.info("Preparing Pi's managed Git Bash runtime...")
+        shell = await asyncio.to_thread(ensure_pi_shell, config_path=config_path)
+        logger.info(f"Pi shell runtime is ready: {shell}")
+
+
+async def _serve_frontends(*, cli_frontend: Any | None, frontends: list[Any]) -> None:
+    if cli_frontend is not None:
+        await cli_frontend.run()
+        return
+    await asyncio.gather(*(frontend.run() for frontend in frontends))
+
+
+async def _shutdown_frontends(frontends: list[Any], loop: Any) -> None:
+    logger.info("Shutting down assistant - cleaning up resources")
+    for running_frontend in frontends:
+        shutdown = getattr(running_frontend, "shutdown", None)
+        if shutdown is not None:
+            await shutdown()
+    await loop.shutdown()
+
+
 async def run() -> None:
     """Start the thin frontend-to-agent-harness bridge."""
     from .harness.cli import HarnessCLIFrontend
@@ -285,36 +334,14 @@ async def run() -> None:
 
     assistant_cfg = config.assistant
     is_cli = "--cli" in sys.argv
-    if not is_cli:
-        frontend_errors = _validate_frontend_config(assistant_cfg)
-        if frontend_errors:
-            for error in frontend_errors:
-                logger.log(FATAL_LEVEL, error)
-            sys.exit(1)
+    _ensure_valid_frontend_config(assistant_cfg, is_cli=is_cli)
 
     selected = config.data.resolve_assistant_source()
     source_name = selected[0] if selected else "builtin-pi"
     source = selected[1] if selected else None
     config_path = config.config_path
 
-    agent_name = "pi" if source is None or source.type == "api" else source.agent
-    if agent_name == "pi":
-        from .harness.adapters import get_agent_adapter
-        from .harness.pi_runtime import ensure_pi_shell
-
-        configured_executable = (
-            source.executable if source is not None and source.type == "agent" else ""
-        )
-        logger.info("Preparing the Pi agent runtime...")
-        executable = await get_agent_adapter("pi").resolve_executable(
-            configured_executable,
-            config_path=config_path,
-        )
-        logger.info(f"Pi agent runtime is ready: {executable}")
-        if sys.platform == "win32":
-            logger.info("Preparing Pi's managed Git Bash runtime...")
-            shell = await asyncio.to_thread(ensure_pi_shell, config_path=config_path)
-            logger.info(f"Pi shell runtime is ready: {shell}")
+    await _prepare_agent_runtime(source, config_path)
 
     skills_dir = Path(assistant_cfg.skills_dir).expanduser()
     migrate_legacy_copied_builtin_skills(skills_dir, SKILLS_ROOT)
@@ -331,8 +358,9 @@ async def run() -> None:
 
     loop = _build_loop()
     frontends: list[Any] = []
+    cli_frontend: Any | None = None
     if is_cli:
-        frontend = HarnessCLIFrontend(loop)
+        cli_frontend = HarnessCLIFrontend(loop)
     else:
         frontends = _create_messaging_frontends(
             loop=loop,
@@ -352,17 +380,9 @@ async def run() -> None:
         f"frontends={_enabled_frontend_names(assistant_cfg)}"
     )
     try:
-        if is_cli:
-            await frontend.run()
-        else:
-            await asyncio.gather(*(frontend.run() for frontend in frontends))
+        await _serve_frontends(cli_frontend=cli_frontend, frontends=frontends)
     finally:
-        logger.info("Shutting down assistant - cleaning up resources")
-        for running_frontend in frontends:
-            shutdown = getattr(running_frontend, "shutdown", None)
-            if shutdown is not None:
-                await shutdown()
-        await loop.shutdown()
+        await _shutdown_frontends(frontends, loop)
 
 
 def main() -> None:

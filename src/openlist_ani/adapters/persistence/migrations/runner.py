@@ -398,15 +398,23 @@ class LegacyMigrationRunner:
                 parked.append((sidecar, holding))
             os.replace(temporary, destination)
         except Exception:
-            for sidecar, holding in reversed(parked):
-                if holding.exists() and not sidecar.exists():
-                    os.replace(holding, sidecar)
+            LegacyMigrationRunner._restore_sidecars(parked)
             raise
         else:
-            for _sidecar, holding in parked:
-                try:
-                    holding.unlink()
-                except OSError:
-                    # The parked name is not recognized by SQLite and is safe
-                    # to clean during a later maintenance pass.
-                    pass
+            LegacyMigrationRunner._remove_parked_sidecars(parked)
+
+    @staticmethod
+    def _restore_sidecars(parked: list[tuple[Path, Path]]) -> None:
+        for sidecar, holding in reversed(parked):
+            if holding.exists() and not sidecar.exists():
+                os.replace(holding, sidecar)
+
+    @staticmethod
+    def _remove_parked_sidecars(parked: list[tuple[Path, Path]]) -> None:
+        for _sidecar, holding in parked:
+            try:
+                holding.unlink()
+            except OSError:
+                # The parked name is not recognized by SQLite and is safe
+                # to clean during a later maintenance pass.
+                pass

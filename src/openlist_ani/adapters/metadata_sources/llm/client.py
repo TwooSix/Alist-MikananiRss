@@ -24,7 +24,7 @@ class LLMClient(ABC):
         self, messages: list[dict[str, str]], model: str | None = None
     ) -> str: ...
 
-    async def close(self) -> None:
+    async def close(self) -> None:  # NOSONAR - optional awaitable cleanup hook
         """Release transport resources; stateless test clients may keep the default."""
         return None
 

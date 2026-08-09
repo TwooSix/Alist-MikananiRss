@@ -1,6 +1,16 @@
 """Utility functions for parser tools."""
 
-import re
+
+def _json_fence_payload(text: str) -> str | None:
+    marker = "```json"
+    payload_start = text.find(marker)
+    if payload_start < 0:
+        return None
+    payload_start += len(marker)
+    payload_end = text.find("```", payload_start)
+    if payload_end < 0:
+        return None
+    return text[payload_start:payload_end].strip()
 
 
 def parse_json_from_markdown(text: str) -> str | None:
@@ -12,9 +22,8 @@ def parse_json_from_markdown(text: str) -> str | None:
     Returns:
         Extracted JSON string or None if not found
     """
-    match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
-    if match:
-        return match.group(1).strip()
+    if fenced := _json_fence_payload(text):
+        return fenced
 
     try:
         start = text.index("{")
@@ -35,11 +44,8 @@ def parse_json_array_from_markdown(text: str) -> str | None:
     Returns:
         Extracted JSON array string or None if not found
     """
-    match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
-    if match:
-        candidate = match.group(1).strip()
-        if candidate.startswith("["):
-            return candidate
+    if (fenced := _json_fence_payload(text)) and fenced.startswith("["):
+        return fenced
 
     try:
         start = text.index("[")

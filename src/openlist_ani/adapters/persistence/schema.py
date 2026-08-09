@@ -157,7 +157,7 @@ def apply_schema(connection: sqlite3.Connection) -> None:
         "ON resources(job_id) WHERE job_id IS NOT NULL"
     )
     connection.execute(
-        "CREATE INDEX IF NOT EXISTS idx_jobs_lease " "ON jobs(status, lease_expires_at)"
+        "CREATE INDEX IF NOT EXISTS idx_jobs_lease ON jobs(status, lease_expires_at)"
     )
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_outbox_lease "

@@ -216,7 +216,9 @@ class OpenListDownloadWorkflow:
         ):
             task.downloader_data.pop(key, None)
 
-    async def _prepare_submission(self, task: OpenListWorkflowContext) -> None:
+    async def _prepare_submission(  # NOSONAR - uniform async state-handler contract
+        self, task: OpenListWorkflowContext
+    ) -> None:
         task.downloader_data["temp_path"] = _join_openlist_path(
             _temp_root_path(task.base_path), task.id
         )
@@ -431,20 +433,50 @@ class OpenListDownloadWorkflow:
         task: OpenListWorkflowContext,
         checkpoint: WorkflowCheckpoint | None,
     ) -> None:
+        downloaded_filename, bare_filename, file_parent_path = (
+            self._downloaded_file_context(task)
+        )
+        sidecars = self._sidecars_for_downloaded_file(task, downloaded_filename)
+        final_dir_path = task.target_directory_path
+        if not final_dir_path:
+            raise DownloadBackendError("No target directory path available")
+        await self._ensure_target_directories(task.base_path, final_dir_path)
+        move_plan = await self._move_plan(
+            task,
+            checkpoint,
+            file_parent_path=file_parent_path,
+            final_dir_path=final_dir_path,
+            bare_filename=bare_filename,
+            sidecars=sidecars,
+        )
+        await self._apply_move_plan_renames(file_parent_path, move_plan)
+
+    @staticmethod
+    def _downloaded_file_context(
+        task: OpenListWorkflowContext,
+    ) -> tuple[str, str, str]:
         downloaded_filename = task.downloader_data.get("downloaded_filename")
         temp_path = task.downloader_data.get("temp_path")
         if not downloaded_filename:
             raise DownloadBackendError("No downloaded filename available")
         if not temp_path:
             raise DownloadBackendError("No temp_path available")
+        if "/" not in downloaded_filename:
+            return downloaded_filename, downloaded_filename, temp_path
+        sub_dir, bare_filename = downloaded_filename.rsplit("/", 1)
+        return (
+            downloaded_filename,
+            bare_filename,
+            f"{temp_path.rstrip('/')}/{sub_dir}",
+        )
 
-        if "/" in downloaded_filename:
-            sub_dir, bare_filename = downloaded_filename.rsplit("/", 1)
-            file_parent_path = f"{temp_path.rstrip('/')}/{sub_dir}"
-        else:
-            bare_filename = downloaded_filename
-            file_parent_path = temp_path
-
+    @staticmethod
+    def _sidecars_for_downloaded_file(
+        task: OpenListWorkflowContext, downloaded_filename: str
+    ) -> list[dict[str, str]]:
+        expected_parent = (
+            downloaded_filename.rsplit("/", 1)[0] if "/" in downloaded_filename else ""
+        )
         sidecars: list[dict[str, str]] = []
         for item in task.downloader_data.get("downloaded_sidecars", []):
             relative_path = str(item.get("relative_path") or "")
@@ -455,68 +487,86 @@ class OpenListDownloadWorkflow:
                 if "/" in relative_path
                 else ("", relative_path)
             )
-            expected_parent = (
-                downloaded_filename.rsplit("/", 1)[0]
-                if "/" in downloaded_filename
-                else ""
-            )
-            if sidecar_parent != expected_parent:
-                continue
-            sidecars.append(
-                {"source": sidecar_name, "suffix": str(item.get("suffix") or "")}
-            )
+            if sidecar_parent == expected_parent:
+                sidecars.append(
+                    {
+                        "source": sidecar_name,
+                        "suffix": str(item.get("suffix") or ""),
+                    }
+                )
+        return sidecars
 
-        final_dir_path = task.target_directory_path
-        if not final_dir_path:
-            raise DownloadBackendError("No target directory path available")
-        for directory_path in _directory_creation_paths(task.base_path, final_dir_path):
+    async def _ensure_target_directories(
+        self, base_path: str, target_path: str
+    ) -> None:
+        for directory_path in _directory_creation_paths(base_path, target_path):
             if not await self._client.mkdir(directory_path):
                 raise DownloadBackendError(
                     f"Failed to create directory: {directory_path}"
                 )
 
-        existing_plan = task.downloader_data.get("move_plan")
-        if existing_plan:
-            move_plan = [dict(item) for item in existing_plan]
-        else:
-            source_entries = await self._client.list_files(file_parent_path)
-            target_entries = await self._client.list_files(final_dir_path)
-            if source_entries is None or target_entries is None:
-                raise DownloadBackendError("Cannot plan OpenList file moves")
-            source_names = {entry.name for entry in source_entries}
-            target_names = {entry.name for entry in target_entries}
-            originals = [bare_filename, *(item["source"] for item in sidecars)]
-            missing = [name for name in originals if name not in source_names]
-            if missing:
-                raise DownloadBackendError(
-                    f"Move sources are missing before planning: {', '.join(missing)}"
-                )
-
-            reserved_names = set(target_names)
-            move_plan = []
-            for index, original in enumerate(originals):
-                resolved = original
-                if resolved in reserved_names:
-                    resolved = self._conflict_resolver.next_available_name(
-                        original, reserved_names | source_names
-                    )
-                reserved_names.add(resolved)
-                plan_item = {
-                    "kind": "video" if index == 0 else "subtitle",
-                    "source": original,
-                    "filename": resolved,
-                }
-                if index > 0:
-                    plan_item["suffix"] = sidecars[index - 1]["suffix"]
-                move_plan.append(plan_item)
-
-            task.downloader_data["file_parent_path"] = file_parent_path
-            task.downloader_data["resolved_filename"] = move_plan[0]["filename"]
-            task.downloader_data["move_plan"] = move_plan
-            await self._checkpoint(
-                task, OpenListWorkflowState.FILE_DETECTED, checkpoint
+    async def _move_plan(
+        self,
+        task: OpenListWorkflowContext,
+        checkpoint: WorkflowCheckpoint | None,
+        *,
+        file_parent_path: str,
+        final_dir_path: str,
+        bare_filename: str,
+        sidecars: list[dict[str, str]],
+    ) -> list[dict[str, str]]:
+        if existing_plan := task.downloader_data.get("move_plan"):
+            return [dict(item) for item in existing_plan]
+        source_entries = await self._client.list_files(file_parent_path)
+        target_entries = await self._client.list_files(final_dir_path)
+        if source_entries is None or target_entries is None:
+            raise DownloadBackendError("Cannot plan OpenList file moves")
+        source_names = {entry.name for entry in source_entries}
+        originals = [bare_filename, *(item["source"] for item in sidecars)]
+        missing = [name for name in originals if name not in source_names]
+        if missing:
+            raise DownloadBackendError(
+                f"Move sources are missing before planning: {', '.join(missing)}"
             )
+        target_names = {entry.name for entry in target_entries}
+        move_plan = self._build_move_plan(
+            originals, sidecars, source_names, target_names
+        )
+        task.downloader_data["file_parent_path"] = file_parent_path
+        task.downloader_data["resolved_filename"] = move_plan[0]["filename"]
+        task.downloader_data["move_plan"] = move_plan
+        await self._checkpoint(task, OpenListWorkflowState.FILE_DETECTED, checkpoint)
+        return move_plan
 
+    def _build_move_plan(
+        self,
+        originals: list[str],
+        sidecars: list[dict[str, str]],
+        source_names: set[str],
+        target_names: set[str],
+    ) -> list[dict[str, str]]:
+        reserved_names = set(target_names)
+        move_plan: list[dict[str, str]] = []
+        for index, original in enumerate(originals):
+            resolved = original
+            if resolved in reserved_names:
+                resolved = self._conflict_resolver.next_available_name(
+                    original, reserved_names | source_names
+                )
+            reserved_names.add(resolved)
+            plan_item = {
+                "kind": "video" if index == 0 else "subtitle",
+                "source": original,
+                "filename": resolved,
+            }
+            if index > 0:
+                plan_item["suffix"] = sidecars[index - 1]["suffix"]
+            move_plan.append(plan_item)
+        return move_plan
+
+    async def _apply_move_plan_renames(
+        self, file_parent_path: str, move_plan: list[dict[str, str]]
+    ) -> None:
         for item in move_plan:
             source = item["source"]
             resolved = item["filename"]
@@ -540,7 +590,9 @@ class OpenListDownloadWorkflow:
                 )
             await self._sleep(self._TRANSFER_CHECK_INTERVAL_SECONDS)
 
-    async def _prepare_move(self, task: OpenListWorkflowContext) -> None:
+    async def _prepare_move(  # NOSONAR - uniform async state-handler contract
+        self, task: OpenListWorkflowContext
+    ) -> None:
         if not task.downloader_data.get("file_parent_path"):
             raise DownloadBackendError("No file_parent_path available")
         if not task.downloader_data.get("resolved_filename"):
@@ -556,74 +608,27 @@ class OpenListDownloadWorkflow:
 
     async def _move_to_target_directory(self, task: OpenListWorkflowContext) -> None:
         file_parent_path = task.downloader_data.get("file_parent_path")
-        move_plan = task.downloader_data.get("move_plan") or []
         if not file_parent_path:
             raise DownloadBackendError("No file_parent_path available")
-        if not move_plan:
-            resolved = task.downloader_data.get("resolved_filename")
-            if not resolved:
-                raise DownloadBackendError("No move_plan available")
-            move_plan = [
-                {
-                    "kind": "video",
-                    "source": resolved,
-                    "filename": resolved,
-                }
-            ]
-            task.downloader_data["move_plan"] = move_plan
-
+        move_plan = self._existing_move_plan(task)
         final_dir_path = task.target_directory_path
         if not final_dir_path:
             raise DownloadBackendError("No target directory path available")
-
-        source_entries = await self._client.list_files(file_parent_path)
-        target_entries = await self._client.list_files(final_dir_path)
-        if source_entries is None or target_entries is None:
-            raise DownloadBackendError("Cannot reconcile an uncertain OpenList move")
-        source_names = {entry.name for entry in source_entries}
-        target_names = {entry.name for entry in target_entries}
-        pending: list[str] = []
-        for item in move_plan:
-            filename = item["filename"]
-            in_source = filename in source_names
-            in_target = filename in target_names
-            if in_source and not in_target:
-                pending.append(filename)
-                continue
-            if not in_source and in_target:
-                continue
-            raise DownloadBackendError(
-                f"Ambiguous OpenList move state for '{filename}': "
-                f"source={in_source}, target={in_target}"
-            )
-
+        source_names, target_names = await self._move_directory_names(
+            file_parent_path, final_dir_path
+        )
+        pending = self._pending_move_names(move_plan, source_names, target_names)
+        await self._execute_move(file_parent_path, final_dir_path, pending)
         if pending:
-            logger.debug(
-                f"OpenList move: {file_parent_path} -> {final_dir_path}; "
-                f"files={pending}"
+            source_names, target_names = await self._move_directory_names(
+                file_parent_path,
+                final_dir_path,
+                error="Cannot verify completed OpenList move",
             )
-            if not await self._client.move_file(
-                file_parent_path, final_dir_path, pending
-            ):
-                raise DownloadBackendError(f"Failed to move files to: {final_dir_path}")
-
-            await self._sleep(self._TRANSFER_CHECK_INTERVAL_SECONDS)
-
-        if pending:
-            refreshed_source = await self._client.list_files(file_parent_path)
-            refreshed_target = await self._client.list_files(final_dir_path)
-            if refreshed_source is None or refreshed_target is None:
-                raise DownloadBackendError("Cannot verify completed OpenList move")
-            refreshed_source_names = {entry.name for entry in refreshed_source}
-            refreshed_target_names = {entry.name for entry in refreshed_target}
-        else:
-            refreshed_source_names = source_names
-            refreshed_target_names = target_names
         unresolved = [
             item["filename"]
             for item in move_plan
-            if item["filename"] in refreshed_source_names
-            or item["filename"] not in refreshed_target_names
+            if item["filename"] in source_names or item["filename"] not in target_names
         ]
         if unresolved:
             raise DownloadBackendError(
@@ -631,6 +636,66 @@ class OpenListDownloadWorkflow:
             )
 
         self._record_materialized_files(task, final_dir_path, move_plan)
+
+    @staticmethod
+    def _existing_move_plan(
+        task: OpenListWorkflowContext,
+    ) -> list[dict[str, str]]:
+        move_plan = task.downloader_data.get("move_plan") or []
+        if move_plan:
+            return move_plan
+        resolved = task.downloader_data.get("resolved_filename")
+        if not resolved:
+            raise DownloadBackendError("No move_plan available")
+        move_plan = [{"kind": "video", "source": resolved, "filename": resolved}]
+        task.downloader_data["move_plan"] = move_plan
+        return move_plan
+
+    async def _move_directory_names(
+        self,
+        source_path: str,
+        target_path: str,
+        *,
+        error: str = "Cannot reconcile an uncertain OpenList move",
+    ) -> tuple[set[str], set[str]]:
+        source_entries = await self._client.list_files(source_path)
+        target_entries = await self._client.list_files(target_path)
+        if source_entries is None or target_entries is None:
+            raise DownloadBackendError(error)
+        return (
+            {entry.name for entry in source_entries},
+            {entry.name for entry in target_entries},
+        )
+
+    @staticmethod
+    def _pending_move_names(
+        move_plan: list[dict[str, str]],
+        source_names: set[str],
+        target_names: set[str],
+    ) -> list[str]:
+        pending: list[str] = []
+        for item in move_plan:
+            filename = item["filename"]
+            in_source = filename in source_names
+            in_target = filename in target_names
+            if in_source and not in_target:
+                pending.append(filename)
+            elif in_source or not in_target:
+                raise DownloadBackendError(
+                    f"Ambiguous OpenList move state for '{filename}': "
+                    f"source={in_source}, target={in_target}"
+                )
+        return pending
+
+    async def _execute_move(
+        self, source_path: str, target_path: str, pending: list[str]
+    ) -> None:
+        if not pending:
+            return
+        logger.debug(f"OpenList move: {source_path} -> {target_path}; files={pending}")
+        if not await self._client.move_file(source_path, target_path, pending):
+            raise DownloadBackendError(f"Failed to move files to: {target_path}")
+        await self._sleep(self._TRANSFER_CHECK_INTERVAL_SECONDS)
 
     @staticmethod
     def _record_materialized_files(

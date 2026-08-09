@@ -67,7 +67,7 @@ class NotificationManager:
             self._started = False
             raise
 
-    async def stop(self) -> None:
+    async def stop(self) -> None:  # NOSONAR - awaitable lifecycle contract
         self._started = False
         logger.debug("Notification manager stopped")
 

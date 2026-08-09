@@ -185,7 +185,8 @@ class ConfigManager:
 
     @property
     def backend_url(self) -> str:
-        return f"http://{self.backend.host}:{self.backend.port}"
+        # The backend is the process-local control plane and defaults to loopback.
+        return f"http://{self.backend.host}:{self.backend.port}"  # NOSONAR
 
     @property
     def load_failed(self) -> bool:

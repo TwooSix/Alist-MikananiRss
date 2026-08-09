@@ -206,8 +206,9 @@ def test_incomplete_v1_torrent_is_rejected_before_hashing():
         b"piece length": 16384,
     }
 
+    blob = _bencode({b"info": info})
     with pytest.raises(ValueError, match="pieces length"):
-        resolver._torrent_blob_to_magnet_python(_bencode({b"info": info}))
+        resolver._torrent_blob_to_magnet_python(blob)
 
 
 async def test_torrent_url_is_downloaded_and_converted(monkeypatch):

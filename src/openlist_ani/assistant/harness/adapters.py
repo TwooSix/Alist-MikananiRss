@@ -19,6 +19,8 @@ from importlib.metadata import entry_points
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+_SKILL_MANIFEST = "SKILL.md"
+
 if TYPE_CHECKING:
     from openlist_ani.adapters.configuration.models import AISourceConfig
     from .runtime import HarnessSession
@@ -53,7 +55,7 @@ class AgentAdapter(ABC):
     name: str
     default_executable: str
 
-    async def resolve_executable(
+    async def resolve_executable(  # NOSONAR - adapter implementations may do async I/O
         self,
         executable: str = "",
         *,
@@ -132,7 +134,9 @@ class AgentAdapter(ABC):
         del spec
         return []
 
-    async def ensure_native_skills(self, spec: SessionSpec) -> None:
+    async def ensure_native_skills(  # NOSONAR - optional awaitable adapter hook
+        self, spec: SessionSpec
+    ) -> None:
         """Let a harness perform any native plugin setup it requires."""
         del spec
 
@@ -341,15 +345,19 @@ def _claude_plugin_roots(user_skills_root: Path | None) -> tuple[Path, ...]:
         return ()
     if (
         (root / ".claude-plugin" / "plugin.json").is_file()
-        or (root / "SKILL.md").is_file()
+        or (root / _SKILL_MANIFEST).is_file()
         or (root / "skills").is_dir()
     ):
-        return (root,)
+        return _path_tuple(root)
     return tuple(
         child.resolve()
         for child in sorted(root.iterdir())
-        if child.is_dir() and (child / "SKILL.md").is_file()
+        if child.is_dir() and (child / _SKILL_MANIFEST).is_file()
     )
+
+
+def _path_tuple(*paths: Path) -> tuple[Path, ...]:
+    return paths
 
 
 def _prepare_codex_project_skills(
@@ -382,7 +390,7 @@ def _prepare_codex_project_skills(
 
 def _skill_directories(root: Path) -> tuple[Path, ...]:
     resolved = root.expanduser().resolve()
-    if (resolved / "SKILL.md").is_file():
+    if (resolved / _SKILL_MANIFEST).is_file():
         return (resolved,)
     plugin_skills = resolved / "skills"
     if plugin_skills.is_dir():
@@ -390,7 +398,7 @@ def _skill_directories(root: Path) -> tuple[Path, ...]:
     return tuple(
         child.resolve()
         for child in sorted(resolved.iterdir())
-        if child.is_dir() and (child / "SKILL.md").is_file()
+        if child.is_dir() and (child / _SKILL_MANIFEST).is_file()
     )
 
 

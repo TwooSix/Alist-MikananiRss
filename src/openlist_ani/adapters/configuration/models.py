@@ -212,9 +212,7 @@ class OpenListConfig(ConfigModel):
     download_path: str = Field(default="/", exclude=True)
     offline_download_tool: str = "qBittorrent"
     rename_format: str = Field(
-        default=(
-            "{anime_name} S{season:02d}E{episode:02d} " "{fansub} {quality} {languages}"
-        ),
+        default="{anime_name} S{season:02d}E{episode:02d} {fansub} {quality} {languages}",
         exclude=True,
     )
 
@@ -288,24 +286,30 @@ class AISourceConfig(ConfigModel):
     @model_validator(mode="after")
     def _validate_shape(self) -> AISourceConfig:
         if self.type == "api":
-            if not self.provider:
-                raise ValueError("API source requires 'provider'.")
-            if self.agent:
-                raise ValueError("API source cannot configure 'agent'.")
-            if self.executable:
-                raise ValueError("API source cannot configure 'executable'.")
-            if not self.api_key.strip():
-                raise ValueError("API source requires a non-empty 'api_key'.")
-            if not self.model.strip():
-                raise ValueError("API source requires a non-empty 'model'.")
-            if not self.base_url:
-                self.base_url = (
-                    OPENAI_COMPATIBLE_BASE_URL
-                    if self.provider == "openai-compatible"
-                    else ANTHROPIC_MESSAGES_BASE_URL
-                )
-            return self
+            self._validate_api_shape()
+        else:
+            self._validate_agent_shape()
+        return self
 
+    def _validate_api_shape(self) -> None:
+        if not self.provider:
+            raise ValueError("API source requires 'provider'.")
+        if self.agent:
+            raise ValueError("API source cannot configure 'agent'.")
+        if self.executable:
+            raise ValueError("API source cannot configure 'executable'.")
+        if not self.api_key.strip():
+            raise ValueError("API source requires a non-empty 'api_key'.")
+        if not self.model.strip():
+            raise ValueError("API source requires a non-empty 'model'.")
+        if not self.base_url:
+            self.base_url = (
+                OPENAI_COMPATIBLE_BASE_URL
+                if self.provider == "openai-compatible"
+                else ANTHROPIC_MESSAGES_BASE_URL
+            )
+
+    def _validate_agent_shape(self) -> None:
         if not self.agent:
             raise ValueError("Agent source requires 'agent'.")
         forbidden = []
@@ -319,7 +323,6 @@ class AISourceConfig(ConfigModel):
             raise ValueError(
                 "Agent source cannot configure API fields: " + ", ".join(forbidden)
             )
-        return self
 
     @property
     def provider_type(self) -> str:
@@ -417,16 +420,9 @@ class MetadataPipelineConfig(ConfigModel):
     # Input compatibility for direct library users.  File migration removes it.
     providers: list[str] = Field(default_factory=list, exclude=True)
 
-    @field_validator("pipeline")
+    @field_validator("pipeline", "providers")
     @classmethod
     def _normalize_providers(cls, providers: list[str]) -> list[str]:
-        normalized = normalize_metadata_pipeline(providers)
-        validate_metadata_pipeline(normalized, allow_empty=True)
-        return normalized
-
-    @field_validator("providers")
-    @classmethod
-    def _normalize_legacy_providers(cls, providers: list[str]) -> list[str]:
         normalized = normalize_metadata_pipeline(providers)
         validate_metadata_pipeline(normalized, allow_empty=True)
         return normalized
