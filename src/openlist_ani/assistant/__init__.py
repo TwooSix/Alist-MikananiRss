@@ -300,7 +300,7 @@ def _create_messaging_frontends(
 
 async def run() -> None:
     """Build the component chain and start the assistant."""
-    from openlist_ani.adapters.outbound.configuration import config
+    from openlist_ani.adapters.configuration import config
 
     from .core.context import ContextBuilder
     from .core.loop import AgenticLoop

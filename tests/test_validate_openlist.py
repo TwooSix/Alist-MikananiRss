@@ -4,8 +4,11 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from openlist_ani.adapters.outbound.configuration import ConfigManager
-from openlist_ani.integrations.openlist import OpenListClient, OpenListHealthCheck
+from openlist_ani.adapters.configuration import ConfigManager
+from openlist_ani.adapters.download_backends.openlist import (
+    OpenListClient,
+    OpenListHealthCheck,
+)
 
 
 @pytest.fixture

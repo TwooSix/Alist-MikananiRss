@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from openlist_ani.adapters.outbound.configuration.settings import (
+from openlist_ani.adapters.configuration.models import (
     AssistantConfig,
     FeishuAssistantConfig,
     TelegramAssistantConfig,

@@ -7,11 +7,10 @@ import sys
 import pytest
 from pydantic import ValidationError
 
-from openlist_ani.adapters.outbound.configuration import (
+from openlist_ani.adapters.configuration import ConfigManager, ConfigValidator
+from openlist_ani.adapters.configuration.models import (
     AssistantConfig,
     BotConfig,
-    ConfigManager,
-    ConfigValidator,
     DownloaderConfig,
     FileRenamerConfig,
     LLMConfig,
@@ -23,6 +22,7 @@ from openlist_ani.adapters.outbound.configuration import (
     OpenListConfig,
     ProxyConfig,
     RSSConfig,
+    TelegramNotificationBotDetails,
     FeishuAssistantConfig,
     WechatAssistantConfig,
     UserConfig,
@@ -102,7 +102,8 @@ class TestBotConfig:
 
     def test_config_defaults_to_empty(self):
         cfg = BotConfig(type="telegram")
-        assert cfg.config == {}
+        assert isinstance(cfg.config, TelegramNotificationBotDetails)
+        assert cfg.config_dict() == {}
 
 
 class TestNotificationConfig:
@@ -179,6 +180,42 @@ class TestUserConfig:
         cfg = UserConfig.model_validate(data)
         assert cfg.notification.enabled is True
         assert len(cfg.notification.bots) == 1
+        assert isinstance(
+            cfg.notification.bots[0].config, TelegramNotificationBotDetails
+        )
+
+    def test_typed_bot_config_keeps_public_toml_shape(self):
+        cfg = UserConfig.model_validate(
+            {
+                "notification": {
+                    "bots": [
+                        {
+                            "type": "telegram",
+                            "config": {"bot_token": "token", "user_id": 123},
+                        }
+                    ]
+                }
+            }
+        )
+
+        dumped = cfg.model_dump()
+        assert dumped["notification"]["bots"] == [
+            {
+                "type": "telegram",
+                "enabled": True,
+                "config": {"bot_token": "token", "user_id": 123},
+            }
+        ]
+
+    def test_metadata_provider_names_prefers_canonical_pipeline(self):
+        cfg = UserConfig.model_validate(
+            {
+                "metadata": {"providers": [" Regex ", "TMDB", "regex"]},
+                "metadata_parser": {"provider": "llm"},
+            }
+        )
+
+        assert cfg.metadata_provider_names() == ("regex", "tmdb")
 
     def test_llm_key_defaults_parser_provider_to_llm(self):
         cfg = UserConfig.model_validate({"llm": {"openai_api_key": "key"}})
@@ -207,7 +244,7 @@ class TestConfigManager:
         script = "\n".join(
             [
                 "from pathlib import Path",
-                "from openlist_ani.adapters.outbound.configuration import ConfigManager",
+                "from openlist_ani.adapters.configuration import ConfigManager",
                 "raise SystemExit(1 if Path('config.toml').exists() else 0)",
             ]
         )
@@ -312,7 +349,7 @@ class TestConfigManager:
 
         script = "\n".join(
             [
-                "from openlist_ani.adapters.outbound.configuration import config",
+                "from openlist_ani.adapters.configuration import config",
                 "raise SystemExit(1 if config.load_failed else 0)",
             ]
         )
@@ -803,9 +840,8 @@ class TestRenameFormatValidation:
         mgr._config.openlist.url = "https://localhost"
         mgr._config.openlist.token = "tok"
         mgr._config.llm.openai_api_key = "key"
-        mgr._config.openlist.rename_format = "{anime_name} {nonexistent_field}"
-        mgr.save()
-        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is False
+        with pytest.raises(ValidationError, match="unsupported fields"):
+            mgr._config.openlist.rename_format = "{anime_name} {nonexistent_field}"
 
     def test_empty_format_no_error(self, tmp_path, monkeypatch):
         """Empty format string should not cause validation error."""
@@ -905,9 +941,8 @@ class TestExcludePatternsValidation:
         mgr._config.openlist.url = "https://localhost"
         mgr._config.openlist.token = "tok"
         mgr._config.llm.openai_api_key = "key"
-        mgr._config.rss.filter.exclude_patterns = ["[invalid"]
-        mgr.save()
-        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is False
+        with pytest.raises(ValidationError, match="not a valid regex"):
+            mgr._config.rss.filter.exclude_patterns = ["[invalid"]
 
     def test_empty_patterns_pass(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
@@ -927,6 +962,5 @@ class TestExcludePatternsValidation:
         mgr._config.openlist.url = "https://localhost"
         mgr._config.openlist.token = "tok"
         mgr._config.llm.openai_api_key = "key"
-        mgr._config.rss.filter.exclude_patterns = ["valid_regex", "(unclosed"]
-        mgr.save()
-        assert ConfigValidator(mgr.data, mgr.load_failed).validate() is False
+        with pytest.raises(ValidationError, match="not a valid regex"):
+            mgr._config.rss.filter.exclude_patterns = ["valid_regex", "(unclosed"]

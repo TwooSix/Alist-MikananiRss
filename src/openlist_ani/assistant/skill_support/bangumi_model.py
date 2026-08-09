@@ -1,14 +1,11 @@
-"""
-Data models for Bangumi API responses.
-
-Defines Pydantic models and dataclasses for structured representation
-of Bangumi API entities including subjects, collections, and calendar data.
-"""
+"""Declarative models for Bangumi API responses."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from enum import IntEnum
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class SubjectType(IntEnum):
@@ -56,26 +53,41 @@ COLLECTION_TYPE_LABELS: dict[int, str] = {
 }
 
 
-@dataclass
-class BangumiTag:
+class BangumiModel(BaseModel):
+    """Tolerant base for external API payloads.
+
+    Bangumi occasionally adds response fields or returns ``null`` for fields
+    that normally contain a scalar/object. Unknown fields are ignored and null
+    values fall back to the declared defaults.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _use_defaults_for_nulls(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        return {key: item for key, item in value.items() if item is not None}
+
+
+class BangumiTag(BangumiModel):
     """A tag attached to a Bangumi subject."""
 
-    name: str
+    name: str = ""
     count: int = 0
 
 
-@dataclass
-class BangumiRating:
+class BangumiRating(BangumiModel):
     """Rating information for a Bangumi subject."""
 
     rank: int = 0
     total: int = 0
     score: float = 0.0
-    count: dict[str, int] = field(default_factory=dict)
+    count: dict[str, int] = Field(default_factory=dict)
 
 
-@dataclass
-class BangumiImages:
+class BangumiImages(BangumiModel):
     """Image URLs for a Bangumi subject."""
 
     large: str = ""
@@ -85,8 +97,7 @@ class BangumiImages:
     grid: str = ""
 
 
-@dataclass
-class BangumiCollection:
+class BangumiCollection(BangumiModel):
     """Collection summary counts for a Bangumi subject."""
 
     wish: int = 0
@@ -96,8 +107,7 @@ class BangumiCollection:
     dropped: int = 0
 
 
-@dataclass
-class SlimSubject:
+class SlimSubject(BangumiModel):
     """Slim representation of a subject, embedded in user collections."""
 
     id: int = 0
@@ -109,14 +119,13 @@ class SlimSubject:
     score: float = 0.0
     rank: int = 0
     collection_total: int = 0
-    images: BangumiImages = field(default_factory=BangumiImages)
-    tags: list[BangumiTag] = field(default_factory=list)
+    images: BangumiImages = Field(default_factory=BangumiImages)
+    tags: list[BangumiTag] = Field(default_factory=list)
     eps: int = 0
     volumes: int = 0
 
 
-@dataclass
-class BangumiSubject:
+class BangumiSubject(BangumiModel):
     """Full Bangumi subject (anime/book/game/music/real) detail."""
 
     id: int = 0
@@ -131,12 +140,12 @@ class BangumiSubject:
     eps: int = 0
     total_episodes: int = 0
     volumes: int = 0
-    images: BangumiImages = field(default_factory=BangumiImages)
-    rating: BangumiRating = field(default_factory=BangumiRating)
-    collection: BangumiCollection = field(default_factory=BangumiCollection)
-    tags: list[BangumiTag] = field(default_factory=list)
-    meta_tags: list[str] = field(default_factory=list)
-    infobox: list[dict] = field(default_factory=list)
+    images: BangumiImages = Field(default_factory=BangumiImages)
+    rating: BangumiRating = Field(default_factory=BangumiRating)
+    collection: BangumiCollection = Field(default_factory=BangumiCollection)
+    tags: list[BangumiTag] = Field(default_factory=list)
+    meta_tags: list[str] = Field(default_factory=list)
+    infobox: list[dict[str, Any]] = Field(default_factory=list)
 
     @property
     def display_name(self) -> str:
@@ -149,8 +158,7 @@ class BangumiSubject:
         return f"https://bgm.tv/subject/{self.id}"
 
 
-@dataclass
-class CalendarItem:
+class CalendarItem(BangumiModel):
     """A single anime entry in the daily calendar (Legacy_SubjectSmall)."""
 
     id: int = 0
@@ -162,10 +170,10 @@ class CalendarItem:
     url: str = ""
     eps: int = 0
     eps_count: int = 0
-    images: BangumiImages = field(default_factory=BangumiImages)
-    rating: BangumiRating = field(default_factory=BangumiRating)
+    images: BangumiImages = Field(default_factory=BangumiImages)
+    rating: BangumiRating = Field(default_factory=BangumiRating)
     rank: int = 0
-    collection: BangumiCollection = field(default_factory=BangumiCollection)
+    collection: BangumiCollection = Field(default_factory=BangumiCollection)
 
     @property
     def display_name(self) -> str:
@@ -173,8 +181,7 @@ class CalendarItem:
         return self.name_cn or self.name
 
 
-@dataclass
-class Weekday:
+class Weekday(BangumiModel):
     """Weekday information from the calendar API."""
 
     en: str = ""
@@ -183,16 +190,14 @@ class Weekday:
     id: int = 0
 
 
-@dataclass
-class CalendarDay:
+class CalendarDay(BangumiModel):
     """One day in the weekly calendar, containing the weekday and its anime list."""
 
-    weekday: Weekday = field(default_factory=Weekday)
-    items: list[CalendarItem] = field(default_factory=list)
+    weekday: Weekday = Field(default_factory=Weekday)
+    items: list[CalendarItem] = Field(default_factory=list)
 
 
-@dataclass
-class BangumiUser:
+class BangumiUser(BangumiModel):
     """Bangumi user information from /v0/me."""
 
     id: int = 0
@@ -202,8 +207,7 @@ class BangumiUser:
     sign: str = ""
 
 
-@dataclass
-class BangumiTopic:
+class BangumiTopic(BangumiModel):
     """A discussion topic from the legacy subject API."""
 
     id: int = 0
@@ -215,9 +219,13 @@ class BangumiTopic:
     user_nickname: str = ""
     url: str = ""
 
+    @model_validator(mode="before")
+    @classmethod
+    def _flatten_user(cls, value: Any) -> Any:
+        return _with_user_nickname(value)
 
-@dataclass
-class BangumiBlog:
+
+class BangumiBlog(BangumiModel):
     """A blog/review entry from the legacy subject API."""
 
     id: int = 0
@@ -230,17 +238,20 @@ class BangumiBlog:
     user_nickname: str = ""
     url: str = ""
 
+    @model_validator(mode="before")
+    @classmethod
+    def _flatten_user(cls, value: Any) -> Any:
+        return _with_user_nickname(value)
 
-@dataclass
-class RelatedSubject:
+
+class RelatedSubject(BangumiModel):
     """A subject related to another subject (from /v0/subjects/{id}/subjects)."""
 
     relation: str = ""
-    subject: SlimSubject = field(default_factory=SlimSubject)
+    subject: SlimSubject = Field(default_factory=SlimSubject)
 
 
-@dataclass
-class UserCollectionEntry:
+class UserCollectionEntry(BangumiModel):
     """A single entry in the user's collection list."""
 
     subject_id: int = 0
@@ -248,7 +259,7 @@ class UserCollectionEntry:
     rate: int = 0
     type: int = 0  # CollectionType value
     comment: str = ""
-    tags: list[str] = field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
     ep_status: int = 0
     vol_status: int = 0
     updated_at: str = ""
@@ -261,285 +272,67 @@ class UserCollectionEntry:
         return COLLECTION_TYPE_LABELS.get(self.type, "未知")
 
 
-# ---- Parsing helpers ----
+def _with_user_nickname(value: Any) -> Any:
+    """Flatten the legacy API's nested user nickname."""
+    if not isinstance(value, dict):
+        return value
+    result = dict(value)
+    user = result.get("user")
+    if isinstance(user, dict):
+        result.setdefault("user_nickname", user.get("nickname", ""))
+    return result
+
+
+# Compatibility parsing functions keep callers independent of Pydantic.
 
 
 def parse_images(data: dict | None) -> BangumiImages:
-    """Parse images dict from API response to BangumiImages.
-
-    Args:
-        data: Raw images dict from API, may be None.
-
-    Returns:
-        Parsed BangumiImages instance.
-    """
-    if not data:
-        return BangumiImages()
-    return BangumiImages(
-        large=data.get("large", ""),
-        common=data.get("common", ""),
-        medium=data.get("medium", ""),
-        small=data.get("small", ""),
-        grid=data.get("grid", ""),
-    )
+    return BangumiImages.model_validate(data or {})
 
 
 def parse_rating(data: dict | None) -> BangumiRating:
-    """Parse rating dict from API response to BangumiRating.
-
-    Args:
-        data: Raw rating dict from API, may be None.
-
-    Returns:
-        Parsed BangumiRating instance.
-    """
-    if not data:
-        return BangumiRating()
-    return BangumiRating(
-        rank=data.get("rank", 0),
-        total=data.get("total", 0),
-        score=data.get("score", 0.0),
-        count=data.get("count", {}),
-    )
+    return BangumiRating.model_validate(data or {})
 
 
-def parse_collection(data: dict) -> BangumiCollection:
-    """Parse collection dict from API response to BangumiCollection.
-
-    Args:
-        data: Raw collection dict from API, may be None.
-
-    Returns:
-        Parsed BangumiCollection instance.
-    """
-    if not data:
-        return BangumiCollection()
-    return BangumiCollection(
-        wish=data.get("wish", 0),
-        collect=data.get("collect", 0),
-        doing=data.get("doing", 0),
-        on_hold=data.get("on_hold", 0),
-        dropped=data.get("dropped", 0),
-    )
+def parse_collection(data: dict | None) -> BangumiCollection:
+    return BangumiCollection.model_validate(data or {})
 
 
 def parse_tags(data: list | None) -> list[BangumiTag]:
-    """Parse tags list from API response.
-
-    Args:
-        data: Raw tags list from API, may be None.
-
-    Returns:
-        List of BangumiTag instances.
-    """
-    if not data:
-        return []
-    return [BangumiTag(name=t.get("name", ""), count=t.get("count", 0)) for t in data]
+    return [BangumiTag.model_validate(item) for item in (data or [])]
 
 
 def parse_calendar_item(data: dict) -> CalendarItem:
-    """Parse a Legacy_SubjectSmall dict from calendar API.
-
-    Args:
-        data: Raw subject dict from calendar endpoint.
-
-    Returns:
-        Parsed CalendarItem instance.
-    """
-    return CalendarItem(
-        id=data.get("id", 0),
-        name=data.get("name", ""),
-        name_cn=data.get("name_cn", ""),
-        summary=data.get("summary", ""),
-        air_date=data.get("air_date", ""),
-        air_weekday=data.get("air_weekday", 0),
-        url=data.get("url", ""),
-        eps=data.get("eps", 0),
-        eps_count=data.get("eps_count", 0),
-        images=parse_images(data.get("images")),
-        rating=parse_rating(data.get("rating")),
-        rank=data.get("rank", 0),
-        collection=parse_collection(data.get("collection")),
-    )
+    return CalendarItem.model_validate(data)
 
 
 def parse_calendar_day(data: dict) -> CalendarDay:
-    """Parse one calendar day from the /calendar response.
-
-    Args:
-        data: Dict containing weekday and items.
-
-    Returns:
-        Parsed CalendarDay instance.
-    """
-    wd = data.get("weekday", {})
-    weekday = Weekday(
-        en=wd.get("en", ""),
-        cn=wd.get("cn", ""),
-        ja=wd.get("ja", ""),
-        id=wd.get("id", 0),
-    )
-    items = [parse_calendar_item(i) for i in data.get("items", [])]
-    return CalendarDay(weekday=weekday, items=items)
+    return CalendarDay.model_validate(data)
 
 
 def parse_subject(data: dict) -> BangumiSubject:
-    """Parse a full Subject dict from /v0/subjects/{id}.
-
-    Args:
-        data: Raw subject dict from API.
-
-    Returns:
-        Parsed BangumiSubject instance.
-    """
-    return BangumiSubject(
-        id=data.get("id", 0),
-        type=data.get("type", 2),
-        name=data.get("name", ""),
-        name_cn=data.get("name_cn", ""),
-        summary=data.get("summary", ""),
-        date=data.get("date", ""),
-        platform=data.get("platform", ""),
-        nsfw=data.get("nsfw", False),
-        locked=data.get("locked", False),
-        eps=data.get("eps", 0),
-        total_episodes=data.get("total_episodes", 0),
-        volumes=data.get("volumes", 0),
-        images=parse_images(data.get("images")),
-        rating=parse_rating(data.get("rating")),
-        collection=parse_collection(data.get("collection")),
-        tags=parse_tags(data.get("tags")),
-        meta_tags=data.get("meta_tags", []),
-        infobox=data.get("infobox", []),
-    )
+    return BangumiSubject.model_validate(data)
 
 
 def parse_slim_subject(data: dict) -> SlimSubject:
-    """Parse a SlimSubject dict from collection API response.
-
-    Args:
-        data: Raw slim subject dict.
-
-    Returns:
-        Parsed SlimSubject instance.
-    """
-    if not data:
-        return SlimSubject()
-    return SlimSubject(
-        id=data.get("id", 0),
-        type=data.get("type", 2),
-        name=data.get("name", ""),
-        name_cn=data.get("name_cn", ""),
-        short_summary=data.get("short_summary", ""),
-        date=data.get("date", ""),
-        score=data.get("score", 0.0),
-        rank=data.get("rank", 0),
-        collection_total=data.get("collection_total", 0),
-        images=parse_images(data.get("images")),
-        tags=parse_tags(data.get("tags")),
-        eps=data.get("eps", 0),
-        volumes=data.get("volumes", 0),
-    )
+    return SlimSubject.model_validate(data or {})
 
 
 def parse_related_subject(data: dict) -> RelatedSubject:
-    """Parse a related subject from /v0/subjects/{id}/subjects.
-
-    Args:
-        data: Raw related subject dict from API.
-
-    Returns:
-        Parsed RelatedSubject instance.
-    """
-    return RelatedSubject(
-        relation=data.get("relation", ""),
-        subject=parse_slim_subject(data.get("subject", {})),
-    )
+    return RelatedSubject.model_validate(data)
 
 
 def parse_user_collection_entry(data: dict) -> UserCollectionEntry:
-    """Parse a single UserSubjectCollection dict.
-
-    Args:
-        data: Raw collection entry dict from API.
-
-    Returns:
-        Parsed UserCollectionEntry instance.
-    """
-    subject_data = data.get("subject")
-    return UserCollectionEntry(
-        subject_id=data.get("subject_id", 0),
-        subject_type=data.get("subject_type", 2),
-        rate=data.get("rate", 0),
-        type=data.get("type", 0),
-        comment=data.get("comment", ""),
-        tags=data.get("tags", []),
-        ep_status=data.get("ep_status", 0),
-        vol_status=data.get("vol_status", 0),
-        updated_at=data.get("updated_at", ""),
-        private=data.get("private", False),
-        subject=parse_slim_subject(subject_data) if subject_data else None,
-    )
+    return UserCollectionEntry.model_validate(data)
 
 
 def parse_user(data: dict) -> BangumiUser:
-    """Parse user info from /v0/me.
-
-    Args:
-        data: Raw user dict from API.
-
-    Returns:
-        Parsed BangumiUser instance.
-    """
-    return BangumiUser(
-        id=data.get("id", 0),
-        username=data.get("username", ""),
-        nickname=data.get("nickname", ""),
-        user_group=data.get("user_group", 0),
-        sign=data.get("sign", ""),
-    )
+    return BangumiUser.model_validate(data)
 
 
 def parse_legacy_topic(data: dict) -> BangumiTopic:
-    """Parse a topic dict from legacy subject API response.
-
-    Args:
-        data: Raw topic dict from legacy API.
-
-    Returns:
-        Parsed BangumiTopic instance.
-    """
-    user_data = data.get("user", {})
-    return BangumiTopic(
-        id=data.get("id", 0),
-        title=data.get("title", ""),
-        main_id=data.get("main_id", 0),
-        timestamp=data.get("timestamp", 0),
-        lastpost=data.get("lastpost", 0),
-        replies=data.get("replies", 0),
-        user_nickname=user_data.get("nickname", "") if user_data else "",
-        url=data.get("url", ""),
-    )
+    return BangumiTopic.model_validate(data)
 
 
 def parse_legacy_blog(data: dict) -> BangumiBlog:
-    """Parse a blog dict from legacy subject API response.
-
-    Args:
-        data: Raw blog dict from legacy API.
-
-    Returns:
-        Parsed BangumiBlog instance.
-    """
-    user_data = data.get("user", {})
-    return BangumiBlog(
-        id=data.get("id", 0),
-        title=data.get("title", ""),
-        summary=data.get("summary", ""),
-        image=data.get("image", ""),
-        replies=data.get("replies", 0),
-        timestamp=data.get("timestamp", 0),
-        dateline=data.get("dateline", ""),
-        user_nickname=user_data.get("nickname", "") if user_data else "",
-        url=data.get("url", ""),
-    )
+    return BangumiBlog.model_validate(data)

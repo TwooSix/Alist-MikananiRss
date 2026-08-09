@@ -23,7 +23,6 @@ dependencies = [
     "prompt-toolkit>=3.0.50",
     "qrcode>=8.2",
     "rich>=14.0.0",
-    "ripgrep>=14.1.0",
     "textual>=3.0.0",
     "tomlkit>=0.13.3",
     "uvicorn>=0.34.0",
@@ -32,11 +31,12 @@ dependencies = [
 
 [project.scripts]
 openlist-ani = "openlist_ani.bootstrap.backend:main"
+openlist-ani-migrate = "openlist_ani.bootstrap.migrate:main"
 openlist-ani-assistant = "openlist_ani.assistant:main"
 openlist-ani-wechat-login = "openlist_ani.integrations.messaging.wechat_setup:main"
 
 [build-system]
-requires = ["uv_build>=0.9.5,<0.10.0"]
+requires = ["uv_build>=0.9.5,<0.12.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
@@ -52,3 +52,6 @@ dev = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 norecursedirs = ["tests/manual_test_script"]
+
+[tool.black]
+target-version = ["py311"]

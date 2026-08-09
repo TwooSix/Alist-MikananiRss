@@ -3,7 +3,7 @@
 from typing import Any
 
 from openlist_ani.assistant.skill_support.bangumi_client import BangumiClient
-from openlist_ani.adapters.outbound.configuration import config
+from openlist_ani.adapters.configuration import config
 
 
 def _format_basic_info(subject) -> list[str]:

@@ -1,7 +1,7 @@
 """Search anime on Mikan by keyword."""
 
 from openlist_ani.assistant.skill_support.mikan_client import MikanClient
-from openlist_ani.adapters.outbound.configuration import config
+from openlist_ani.adapters.configuration import config
 
 
 async def run(

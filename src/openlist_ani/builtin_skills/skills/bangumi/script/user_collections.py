@@ -1,7 +1,7 @@
 """List the user's anime collection on Bangumi."""
 
 from openlist_ani.assistant.skill_support.bangumi_client import BangumiClient
-from openlist_ani.adapters.outbound.configuration import config
+from openlist_ani.adapters.configuration import config
 
 _COLLECTION_TYPES = {
     1: "wish (想看)",

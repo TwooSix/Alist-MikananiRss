@@ -1,1 +1,0 @@
-"""Inbound adapters."""

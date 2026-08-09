@@ -13,7 +13,7 @@ import asyncio
 from pathlib import Path
 
 from loguru import logger
-from openlist_ani.adapters.outbound.configuration import config
+from openlist_ani.adapters.configuration import config
 from openlist_ani.assistant.skill_support.anime_recommend_cache import (
     CachedSubject,
     build_collection_cache,

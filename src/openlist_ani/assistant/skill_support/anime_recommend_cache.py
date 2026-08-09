@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from openlist_ani.logger import logger
-from openlist_ani.adapters.outbound.configuration import config
+from openlist_ani.adapters.configuration import config
 
 # ------------------------------------------------------------------ #
 # Cache directory

@@ -1,4 +1,5 @@
 import ast
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -12,87 +13,78 @@ def _imports(path: Path) -> set[str]:
         if isinstance(node, ast.Import):
             names.update(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module:
-            names.add(node.module)
+            names.add(f"{'.' * node.level}{node.module}")
     return names
 
 
 def _py_files(path: Path) -> list[Path]:
-    return [p for p in path.rglob("*.py") if "__pycache__" not in p.parts]
+    return [item for item in path.rglob("*.py") if "__pycache__" not in item.parts]
 
 
-def test_domain_has_no_outer_layer_imports():
-    forbidden = (
-        "openlist_ani.application",
-        "openlist_ani.adapters",
-        "openlist_ani.bootstrap",
-        "openlist_ani.integrations",
-        "openlist_ani.config",
-        "openlist_ani.database",
-    )
+def test_domain_depends_only_on_standard_library_and_itself():
     violations = []
     for path in _py_files(SRC / "domain"):
         for imported in _imports(path):
-            if imported.startswith(forbidden):
-                violations.append(f"{path.relative_to(ROOT)} imports {imported}")
-
+            if imported.startswith("."):
+                continue
+            root = imported.split(".", 1)[0]
+            if root in sys.stdlib_module_names or imported.startswith(
+                "openlist_ani.domain"
+            ):
+                continue
+            violations.append(f"{path.relative_to(ROOT)} imports {imported}")
     assert violations == []
 
 
-def test_application_does_not_import_adapters_or_runtime_config():
-    forbidden = (
-        "openlist_ani.adapters",
-        "openlist_ani.bootstrap",
-        "openlist_ani.integrations",
-        "openlist_ani.config",
-        "openlist_ani.database",
-    )
+def test_application_does_not_import_adapters_or_bootstrap():
+    forbidden = ("openlist_ani.adapters", "openlist_ani.bootstrap")
     violations = []
     for path in _py_files(SRC / "application"):
         for imported in _imports(path):
             if imported.startswith(forbidden):
                 violations.append(f"{path.relative_to(ROOT)} imports {imported}")
-
     assert violations == []
 
 
-def test_inbound_adapters_do_not_import_outbound_adapters():
+def test_removed_transition_directories_cannot_reappear():
+    forbidden = [
+        "adapters/inbound",
+        "adapters/outbound",
+        "application/anime_library_ingestion",
+        "domain/anime_release",
+        "domain/download_task",
+        "integrations/llm",
+        "integrations/openlist",
+        "utils",
+    ]
+    assert [item for item in forbidden if (SRC / item).exists()] == []
+
+
+def test_removed_outbound_import_path_cannot_reappear():
     violations = []
-    for path in _py_files(SRC / "adapters" / "inbound"):
+    for path in _py_files(SRC):
+        relative = path.relative_to(SRC)
         for imported in _imports(path):
             if imported.startswith("openlist_ani.adapters.outbound"):
-                violations.append(f"{path.relative_to(ROOT)} imports {imported}")
-
+                violations.append(f"{relative} imports {imported}")
     assert violations == []
 
 
-def test_integrations_do_not_import_business_or_adapter_layers():
-    forbidden = (
-        "openlist_ani.domain",
-        "openlist_ani.application",
-        "openlist_ani.adapters",
-        "openlist_ani.bootstrap",
-        "openlist_ani.config",
-        "openlist_ani.database",
-    )
-    violations = []
-    for path in _py_files(SRC / "integrations"):
-        for imported in _imports(path):
-            if imported.startswith(forbidden):
-                violations.append(f"{path.relative_to(ROOT)} imports {imported}")
-
-    assert violations == []
+def test_adapter_registry_is_the_only_core_registry():
+    registry_classes = []
+    for path in _py_files(SRC):
+        relative = path.relative_to(SRC)
+        if relative.parts[0] in {"assistant", "builtin_skills"}:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef) and node.name.endswith("Registry"):
+                registry_classes.append((relative.as_posix(), node.name))
+    assert registry_classes == [("adapters/registry.py", "AdapterRegistry")]
 
 
-def test_outbound_adapter_modules_do_not_import_sibling_adapter_modules():
-    prefix = "openlist_ani.adapters.outbound."
-    violations = []
-    for path in _py_files(SRC / "adapters" / "outbound"):
-        top_level_module = path.relative_to(SRC / "adapters" / "outbound").parts[0]
-        for imported in _imports(path):
-            if not imported.startswith(prefix):
-                continue
-            imported_top_level = imported[len(prefix) :].split(".", 1)[0]
-            if imported_top_level != top_level_module:
-                violations.append(f"{path.relative_to(ROOT)} imports {imported}")
-
-    assert violations == []
+def test_legacy_migration_type_is_private_and_not_imported_by_runtime():
+    for path in _py_files(SRC):
+        if path.name == "legacy_v1_import.py":
+            continue
+        assert "_LegacyTask" not in path.read_text(encoding="utf-8")

@@ -6,7 +6,7 @@ desired entries and submit each via ``oani/create_download``.
 """
 
 from openlist_ani.assistant.skill_support.oani_backend_client import BackendClient
-from openlist_ani.adapters.outbound.configuration import config
+from openlist_ani.adapters.configuration import config
 
 
 async def run(

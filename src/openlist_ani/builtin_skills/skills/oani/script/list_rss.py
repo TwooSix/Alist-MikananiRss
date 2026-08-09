@@ -1,6 +1,6 @@
 """Show currently configured RSS feeds and priority settings."""
 
-from openlist_ani.adapters.outbound.configuration import config
+from openlist_ani.adapters.configuration import config
 
 
 def run(**kwargs) -> str:

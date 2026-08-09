@@ -94,7 +94,7 @@ openai_base_url = "https://api.deepseek.com/v1"
 openai_model = "deepseek-chat"
 ```
 
-> 完整配置项请参考 [`config.toml.example`](config.toml.example) 及 [配置说明](https://github.com/TwooSix/Openlist-Ani/wiki/配置说明)
+> 完整配置项请参考 [`config.toml.example`](config.toml.example) 及 [配置说明](https://github.com/TwooSix/Openlist-Ani/wiki/configuration)
 
 **3. 启动**
 
@@ -147,7 +147,7 @@ docker run -d \
 
 > 将 `/path/to/` 替换为你的实际路径。  
 > 如需启用 AI 助理，填写好配置后将 `ENABLE_ASSISTANT` 设为 `true`。  
-> 详细说明见 [Docker 部署指南](https://github.com/TwooSix/Openlist-Ani/wiki/Docker部署指南)。
+> 详细说明见 [Docker 部署指南](https://github.com/TwooSix/Openlist-Ani/wiki/docker-deployment)。
 
 </details>
 
@@ -166,11 +166,11 @@ openlist-ani-assistant
 
 ## 📖 文档
 
-- [快速开始](https://github.com/TwooSix/Openlist-Ani/wiki/快速开始)
-- [PIP 安装指南](https://github.com/TwooSix/Openlist-Ani/wiki/PIP安装指南)
-- [Docker 部署指南](https://github.com/TwooSix/Openlist-Ani/wiki/Docker部署指南)
-- [源码编译指南](https://github.com/TwooSix/Openlist-Ani/wiki/源码编译指南)
-- [配置说明](https://github.com/TwooSix/Openlist-Ani/wiki/配置说明)
+- [快速开始](https://github.com/TwooSix/Openlist-Ani/wiki/quick-start)
+- [PIP 安装指南](https://github.com/TwooSix/Openlist-Ani/wiki/pip-installation)
+- [Docker 部署指南](https://github.com/TwooSix/Openlist-Ani/wiki/docker-deployment)
+- [源码编译指南](https://github.com/TwooSix/Openlist-Ani/wiki/build-from-source)
+- [配置说明](https://github.com/TwooSix/Openlist-Ani/wiki/configuration)
 
 ## 🖼️ 效果展示
 

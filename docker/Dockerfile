@@ -35,7 +35,8 @@ ENV PATH="/opt/openlist-ani/.venv/bin:$PATH" \
 COPY --from=builder --chmod=0555 /opt/openlist-ani/.venv /opt/openlist-ani/.venv
 COPY --from=builder --chmod=0555 /entrypoint.sh /entrypoint.sh
 
-RUN addgroup -S -g 1000 openlistani && \
+RUN apk add --no-cache ripgrep && \
+    addgroup -S -g 1000 openlistani && \
     adduser -S -D -H -u 1000 -G openlistani openlistani && \
     mkdir -p /data /logs /skills && \
     touch /config.toml && \

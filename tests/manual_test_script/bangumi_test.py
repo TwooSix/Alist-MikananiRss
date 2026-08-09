@@ -102,7 +102,7 @@ async def _test_llm_e2e() -> None:
     """Test 6: Full LLM E2E test (optional, requires OpenAI API key)."""
     _print_header("Test 6: Full LLM E2E test (optional)")
 
-    from openlist_ani.adapters.outbound.configuration import config as app_config
+    from openlist_ani.adapters.configuration import config as app_config
 
     if not app_config.llm.openai_api_key:
         print("  \u26a0\ufe0f  Skipped: OpenAI API key not configured\n")

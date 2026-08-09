@@ -1,7 +1,7 @@
 """Search anime/manga on Bangumi by keyword."""
 
 from openlist_ani.assistant.skill_support.bangumi_client import BangumiClient
-from openlist_ani.adapters.outbound.configuration import config
+from openlist_ani.adapters.configuration import config
 
 
 async def run(

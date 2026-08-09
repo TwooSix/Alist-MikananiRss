@@ -1,7 +1,7 @@
 """View the weekly anime airing calendar from Bangumi."""
 
 from openlist_ani.assistant.skill_support.bangumi_client import BangumiClient
-from openlist_ani.adapters.outbound.configuration import config
+from openlist_ani.adapters.configuration import config
 
 _WEEKDAY_NAMES = {
     1: "Monday",

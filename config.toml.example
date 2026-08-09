@@ -38,6 +38,11 @@ provider = "llm"  # Title parser: "llm" or "regex"
 [metadata_validator]
 provider = "tmdb"  # Metadata validator: "tmdb" or "none"
 
+# Optional new-style ordered provider list. When present, this takes precedence
+# over [metadata_parser] + [metadata_validator]. Existing configs need no change.
+# [metadata]
+# providers = ["regex", "tmdb"]
+
 [openlist]
 url = "http://localhost:5244"
 token = ""
@@ -55,7 +60,7 @@ tmdb_language = "zh-CN"  # TMDB metadata language: zh-CN (Chinese), en-US (Engli
 
 [notification]
 enabled = false  # Enable/disable notification system
-batch_interval = 300.0  # Batch notifications interval in seconds (default: 300 = 5 minutes, set to 0 to send immediately)
+batch_interval = 300.0  # Legacy setting; durable outbox delivery sends each completed item immediately
 
 # Telegram bot configuration (optional)
 # [[notification.bots]]
