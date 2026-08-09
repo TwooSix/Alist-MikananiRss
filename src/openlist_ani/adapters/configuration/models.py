@@ -199,6 +199,7 @@ class RSSConfig(ConfigModel):
     strict: bool = (
         False  # Strict mode: filter entries whose rename stem matches existing downloads
     )
+    torrent_to_magnet: bool = False
     filter: MetadataFilterConfig = MetadataFilterConfig()
     priority: PriorityConfig = PriorityConfig()
 

@@ -36,7 +36,19 @@ def test_minimal_user_config_is_ready_to_run():
     config = _valid_config()
 
     assert config.metadata_provider_names() == ("regex", "tmdb")
+    assert config.rss.torrent_to_magnet is False
     assert ConfigValidator(config).validate() is True
+
+
+def test_torrent_to_magnet_can_be_enabled_in_rss_config():
+    config = _valid_config(
+        rss={
+            "urls": ["https://example.test/feed.xml"],
+            "torrent_to_magnet": True,
+        }
+    )
+
+    assert config.rss.torrent_to_magnet is True
 
 
 def test_metadata_pipeline_rejects_unrunnable_configurations():

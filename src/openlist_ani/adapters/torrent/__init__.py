@@ -1,6 +1,8 @@
 """Magnet-link resolution helpers (libtorrent-backed)."""
 
+from .candidate_transformer import TorrentToMagnetCandidateTransformer
 from .resolver import (
+    convert_torrent_url_to_magnet,
     LibtorrentMetadataClient,
     MagnetResolver,
     ResolveResult,
@@ -11,11 +13,13 @@ from .resolver import (
 )
 
 __all__ = [
+    "convert_torrent_url_to_magnet",
     "LibtorrentMetadataClient",
     "MagnetResolver",
     "ResolveResult",
     "TorrentFile",
     "TorrentFileResolver",
+    "TorrentToMagnetCandidateTransformer",
     "resolve_magnet",
     "resolve_torrent",
 ]

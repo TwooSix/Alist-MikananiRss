@@ -13,10 +13,11 @@ Two-stage flow:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import re
 import tempfile
 from dataclasses import dataclass, field
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import aiohttp
 
@@ -411,6 +412,7 @@ class _BencodeDecoder:
         self._blob = blob
         self._index = 0
         self._items = 0
+        self.info_span: tuple[int, int] | None = None
 
     def decode(self):
         value = self._value(0)
@@ -486,10 +488,15 @@ class _BencodeDecoder:
         previous: bytes | None = None
         while self._peek() != ord("e"):
             key = self._bytes()
-            if previous is not None and key < previous:
-                raise ValueError("bencode dictionary keys are not sorted")
+            if previous is not None and key <= previous:
+                raise ValueError(
+                    "bencode dictionary keys are not strictly sorted and unique"
+                )
             previous = key
+            value_start = self._index
             values[key] = self._value(depth + 1)
+            if depth == 0 and key == b"info":
+                self.info_span = (value_start, self._index)
         self._index += 1
         return values
 
@@ -536,6 +543,143 @@ def _text(value: object) -> str:
     if not isinstance(value, bytes):
         return ""
     return value.decode("utf-8", errors="replace").strip()
+
+
+def _torrent_trackers(root: dict[bytes, object]) -> list[str]:
+    trackers: list[str] = []
+
+    def add(value: object) -> None:
+        tracker = _text(value)
+        if tracker and tracker not in trackers:
+            trackers.append(tracker)
+
+    announce_list = root.get(b"announce-list")
+    if isinstance(announce_list, list):
+        for tier in announce_list:
+            if isinstance(tier, list):
+                for item in tier:
+                    add(item)
+            else:
+                add(tier)
+    add(root.get(b"announce"))
+    return trackers
+
+
+def _torrent_web_seeds(root: dict[bytes, object]) -> list[str]:
+    raw_web_seeds = root.get(b"url-list")
+    values = raw_web_seeds if isinstance(raw_web_seeds, list) else [raw_web_seeds]
+    web_seeds: list[str] = []
+    for value in values:
+        url = _text(value)
+        if url and url not in web_seeds:
+            web_seeds.append(url)
+    return web_seeds
+
+
+def _validate_torrent_info(info: dict[bytes, object]) -> tuple[bool, bool]:
+    meta_version = info.get(b"meta version")
+    if meta_version is not None and meta_version != 2:
+        raise ValueError(f"unsupported torrent meta version: {meta_version}")
+    is_v2 = meta_version == 2
+
+    if not _text(info.get(b"name.utf-8") or info.get(b"name")):
+        raise ValueError("torrent has no usable name")
+    piece_length = info.get(b"piece length")
+    if not isinstance(piece_length, int) or piece_length <= 0:
+        raise ValueError("torrent has no valid piece length")
+
+    if is_v2:
+        if piece_length < 16 * 1024 or piece_length & (piece_length - 1):
+            raise ValueError(
+                "v2 torrent piece length must be a power of two and at least 16 KiB"
+            )
+        if not isinstance(info.get(b"file tree"), dict):
+            raise ValueError("v2 torrent has no file tree")
+
+    if b"pieces" in info and not isinstance(info[b"pieces"], bytes):
+        raise ValueError("torrent pieces field must be a byte string")
+    has_v1 = not is_v2 or isinstance(info.get(b"pieces"), bytes)
+    if has_v1:
+        pieces = info.get(b"pieces")
+        if not isinstance(pieces, bytes) or len(pieces) % 20:
+            raise ValueError("v1 torrent pieces length must be a multiple of 20")
+        single_file = isinstance(info.get(b"length"), int)
+        multiple_files = isinstance(info.get(b"files"), list)
+        if single_file == multiple_files:
+            raise ValueError("v1 torrent must contain exactly one of length or files")
+        if single_file and int(info[b"length"]) < 0:
+            raise ValueError("v1 torrent length cannot be negative")
+        if multiple_files and not info[b"files"]:
+            raise ValueError("v1 torrent files list cannot be empty")
+    return is_v2, has_v1
+
+
+def _torrent_blob_to_magnet_python(blob: bytes) -> str:
+    """Build a magnet URI from the exact bencoded ``info`` dictionary."""
+    decoder = _BencodeDecoder(blob)
+    root = decoder.decode()
+    if not isinstance(root, dict):
+        raise ValueError("torrent root must be a dictionary")
+    info = root.get(b"info")
+    if not isinstance(info, dict) or decoder.info_span is None:
+        raise ValueError("torrent has no info dictionary")
+
+    start, end = decoder.info_span
+    encoded_info = blob[start:end]
+    is_v2, has_v1 = _validate_torrent_info(info)
+    exact_topics: list[str] = []
+    if has_v1:
+        exact_topics.append(
+            f"urn:btih:{hashlib.sha1(encoded_info).hexdigest()}"  # noqa: S324
+        )
+    if is_v2:
+        exact_topics.append(f"urn:btmh:1220{hashlib.sha256(encoded_info).hexdigest()}")
+    if not exact_topics:
+        raise ValueError("torrent info dictionary has no supported hash format")
+
+    parameters: list[tuple[str, str]] = [("xt", item) for item in exact_topics]
+    title = _text(info.get(b"name.utf-8") or info.get(b"name"))
+    if title:
+        parameters.append(("dn", title))
+    parameters.extend(("tr", tracker) for tracker in _torrent_trackers(root))
+    parameters.extend(("ws", web_seed) for web_seed in _torrent_web_seeds(root))
+    query = "&".join(f"{key}={quote(value, safe=':')}" for key, value in parameters)
+    return f"magnet:?{query}"
+
+
+def _torrent_blob_to_magnet(blob: bytes) -> str:
+    """Generate a magnet with libtorrent, falling back when it is unavailable."""
+    try:
+        import libtorrent as lt  # type: ignore[import-not-found]
+    except ImportError:
+        return _torrent_blob_to_magnet_python(blob)
+
+    try:
+        if load_torrent_buffer := getattr(lt, "load_torrent_buffer", None):
+            torrent = load_torrent_buffer(blob)
+        else:  # libtorrent 2.0 Python wheels may expose only torrent_info
+            torrent = lt.torrent_info(blob)
+        magnet = lt.make_magnet_uri(torrent)
+    except Exception as error:
+        raise ValueError(f"libtorrent rejected the torrent file: {error}") from error
+    if not magnet or not magnet.lower().startswith("magnet:?"):
+        raise ValueError("libtorrent could not generate a magnet URI")
+    return magnet
+
+
+async def convert_torrent_url_to_magnet(url: str) -> str:
+    """Download an HTTP(S) torrent file and convert it to a magnet URI."""
+    if not _looks_like_torrent_url(url):
+        raise ValueError("expected an HTTP(S) torrent URL")
+    blob, error = await _download_torrent_bytes(url)
+    if blob is None:
+        raise ValueError(error or "could not download torrent file")
+    try:
+        return await asyncio.to_thread(_torrent_blob_to_magnet, blob)
+    except (TypeError, ValueError) as parse_error:
+        raise ValueError(
+            f"downloaded torrent file is invalid: {parse_error}"
+        ) from parse_error
 
 
 class TorrentFileResolver:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict
 from openlist_ani.application.ports import (
+    CandidateTransformer,
     JobRepository,
     LibraryRepository,
     MetadataPhase,
@@ -42,6 +43,7 @@ class MetadataWorker:
         settings: CoreSettings,
         jobs_available: asyncio.Event,
         download_available: asyncio.Event,
+        candidate_transformers: list[CandidateTransformer] | None = None,
     ) -> None:
         self._jobs = jobs
         self._library = library
@@ -49,6 +51,7 @@ class MetadataWorker:
         self._settings = settings
         self._jobs_available = jobs_available
         self._download_available = download_available
+        self._candidate_transformers = list(candidate_transformers or [])
         self._stop = asyncio.Event()
 
     async def stop(self) -> None:
@@ -237,15 +240,62 @@ class MetadataWorker:
         if self._settings.strict_filtering:
             await self._apply_strict_policy(eligible, other_active_jobs, rejected)
 
+        selected = [job for job in eligible if job.id not in rejected]
+        transformed, transform_errors = await self._transform_candidates(selected)
+
         for job in ready:
             if reason := rejected.get(job.id):
                 await self._jobs.skip(job, reason)
+            elif error := transform_errors.get(job.id):
+                message = f"candidate transform failed: {error}"
+                if job.attempt_count >= 3:
+                    await self._jobs.fail(job, message)
+                else:
+                    await self._jobs.reschedule(
+                        job,
+                        message,
+                        _metadata_retry_delay(job.attempt_count),
+                    )
             else:
+                job.candidate = transformed.get(job.id, job.candidate)
                 reserved_titles.add(job.candidate.title)
                 job.artifact["base_path"] = self._settings.download_path
                 job.advance(JobStep.DOWNLOAD)
                 await self._jobs.save(job)
                 self._download_available.set()
+
+    async def _transform_candidates(
+        self, jobs: list[DownloadJob]
+    ) -> tuple[dict[str, ReleaseCandidate], dict[str, Exception]]:
+        if not self._candidate_transformers or not jobs:
+            return {}, {}
+
+        results = await asyncio.gather(
+            *(self._transform_candidate(job.candidate) for job in jobs),
+            return_exceptions=True,
+        )
+        transformed: dict[str, ReleaseCandidate] = {}
+        errors: dict[str, Exception] = {}
+        for job, result in zip(jobs, results):
+            if isinstance(result, asyncio.CancelledError):
+                raise result
+            if isinstance(result, Exception):
+                errors[job.id] = result
+            else:
+                transformed[job.id] = result
+        return transformed, errors
+
+    async def _transform_candidate(
+        self, candidate: ReleaseCandidate
+    ) -> ReleaseCandidate:
+        transformed = candidate
+        for transformer in self._candidate_transformers:
+            transformed = await transformer.transform(transformed)
+            if transformed.source_key != candidate.source_key:
+                raise ValueError(
+                    f"candidate transformer {transformer.name} changed source identity"
+                )
+        return transformed
 
     async def _apply_priority_policy(
         self,

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from openlist_ani.application.ports import (
+    CandidateTransformer,
     DownloadAdapter,
     FeedAdapter,
     MetadataProvider,
@@ -22,6 +23,7 @@ class DownloadBackendBundle:
 class AdapterRegistry:
     feeds: list[FeedAdapter] = field(default_factory=list)
     metadata: dict[str, MetadataProvider] = field(default_factory=dict)
+    candidate_transformers: list[CandidateTransformer] = field(default_factory=list)
     downloaders: dict[str, DownloadAdapter] = field(default_factory=dict)
     organizers: dict[str, Organizer] = field(default_factory=dict)
     download_backends: dict[str, DownloadBackendBundle] = field(default_factory=dict)
@@ -33,6 +35,13 @@ class AdapterRegistry:
 
     def register_metadata(self, adapter: MetadataProvider) -> None:
         self._put(self.metadata, adapter.name, adapter, "metadata")
+
+    def register_candidate_transformer(self, adapter: CandidateTransformer) -> None:
+        if any(item.name == adapter.name for item in self.candidate_transformers):
+            raise ValueError(
+                f"Candidate transformer already registered: {adapter.name}"
+            )
+        self.candidate_transformers.append(adapter)
 
     def register_downloader(self, adapter: DownloadAdapter) -> None:
         self._put(self.downloaders, adapter.name, adapter, "downloader")

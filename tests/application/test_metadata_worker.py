@@ -1,4 +1,5 @@
 import asyncio
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -8,9 +9,11 @@ from openlist_ani.adapters.persistence import (
     SqliteJobRepository,
     SqliteLibraryRepository,
 )
+from openlist_ani.adapters.torrent import TorrentToMagnetCandidateTransformer
 from openlist_ani.application.metadata_worker import MetadataWorker
 from openlist_ani.application.settings import CoreSettings
 from openlist_ani.domain import (
+    DownloadJob,
     JobStatus,
     JobStep,
     MetadataDocument,
@@ -104,6 +107,161 @@ async def test_same_download_url_is_idempotent_across_feed_sources(tmp_path):
     assert first is not None
     assert duplicate is None
     await database.close()
+
+
+@pytest.mark.asyncio
+async def test_only_policy_winner_is_transformed_before_download(tmp_path):
+    path = tmp_path / "data.db"
+    LegacyMigrationRunner(path, tmp_path / "none.db", tmp_path / "none.json").run()
+    database = Database(path)
+    await database.start()
+    jobs = SqliteJobRepository(database)
+    library = SqliteLibraryRepository(database)
+    download_available = asyncio.Event()
+    magnet = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"
+    converter = AsyncMock(return_value=magnet)
+    worker = MetadataWorker(
+        jobs=jobs,
+        library=library,
+        providers=[],
+        settings=CoreSettings(
+            download_path="/anime",
+            rename_format="{anime_name} S{season:02d}E{episode:02d}",
+            rss_interval_seconds=300,
+            metadata_providers=("regex",),
+        ),
+        jobs_available=asyncio.Event(),
+        download_available=download_available,
+        candidate_transformers=[TorrentToMagnetCandidateTransformer(converter)],
+    )
+    original_urls = [
+        "https://a.test/release.torrent",
+        "https://b.test/release.torrent",
+    ]
+    created = []
+    for source, url in zip(("source-a", "source-b"), original_urls):
+        created.append(
+            await jobs.add_candidate(
+                ReleaseCandidate.create(
+                    source_name=source,
+                    source_url=f"https://{source}.test/rss",
+                    title="Identical title",
+                    download_url=url,
+                )
+            )
+        )
+    assert all(job is not None for job in created)
+
+    claimed = await jobs.claim(JobStep.METADATA, 20)
+    source_keys = {job.id: job.candidate.source_key for job in claimed}
+    for job in claimed:
+        job.metadata = MetadataDocument(
+            values=ReleaseMetadata(anime_name="Example", season=1, episode=1)
+        )
+    await worker._apply_release_policies(claimed)
+
+    stored = [await jobs.get(job.id) for job in claimed]
+    winner = next(job for job in stored if job.status == JobStatus.PENDING)
+    rejected = next(job for job in stored if job.status == JobStatus.SKIPPED)
+    assert winner.step == JobStep.DOWNLOAD
+    assert winner.candidate.download_url == magnet
+    assert winner.candidate.source_key == source_keys[winner.id]
+    assert rejected.candidate.download_url in original_urls
+    converter.assert_awaited_once()
+    assert download_available.is_set()
+    await database.close()
+
+
+@pytest.mark.asyncio
+async def test_candidate_transform_failure_is_rescheduled_before_download(tmp_path):
+    path = tmp_path / "data.db"
+    LegacyMigrationRunner(path, tmp_path / "none.db", tmp_path / "none.json").run()
+    database = Database(path)
+    await database.start()
+    jobs = SqliteJobRepository(database)
+    library = SqliteLibraryRepository(database)
+    download_available = asyncio.Event()
+    converter = AsyncMock(side_effect=ValueError("invalid torrent"))
+    worker = MetadataWorker(
+        jobs=jobs,
+        library=library,
+        providers=[],
+        settings=CoreSettings(
+            download_path="/anime",
+            rename_format="{anime_name} S{season:02d}E{episode:02d}",
+            rss_interval_seconds=300,
+            metadata_providers=("regex",),
+        ),
+        jobs_available=asyncio.Event(),
+        download_available=download_available,
+        candidate_transformers=[TorrentToMagnetCandidateTransformer(converter)],
+    )
+    created = await jobs.add_candidate(
+        ReleaseCandidate.create(
+            source_name="source",
+            source_url="https://source.test/rss",
+            title="Example title",
+            download_url="https://source.test/release.torrent",
+        )
+    )
+    assert created is not None
+    job = (await jobs.claim(JobStep.METADATA, 1))[0]
+    job.metadata = MetadataDocument(
+        values=ReleaseMetadata(anime_name="Example", season=1, episode=1)
+    )
+
+    await worker._apply_release_policies([job])
+
+    stored = await jobs.get(job.id)
+    assert stored.status == JobStatus.RETRY_WAIT
+    assert stored.step == JobStep.METADATA
+    assert "candidate transform failed: invalid torrent" == stored.last_error
+    assert not download_available.is_set()
+    await database.close()
+
+
+@pytest.mark.asyncio
+async def test_candidate_transform_failure_is_bounded():
+    jobs = AsyncMock()
+    library = AsyncMock()
+    library.find_existing_titles.return_value = set()
+    library.find_releases_by_episodes.return_value = {}
+    jobs.list_active.return_value = []
+    job = DownloadJob(
+        id="job-1",
+        candidate=ReleaseCandidate.create(
+            source_name="source",
+            source_url="https://source.test/rss",
+            title="Example title",
+            download_url="https://source.test/release.torrent",
+        ),
+        metadata=MetadataDocument(
+            values=ReleaseMetadata(anime_name="Example", season=1, episode=1)
+        ),
+        attempt_count=3,
+    )
+    converter = AsyncMock(side_effect=ValueError("invalid torrent"))
+    worker = MetadataWorker(
+        jobs=jobs,
+        library=library,
+        providers=[],
+        settings=CoreSettings(
+            download_path="/anime",
+            rename_format="{anime_name} S{season:02d}E{episode:02d}",
+            rss_interval_seconds=300,
+            metadata_providers=("regex",),
+        ),
+        jobs_available=asyncio.Event(),
+        download_available=asyncio.Event(),
+        candidate_transformers=[TorrentToMagnetCandidateTransformer(converter)],
+    )
+
+    await worker._apply_release_policies([job])
+
+    jobs.fail.assert_awaited_once_with(
+        job, "candidate transform failed: invalid torrent"
+    )
+    jobs.reschedule.assert_not_awaited()
 
 
 def test_feed_unknown_quality_does_not_override_title_resolution():

@@ -8,6 +8,7 @@ port = 26666  # Backend API listening port
 urls = []
 interval_time = 300 # RSS fetch interval in seconds (default: 5 minutes)
 strict = false  # Strict mode: only download entries that can be successfully renamed (requires rename_format)
+torrent_to_magnet = false  # Convert eligible HTTP(S) torrent URLs to magnet links before they enter the download queue
 
 [rss.filter]
 exclude_patterns = []  # Regex patterns to exclude RSS entries by title (e.g. ["SP\\d+", "HEVC"])

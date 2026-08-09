@@ -70,6 +70,7 @@ from openlist_ani.application.service import CoreApplicationService
 from openlist_ani.application.settings import CoreSettings
 from openlist_ani.bootstrap.runtime import AppRuntime
 from openlist_ani.adapters.torrent import (
+    TorrentToMagnetCandidateTransformer,
     resolve_magnet,
     resolve_torrent,
 )
@@ -211,6 +212,7 @@ async def _create_runtime_assembly(
         settings=core_settings,
         jobs_available=metadata_available,
         download_available=download_available,
+        candidate_transformers=registry.candidate_transformers,
     )
     download_workers = DownloadWorkerPool(
         jobs=jobs,
@@ -294,6 +296,8 @@ def _build_registry(
     registry.register_feed(MikanFeedAdapter(feed_session))
     registry.register_feed(AniApiFeedAdapter(feed_session))
     registry.register_feed(CommonFeedAdapter(feed_session))
+    if config.rss.torrent_to_magnet:
+        registry.register_candidate_transformer(TorrentToMagnetCandidateTransformer())
 
     requested_metadata = set(core_settings.metadata_providers)
     if "regex" in requested_metadata:

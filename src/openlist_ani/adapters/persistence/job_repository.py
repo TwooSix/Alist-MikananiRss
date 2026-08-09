@@ -345,7 +345,9 @@ class SqliteJobRepository:
         cursor = await db.execute(
             """
             UPDATE jobs SET
-                metadata_json = ?, status = ?, step = ?, downloader_name = ?,
+                source_key = ?, source_name = ?, source_url = ?, title = ?,
+                download_url = ?, candidate_json = ?, metadata_json = ?,
+                status = ?, step = ?, downloader_name = ?,
                 checkpoint_version = ?, checkpoint_json = ?, artifact_json = ?,
                 attempt_count = ?, next_attempt_at = ?, last_error = ?,
                 output_path = ?, updated_at = ?, started_at = ?, completed_at = ?,
@@ -353,6 +355,12 @@ class SqliteJobRepository:
             WHERE id = ? AND lease_token IS ?
             """,
             (
+                job.candidate.source_key,
+                job.candidate.source_name,
+                job.candidate.source_url,
+                job.candidate.title,
+                job.candidate.download_url,
+                _json(_candidate_to_dict(job.candidate)),
                 _json(job.metadata.to_dict()),
                 job.status.value,
                 job.step.value,

@@ -48,6 +48,24 @@ def test_v1_config_is_backed_up_and_migrated_to_a_runnable_v2(tmp_path):
     assert manager.data.metadata.pipeline == ["ai", "tmdb"]
 
 
+def test_v1_torrent_to_magnet_setting_moves_to_rss_config(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_bytes(
+        LEGACY_CONFIG.replace(
+            b'token = "secret"\n',
+            b'token = "secret"\ntorrent_to_magnet = true\n',
+        )
+    )
+
+    manager = ConfigManager(path)
+
+    assert manager.load_failed is False
+    assert manager.data.rss.torrent_to_magnet is True
+    migrated = path.read_text(encoding="utf-8")
+    assert "[rss]" in migrated
+    assert "torrent_to_magnet = true" in migrated
+
+
 def test_concurrent_loaders_do_not_duplicate_or_corrupt_migration(tmp_path):
     path = tmp_path / "config.toml"
     path.write_bytes(LEGACY_CONFIG)

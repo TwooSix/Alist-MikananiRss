@@ -19,6 +19,7 @@ async def test_composed_runtime_starts_ready_and_releases_database(
         """
 [rss]
 urls = []
+torrent_to_magnet = true
 
 [metadata_parser]
 provider = "regex"
@@ -40,6 +41,10 @@ rename_format = "{anime_name} S{season:02d}E{episode:02d}"
     LegacyMigrationRunner().run()
 
     assembly = await _compose_runtime(config, settings)
+    assert [
+        transformer.name
+        for transformer in assembly.runtime.metadata_worker._candidate_transformers
+    ] == ["torrent_to_magnet"]
     await assembly.runtime.start()
     try:
         await asyncio.sleep(0)

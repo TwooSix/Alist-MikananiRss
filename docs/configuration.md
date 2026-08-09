@@ -14,6 +14,7 @@ port = 26666  # Backend API listening port
 urls = []
 interval_time = 300 # RSS fetch interval in seconds (default: 5 minutes)
 strict = false  # Strict mode: only download entries that can be successfully renamed
+torrent_to_magnet = false  # 启用后，最终通过筛选的 HTTP(S) 种子链接会在进入下载队列前转换为磁力链接
 
 [rss.filter]
 exclude_patterns = []  # Regex patterns to exclude RSS entries by title
@@ -157,6 +158,9 @@ retention = "1 week"  # How long to keep old logs: "1 week", "30 days", "3 month
 | `urls` | list | `[]` | RSS 订阅链接列表 |
 | `interval_time` | int | `300` | RSS 抓取间隔（秒） |
 | `strict` | bool | `false` | 严格模式：仅下载能成功重命名的条目（需配合 `rename_format` 使用） |
+| `torrent_to_magnet` | bool | `false` | 最终通过筛选的 HTTP(S) 种子链接先转换为磁力链接，再进入下载队列。 |
+
+> 建议仅在下载后端无法直接处理 HTTP(S) 种子链接时启用。磁力任务需要先从 Peer 获取元数据；低活跃、无可用 Peer 或私有 Tracker 种子可能等待更久或无法开始下载。
 
 #### rss.filter（过滤与黑名单）
 

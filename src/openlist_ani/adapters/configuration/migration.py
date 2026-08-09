@@ -296,6 +296,10 @@ def _migrate_downloader(document: TOMLDocument) -> None:
     for key in ("download_path", "rename_format"):
         if key in legacy_openlist and key not in downloader:
             downloader[key] = legacy_openlist[key]
+    if "torrent_to_magnet" in legacy_openlist:
+        rss = _ensure_table(document, "rss")
+        if "torrent_to_magnet" not in rss:
+            rss["torrent_to_magnet"] = legacy_openlist["torrent_to_magnet"]
     openlist = _ensure_table(downloader, "openlist")
     for key in ("url", "token", "offline_download_tool"):
         if key in legacy_openlist and key not in openlist:

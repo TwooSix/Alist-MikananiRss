@@ -104,6 +104,15 @@ class MetadataProvider(Protocol):
     async def close(self) -> None: ...
 
 
+class CandidateTransformer(Protocol):
+    """Transform an eligible candidate before it enters the download queue."""
+
+    @property
+    def name(self) -> str: ...
+
+    async def transform(self, candidate: ReleaseCandidate) -> ReleaseCandidate: ...
+
+
 class DownloadAdapter(Protocol):
     @property
     def name(self) -> str: ...
