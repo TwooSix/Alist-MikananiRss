@@ -87,9 +87,7 @@ class OpenListFileDetector:
         video_relative_path: str,
     ) -> list[DetectedSidecar]:
         parent, video_name = os.path.split(video_relative_path)
-        directory_path = (
-            f"{temp_path.rstrip('/')}/{parent}" if parent else temp_path
-        )
+        directory_path = f"{temp_path.rstrip('/')}/{parent}" if parent else temp_path
         entries = await self._client.list_files(directory_path)
         if not entries:
             return []

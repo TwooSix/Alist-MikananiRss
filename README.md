@@ -102,7 +102,7 @@ token = ""                          # 令牌，见「设置 → 其他 → 令�
 offline_download_tool = "qBittorrent"
 
 [metadata]
-pipeline = ["regex", "tmdb"]       # 配置 AI source 后可改为 ["ai", "tmdb"]
+pipeline = ["regex", "tmdb"]       # 默认配置；推荐配置 AI source 后改为 ["ai", "tmdb"]
 
 # 可选：API source。Metadata 直接调用 API，Assistant 由内置 Pi 承载。
 # [ai.sources.primary]

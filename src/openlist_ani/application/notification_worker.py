@@ -83,9 +83,7 @@ class NotificationWorker:
         for batch in batches:
             batch_items = list(batch.items)
             try:
-                success = await self._sink.send_to_target(
-                    target_key, batch.message
-                )
+                success = await self._sink.send_to_target(target_key, batch.message)
             except Exception as error:
                 await self._outbox.delivery_retry(batch_items, str(error))
                 continue

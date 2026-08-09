@@ -109,7 +109,6 @@ token = ""
 base_url = "https://ilinkai.weixin.qq.com"
 home_channel = ""
 allowed_users = ["user@im.wechat"]
-dm_policy = "open"
 
 [assistant.feishu]
 enabled = false
@@ -137,6 +136,8 @@ level = "INFO"  # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
 rotation = "00:00"  # Log rotation: time-based "00:00" (midnight)
 retention = "1 week"  # How long to keep old logs: "1 week", "30 days", "3 months", etc.
 ```
+
+配置项采用严格字段校验：拼错或未知的配置键会在启动时直接报错，避免配置看似生效但实际被忽略。
 
 ## 配置说明
 
@@ -184,7 +185,7 @@ exclude_languages = ["未知"]   # 排除语言未知的资源
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
-| `field_order` | list | `["fansub", "quality", "languages"]` | 字段比较优先级顺序（靠前优先级高） |
+| `field_order` | list | `["fansub", "quality", "languages"]` | 字段比较优先级顺序（靠前优先级高）；仅支持 `fansub`、`quality`、`languages`，拼错会在启动时拒绝 |
 | `fansub` | list | `[]` | 字幕组优先级列表（靠前优先级高） |
 | `languages` | list | `[]` | 语言优先级列表（靠前优先级高）。单语言：`"简"`、`"繁"`、`"日"`、`"英"`；组合语言：`"简繁"`（简繁双语）等 |
 | `quality` | list | `["2160p", "1080p", "720p", "480p", "360p"]` | 清晰度优先级列表（默认高清优先）。设为 `[]` 禁用清晰度过滤 |
@@ -255,20 +256,32 @@ quality = ["2160p", "1080p", "720p", "480p", "360p"]
 
 ### Metadata pipeline
 
-`metadata.pipeline` 是有序步骤列表。未配置 AI source 时默认使用 `["regex", "tmdb"]`；需要 AI 提取时设置为 `["ai", "tmdb"]`。`metadata.ai_source` 只控制其中的 `ai` 步骤，省略时选择第一个声明的 source。设置了 `ai_source` 但 pipeline 不包含 `ai` 时仅告警。
+`metadata.pipeline` 是有依赖顺序的步骤列表：`regex`、`ai` 负责先提取番剧名、季和集数，`tmdb` 只能在这些字段存在后补全元数据。推荐使用 `["ai", "tmdb"]`；未启用 AI 或省略 pipeline 时，默认使用 `["regex", "tmdb"]`。仅添加 AI source（例如只给 Assistant 使用）不会改变 Metadata 的默认行为，仍需显式把 pipeline 改为 `["ai", "tmdb"]`。
+
+常用的合法配置：
+
+- `["ai", "tmdb"]`：AI 提取后由 TMDB 补全，推荐配置。
+- `["regex", "tmdb"]`：未启用 AI 时的默认配置。
+- `["regex"]` 或 `["ai"]`：只提取标题信息，不使用 TMDB 补全。
+
+正常使用时不要同时配置 `regex` 和 `ai`。当前运行时仍兼容这种组合，但两者会重复解析标题，并产生字段覆盖和额外重试，不能作为 fallback 使用。
+
+`["tmdb"]` 会因为缺少标题提取步骤而拒绝启动；`["tmdb", "ai"]` 会因为依赖顺序颠倒而拒绝启动。未知 provider 也会直接报告配置错误，不再等到任务执行后持续重试。
+
+`metadata.ai_source` 只控制其中的 `ai` 步骤，省略时选择第一个声明的 source。显式指定的 source 必须真实存在，并且 pipeline 必须包含 `ai`，否则配置加载失败。
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
-| `pipeline` | list | 自动选择 | 支持 `regex`、`ai`、`tmdb`，按声明顺序执行 |
+| `pipeline` | list | `["regex", "tmdb"]` | 支持 `regex`、`ai`、`tmdb`；标题提取必须位于 TMDB 补全之前 |
 | `ai_source` | string | 第一个 source | `ai` 步骤使用的 `[ai.sources.<名称>]` |
 | `tmdb.api_key` | string | 内置默认值 | TMDB API Key |
 | `tmdb.language` | string | `"zh-CN"` | TMDB 元数据语言 |
 
-Agent source 的 Metadata 调用是无工具、无历史的一次性会话。输出必须满足结构化 JSON 约束；非法输出会修复一次，仍失败则由现有 pipeline fallback 继续处理。
+Agent source 的 Metadata 调用是无工具、无历史的一次性会话。输出必须满足结构化 JSON 约束；非法输出会修复一次。若 pipeline 中还有其他标题提取步骤且已得到完整字段，后续步骤可以继续；否则该任务会按统一的失败策略处理。
 
 ### AI sources
 
-配置头固定为 `[ai.sources.<名称>]`，可以同时声明多个 source，不使用 profile 或数组。`metadata.ai_source` 和 `assistant.backend` 可以独立选择；二者省略时都选择第一个声明项，不做隐式故障转移。
+配置头固定为 `[ai.sources.<名称>]`，可以同时声明多个 source，不使用 profile 或数组。`metadata.ai_source` 和 `assistant.backend` 可以独立选择；二者省略时都选择第一个声明项，不做隐式故障转移。显式选择 source 时必须先定义对应的 `[ai.sources.<名称>]`。
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
@@ -404,7 +417,6 @@ allowed_users = ["user@im.wechat"]
 | `base_url` | string | `"https://ilinkai.weixin.qq.com"` | iLink API 地址 |
 | `home_channel` | string | `""` | 允许微信助理交互的唯一会话；由 `openlist-ani-wechat-login` 捕获首条消息后打印 |
 | `allowed_users` | list | 无 | 必填；允许使用 Assistant 的微信发送者 ID，空列表会阻止启动 |
-| `dm_policy` | string | `"open"` | 私聊访问策略，当前文本实现保留该配置 |
 
 微信助理启动前也需要先执行 `openlist-ani-wechat-login`，并把打印出的 `account_id/token/base_url/home_channel` 填入配置。
 

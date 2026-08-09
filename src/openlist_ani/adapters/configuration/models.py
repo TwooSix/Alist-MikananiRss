@@ -47,12 +47,25 @@ MetadataValidatorProvider = Literal["tmdb", "none"]
 LLMProviderType = Literal["openai", "anthropic"]
 AISourceType = Literal["api", "agent"]
 AIProvider = Literal["openai-compatible", "anthropic-messages"]
+NotificationBotType = Literal["telegram", "pushplus", "wechat", "feishu"]
+FeishuConnectionMode = Literal["websocket", "webhook"]
+FeishuDomain = Literal["feishu", "lark"]
+LogLevel = Literal[
+    "TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL", "FATAL"
+]
+
+_METADATA_PROVIDER_PHASES = {
+    "regex": "title",
+    "ai": "title",
+    "tmdb": "enrichment",
+}
+_PRIORITY_FIELDS = frozenset({"fansub", "quality", "languages"})
 
 
 class ConfigModel(BaseModel):
     """Base model that also validates values changed after loading."""
 
-    model_config = ConfigDict(validate_assignment=True)
+    model_config = ConfigDict(validate_assignment=True, extra="forbid")
 
 
 def _normalize_choice(value: Any) -> Any:
@@ -62,6 +75,51 @@ def _normalize_choice(value: Any) -> Any:
 def _normalize_offline_download_tool_name(value: str) -> str:
     stripped = value.strip()
     return _OPENLIST_TOOL_NAMES.get(stripped.casefold(), stripped)
+
+
+def normalize_metadata_pipeline(providers: list[str]) -> list[str]:
+    """Return canonical provider names while preserving declared order."""
+    normalized = [
+        "ai" if item.strip().lower() == "llm" else item.strip().lower()
+        for item in providers
+        if item.strip()
+    ]
+    return list(dict.fromkeys(normalized))
+
+
+def validate_metadata_pipeline(
+    providers: list[str] | tuple[str, ...], *, allow_empty: bool = False
+) -> None:
+    """Validate provider availability and the title-before-enrichment contract."""
+    if not providers:
+        if allow_empty:
+            return
+        raise ValueError("At least one metadata provider is required.")
+
+    unknown = [name for name in providers if name not in _METADATA_PROVIDER_PHASES]
+    if unknown:
+        supported = ", ".join(_METADATA_PROVIDER_PHASES)
+        raise ValueError(
+            f"Unknown metadata provider(s): {', '.join(unknown)}. "
+            f"Supported providers: {supported}."
+        )
+
+    if not any(_METADATA_PROVIDER_PHASES[name] == "title" for name in providers):
+        raise ValueError(
+            "metadata.pipeline requires 'regex' or 'ai' before enrichment; "
+            "'tmdb' cannot extract episode metadata by itself."
+        )
+
+    enrichment_started = False
+    for name in providers:
+        phase = _METADATA_PROVIDER_PHASES[name]
+        if phase == "enrichment":
+            enrichment_started = True
+        elif enrichment_started:
+            raise ValueError(
+                "metadata.pipeline must place title extraction ('regex' or 'ai') "
+                "before enrichment ('tmdb')."
+            )
 
 
 class PriorityConfig(ConfigModel):
@@ -85,6 +143,20 @@ class PriorityConfig(ConfigModel):
     quality: list[str] = Field(
         default_factory=lambda: ["2160p", "1080p", "720p", "480p", "360p"]
     )  # Quality priority (high to low); set to [] to disable
+
+    @field_validator("field_order")
+    @classmethod
+    def _validate_field_order(cls, fields: list[str]) -> list[str]:
+        normalized = [field.strip().lower() for field in fields]
+        unknown = [field for field in normalized if field not in _PRIORITY_FIELDS]
+        if unknown:
+            raise ValueError(
+                f"Unknown priority field(s): {', '.join(unknown)}. "
+                f"Supported fields: {', '.join(sorted(_PRIORITY_FIELDS))}."
+            )
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("rss.priority.field_order cannot contain duplicates.")
+        return normalized
 
 
 class MetadataFilterConfig(ConfigModel):
@@ -121,7 +193,9 @@ class MetadataFilterConfig(ConfigModel):
 
 class RSSConfig(ConfigModel):
     urls: list[str] = Field(default_factory=list)
-    interval_time: int = 300  # RSS fetch interval in seconds (default: 5 minutes)
+    interval_time: int = Field(
+        default=300, gt=0
+    )  # RSS fetch interval in seconds (default: 5 minutes)
     strict: bool = (
         False  # Strict mode: filter entries whose rename stem matches existing downloads
     )
@@ -267,21 +341,29 @@ class AIConfig(ConfigModel):
         for name in sources:
             if not name.strip():
                 raise ValueError("AI source names cannot be empty.")
+            if name != name.strip():
+                raise ValueError("AI source names cannot have surrounding whitespace.")
         return sources
 
     def resolve(
         self, name: str | None, *, consumer: str
     ) -> tuple[str, AISourceConfig] | None:
+        selected_name = name.strip() if name else ""
         if not self.sources:
+            if selected_name:
+                raise ValueError(
+                    f"AI source '{selected_name}' selected by {consumer}, but no "
+                    "[ai.sources.*] entries are configured."
+                )
             return None
-        if name is None or not name.strip():
+        if not selected_name:
             return next(iter(self.sources.items()))
         try:
-            return name, self.sources[name]
+            return selected_name, self.sources[selected_name]
         except KeyError as error:
             available = ", ".join(self.sources)
             raise ValueError(
-                f"Unknown AI source '{name}' selected by {consumer}. "
+                f"Unknown AI source '{selected_name}' selected by {consumer}. "
                 f"Available sources: {available}."
             ) from error
 
@@ -337,18 +419,16 @@ class MetadataPipelineConfig(ConfigModel):
     @field_validator("pipeline")
     @classmethod
     def _normalize_providers(cls, providers: list[str]) -> list[str]:
-        normalized = [
-            "ai" if item.strip().lower() == "llm" else item.strip().lower()
-            for item in providers
-            if item.strip()
-        ]
-        return list(dict.fromkeys(normalized))
+        normalized = normalize_metadata_pipeline(providers)
+        validate_metadata_pipeline(normalized, allow_empty=True)
+        return normalized
 
     @field_validator("providers")
     @classmethod
     def _normalize_legacy_providers(cls, providers: list[str]) -> list[str]:
-        normalized = [item.strip().lower() for item in providers if item.strip()]
-        return list(dict.fromkeys(normalized))
+        normalized = normalize_metadata_pipeline(providers)
+        validate_metadata_pipeline(normalized, allow_empty=True)
+        return normalized
 
 
 class TMDBConfig(ConfigModel):
@@ -365,8 +445,6 @@ class TMDBConfig(ConfigModel):
 
 class NotificationBotDetails(ConfigModel):
     """Mapping-compatible base for typed notification bot settings."""
-
-    model_config = ConfigDict(validate_assignment=True, extra="allow")
 
     def get(self, key: str, default: Any = None) -> Any:
         return self.model_dump(exclude_none=True).get(key, default)
@@ -395,8 +473,13 @@ class FeishuNotificationBotDetails(NotificationBotDetails):
     app_secret: str = ""
     receive_id: str | None = None
     receive_id_type: str | None = None
-    domain: str = "feishu"
+    domain: FeishuDomain = "feishu"
     state_dir: str = "data/messaging"
+
+    @field_validator("domain", mode="before")
+    @classmethod
+    def _normalize_domain(cls, value: Any) -> Any:
+        return _normalize_choice(value)
 
 
 _NOTIFICATION_BOT_DETAIL_TYPES: dict[str, type[NotificationBotDetails]] = {
@@ -410,7 +493,7 @@ _NOTIFICATION_BOT_DETAIL_TYPES: dict[str, type[NotificationBotDetails]] = {
 class BotConfig(ConfigModel):
     """Configuration for one notification bot with type-specific details."""
 
-    type: str
+    type: NotificationBotType
     enabled: bool = True
     config: NotificationBotDetails | dict[str, Any] = Field(default_factory=dict)
 
@@ -483,7 +566,9 @@ class WechatAssistantConfig(ConfigModel):
     base_url: str = "https://ilinkai.weixin.qq.com"
     home_channel: str = ""
     allowed_users: list[str] = Field(default_factory=list)
-    dm_policy: str = "open"
+    # Accepted only so existing v2 files keep loading. Access is enforced by
+    # home_channel + allowed_users; this legacy field has no runtime effect.
+    dm_policy: str = Field(default="open", exclude=True)
 
     @field_validator("allowed_users")
     @classmethod
@@ -497,10 +582,10 @@ class FeishuAssistantConfig(ConfigModel):
     enabled: bool = False
     app_id: str = ""
     app_secret: str = ""
-    domain: str = "feishu"
-    connection_mode: str = "websocket"
+    domain: FeishuDomain = "feishu"
+    connection_mode: FeishuConnectionMode = "websocket"
     webhook_host: str = "127.0.0.1"
-    webhook_port: int = 8765
+    webhook_port: int = Field(default=8765, ge=1, le=65535)
     webhook_path: str = "/feishu/webhook"
     bot_open_id: str = ""
     require_mention: bool = True
@@ -511,6 +596,11 @@ class FeishuAssistantConfig(ConfigModel):
     @classmethod
     def _validate_allowed_users(cls, values: list[str]) -> list[str]:
         return _validate_remote_user_ids(values, platform="Feishu")
+
+    @field_validator("connection_mode", "domain", mode="before")
+    @classmethod
+    def _normalize_connection_mode(cls, value: Any) -> Any:
+        return _normalize_choice(value)
 
 
 class AssistantConfig(ConfigModel):
@@ -527,11 +617,16 @@ class AssistantConfig(ConfigModel):
 class LogConfig(ConfigModel):
     """Configuration for logging."""
 
-    level: str = "INFO"  # Log level: DEBUG, INFO, WARNING, ERROR, FATAL
+    level: LogLevel = "INFO"  # Log level: DEBUG, INFO, WARNING, ERROR, FATAL
     rotation: str = (
         "00:00"  # Log rotation time (e.g., "00:00" for midnight, "500 MB" for size-based)
     )
     retention: str = "1 week"  # How long to keep old logs
+
+    @field_validator("level", mode="before")
+    @classmethod
+    def _normalize_level(cls, value: Any) -> Any:
+        return value.strip().upper() if isinstance(value, str) else value
 
 
 class BangumiConfig(ConfigModel):
@@ -560,7 +655,7 @@ class BackendConfig(ConfigModel):
     """Configuration for the backend API server."""
 
     host: str = "127.0.0.1"  # Bind address (localhost only by default)
-    port: int = 26666  # Listening port
+    port: int = Field(default=26666, ge=1, le=65535)  # Listening port
 
 
 class UserConfig(ConfigModel):
@@ -596,8 +691,7 @@ class UserConfig(ConfigModel):
             return tuple(self.metadata.pipeline)
         if self.metadata.providers:
             return tuple(self.metadata.providers)
-        providers = ["ai" if self.ai.sources else "regex", "tmdb"]
-        return tuple(dict.fromkeys(providers))
+        return "regex", "tmdb"
 
     def resolve_metadata_ai_source(self) -> tuple[str, AISourceConfig] | None:
         return self.ai.resolve(self.metadata.ai_source, consumer="metadata.ai_source")
@@ -608,6 +702,11 @@ class UserConfig(ConfigModel):
     @model_validator(mode="after")
     def _validate_source_references(self) -> UserConfig:
         if self.metadata.ai_source:
+            if "ai" not in self.metadata_provider_names():
+                raise ValueError(
+                    "metadata.ai_source is configured, but metadata.pipeline does "
+                    "not contain 'ai'."
+                )
             self.resolve_metadata_ai_source()
         if self.assistant.backend:
             self.resolve_assistant_source()

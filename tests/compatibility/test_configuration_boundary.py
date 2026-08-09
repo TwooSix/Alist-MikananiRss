@@ -23,7 +23,7 @@ def test_new_metadata_provider_list_overrides_legacy_config():
         }
     )
 
-    assert compile_core_settings(config).metadata_providers == ("llm", "tmdb")
+    assert compile_core_settings(config).metadata_providers == ("ai", "tmdb")
 
 
 def test_rss_update_preserves_unrelated_comments(tmp_path):

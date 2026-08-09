@@ -233,17 +233,23 @@ def _task_row(task: _LegacyTask) -> dict[str, Any]:
 
 
 def _map_state(state: str) -> tuple[str, str]:
-    if state == "failed":
-        return "failed", "download"
-    if state == "cancelled":
-        return "cancelled", "download"
-    if state == "completed":
-        return "completed", "finalize"
-    if state in {"pending", "downloading"}:
-        return "pending", "download"
-    if state in {"downloaded", "renaming"}:
-        return "pending", "organize"
-    return "pending", "finalize"
+    mapping = {
+        "pending": ("pending", "download"),
+        "downloading": ("pending", "download"),
+        "downloaded": ("pending", "organize"),
+        "renaming": ("pending", "organize"),
+        "renamed": ("pending", "finalize"),
+        "notifying": ("pending", "finalize"),
+        # Terminal rows are not normally persisted by v1, but accepting the
+        # known values makes hand-crafted/older stores deterministic.
+        "failed": ("failed", "download"),
+        "cancelled": ("cancelled", "download"),
+        "completed": ("completed", "finalize"),
+    }
+    try:
+        return mapping[state]
+    except KeyError as error:
+        raise ValueError(f"Unsupported legacy task state: {state!r}") from error
 
 
 def _candidate_dict(candidate: ReleaseCandidate) -> dict[str, Any]:

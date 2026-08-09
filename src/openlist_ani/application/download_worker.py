@@ -154,6 +154,7 @@ class DownloadWorkerPool:
                 )
                 job.artifact["target_filename"] = target_filename
                 await self._jobs.save(job)
+
             async def checkpoint(payload: dict) -> None:
                 job.artifact["organize_plan"] = dict(payload)
                 await self._jobs.save(job)

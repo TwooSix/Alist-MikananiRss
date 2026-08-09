@@ -73,9 +73,7 @@ class SqliteOutboxRepository:
         now = utc_now()
         active_targets = tuple(dict.fromkeys(target_keys))
         async with self._database.operation(write=True) as db:
-            rows = await (
-                await db.execute(
-                    """
+            rows = await (await db.execute("""
                     SELECT o.id
                     FROM notification_outbox o
                     WHERE o.status != 'delivered'
@@ -84,9 +82,7 @@ class SqliteOutboxRepository:
                           WHERE d.outbox_id = o.id
                       )
                     ORDER BY o.created_at, o.id
-                    """
-                )
-            ).fetchall()
+                    """)).fetchall()
             if active_targets:
                 for row in rows:
                     for target_key in active_targets:

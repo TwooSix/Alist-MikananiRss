@@ -20,7 +20,7 @@ from typing import Callable, Iterator
 
 import tomlkit
 from pydantic import ValidationError
-from tomlkit.container import Container
+from tomlkit.container import Container, OutOfOrderTableProxy
 from tomlkit.items import Item, Table
 from tomlkit.toml_document import TOMLDocument
 
@@ -40,6 +40,7 @@ class MigrationResult:
 
 
 Migration = Callable[[TOMLDocument], None]
+TomlTable = Table | OutOfOrderTableProxy
 
 
 def migrate_config(path: Path) -> MigrationResult:
@@ -78,12 +79,24 @@ def migrate_config(path: Path) -> MigrationResult:
             # Validate the exact bytes which will replace the original file.
             reparsed = _parse_document(encoded, path)
             config = _validate_document(reparsed, path)
-            _atomic_replace(path, encoded)
         except Exception as error:
             raise ConfigMigrationError(
                 f"Failed to migrate {path}; the original file was not replaced. "
                 f"Backup: {backup_path}. Reason: {error}"
             ) from error
+
+        try:
+            _atomic_replace(path, encoded)
+        except OSError:
+            # Windows read-only files and single-file container mounts can allow
+            # the backup but reject atomic replacement. The validated in-memory
+            # document is still safe to use, and the original remains untouched.
+            return MigrationResult(
+                config=config,
+                migrated=True,
+                persisted=False,
+                backup_path=backup_path,
+            )
 
         return MigrationResult(
             config=config,
@@ -166,7 +179,7 @@ def _migrate_v1_to_v2(document: TOMLDocument) -> None:
     document["config_version"] = CURRENT_CONFIG_VERSION
 
 
-def _migrate_llm(document: TOMLDocument, legacy_llm: Table | None) -> str | None:
+def _migrate_llm(document: TOMLDocument, legacy_llm: TomlTable | None) -> str | None:
     if legacy_llm is None:
         return None
     api_key = _string(legacy_llm.get("openai_api_key"))
@@ -211,7 +224,7 @@ def _migrate_llm(document: TOMLDocument, legacy_llm: Table | None) -> str | None
 
 def _migrate_metadata(
     document: TOMLDocument,
-    legacy_llm: Table | None,
+    legacy_llm: TomlTable | None,
     source_name: str | None,
 ) -> None:
     metadata = _ensure_table(document, "metadata")
@@ -300,7 +313,7 @@ def _normalise_pipeline(values: list[object]) -> list[str]:
     return normalised
 
 
-def _ensure_table(container: Container, key: str) -> Table:
+def _ensure_table(container: Container, key: str) -> TomlTable:
     existing = _table(container.get(key))
     if existing is not None:
         return existing
@@ -309,15 +322,15 @@ def _ensure_table(container: Container, key: str) -> Table:
     return created
 
 
-def _table(value: Item | object | None) -> Table | None:
-    return value if isinstance(value, Table) else None
+def _table(value: Item | object | None) -> TomlTable | None:
+    return value if isinstance(value, (Table, OutOfOrderTableProxy)) else None
 
 
 def _string(value: object | None) -> str:
     return value if isinstance(value, str) else ""
 
 
-def _table_values(table: Table) -> dict[str, object]:
+def _table_values(table: TomlTable) -> dict[str, object]:
     return {key: value for key, value in table.unwrap().items()}
 
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from openlist_ani.logger import FATAL_LEVEL, logger
 from openlist_ani.application.settings import CoreSettings
 
-from .models import BotConfig, UserConfig
+from .models import BotConfig, UserConfig, validate_metadata_pipeline
 
 _NOTIFICATION_REQUIREMENTS: dict[str, tuple[str, tuple[str, ...]]] = {
     "telegram": ("Telegram", ("bot_token", "user_id")),
@@ -31,8 +31,7 @@ def validate_core_settings(settings: CoreSettings) -> None:
     invalid = [name for name, value in positive_values.items() if value <= 0]
     if invalid:
         raise ValueError(f"Core settings must be positive: {', '.join(invalid)}")
-    if not settings.metadata_providers:
-        raise ValueError("At least one metadata provider is required")
+    validate_metadata_pipeline(settings.metadata_providers)
     if not settings.downloader.strip():
         raise ValueError("A download backend is required")
     if not settings.organizer.strip():
@@ -56,7 +55,7 @@ class ConfigValidator:
         warnings: list[str] = []
 
         self._validate_core_config(errors)
-        self._validate_metadata_dependencies(errors, warnings)
+        self._validate_metadata_dependencies(errors)
         self._validate_notification_config(errors, warnings)
         self._validate_assistant_config(errors, warnings)
         self._log_validation_results(errors, warnings)
@@ -66,6 +65,8 @@ class ConfigValidator:
     def _validate_core_config(self, errors: list[str]) -> None:
         if not self._data.rss.urls:
             errors.append("No RSS URLs configured. Please add RSS URLs in [rss] urls.")
+        elif any(not url.strip() for url in self._data.rss.urls):
+            errors.append("RSS URLs cannot contain empty values.")
 
         openlist = self._data.downloader.openlist
         # Direct Python users may still construct the deprecated v1 field; all
@@ -73,28 +74,19 @@ class ConfigValidator:
         if self._data.openlist.token and not openlist.token:
             openlist = self._data.openlist
 
-        if not openlist.url:
+        if not openlist.url.strip():
             errors.append(
                 "OpenList URL is not configured in [downloader.openlist] url."
             )
 
-        if not openlist.token:
+        if not openlist.token.strip():
             errors.append(
                 "OpenList token is not configured in [downloader.openlist] token. "
                 "Authentication will fail without a valid token."
             )
 
-    def _validate_metadata_dependencies(
-        self, errors: list[str], warnings: list[str]
-    ) -> None:
+    def _validate_metadata_dependencies(self, errors: list[str]) -> None:
         from openlist_ani.assistant.harness.adapters import agent_adapter_names
-
-        providers = self._data.metadata_provider_names()
-        if self._data.metadata.ai_source and "ai" not in providers:
-            warnings.append(
-                "metadata.ai_source is configured but metadata.pipeline does not "
-                "contain 'ai'; the source selection will be ignored."
-            )
 
         # Compatibility for direct callers which still build v1 models.  A
         # migrated file never reaches this branch.
@@ -130,6 +122,12 @@ class ConfigValidator:
             )
             return
 
+        if not any(bot.enabled for bot in self._data.notification.bots):
+            errors.append(
+                "Notification is enabled but all configured bots are disabled."
+            )
+            return
+
         for i, bot_cfg in enumerate(self._data.notification.bots):
             if not bot_cfg.enabled:
                 continue
@@ -146,7 +144,7 @@ class ConfigValidator:
 
         requirement = _NOTIFICATION_REQUIREMENTS.get(bot_cfg.type)
         if requirement is None:
-            warnings.append(f"{bot_label}: Unknown bot type '{bot_cfg.type}'.")
+            errors.append(f"{bot_label}: Unknown bot type '{bot_cfg.type}'.")
             return
         bot_name, required_keys = requirement
         hint = (

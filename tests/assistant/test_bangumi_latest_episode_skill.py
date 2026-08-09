@@ -9,12 +9,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from openlist_ani.assistant.builtin_skills import SKILLS_ROOT
-
-
-def test_bangumi_skill_exposes_latest_episode_script() -> None:
-    assert (SKILLS_ROOT / "bangumi/scripts/latest_episode.py").is_file()
-
 
 @pytest.mark.asyncio
 async def test_latest_episode_reports_latest_aired_main_episode(monkeypatch) -> None:

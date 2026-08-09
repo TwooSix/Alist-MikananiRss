@@ -11,6 +11,7 @@ import aiohttp
 import uvicorn
 
 from openlist_ani.adapters.configuration import (
+    ConfigValidator,
     compile_core_settings,
     get_config,
     validate_core_settings,
@@ -115,6 +116,8 @@ def _load_runtime_config() -> tuple[object, CoreSettings]:
     )
     if config.load_failed:
         logger.log(FATAL_LEVEL, "Configuration could not be parsed; exiting")
+        raise SystemExit(1)
+    if not ConfigValidator(config.data).validate():
         raise SystemExit(1)
     core_settings = compile_core_settings(config.data)
     validate_core_settings(core_settings)

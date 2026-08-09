@@ -36,7 +36,9 @@ token = ""
 offline_download_tool = "qBittorrent"  # Supported: aria2, qBittorrent, PikPak, 115 Cloud, 115 Open, 123Pan, 123 Open, SimpleHttp, Thunder, ThunderBrowser, ThunderX, Transmission
 
 [metadata]
-pipeline = ["regex", "tmdb"]  # Use ["ai", "tmdb"] after configuring an AI source
+# Default when AI is not enabled. The recommended pipeline is ["ai", "tmdb"];
+# title extraction must come before TMDB, which cannot run by itself.
+pipeline = ["regex", "tmdb"]
 # ai_source = "primary"  # Optional; defaults to the first [ai.sources.*] table
 
 [metadata.tmdb]
@@ -108,7 +110,6 @@ token = ""
 base_url = "https://ilinkai.weixin.qq.com"
 home_channel = ""  # WeChat chat_id captured by setup; assistant only accepts this conversation
 allowed_users = ["user@im.wechat"]  # Required: allowed WeChat sender IDs
-dm_policy = "open"
 
 # Feishu/Lark assistant configuration (optional)
 [assistant.feishu]

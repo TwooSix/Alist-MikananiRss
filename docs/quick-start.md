@@ -51,7 +51,7 @@ pipeline = ["regex", "tmdb"]
 # api_key = "sk-xxx"
 # base_url = "https://api.deepseek.com/v1"
 # model = "deepseek-chat"
-# 把 metadata.pipeline 改为 ["ai", "tmdb"] 后生效
+# 推荐把 metadata.pipeline 改为 ["ai", "tmdb"]
 ```
 
 > 完整配置项请参考 [配置说明](configuration)

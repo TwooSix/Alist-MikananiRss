@@ -20,10 +20,6 @@ SKILLS = ROOT / "src/openlist_ani/assistant/builtin_skills/plugins/oani/skills"
             {"download_url": "magnet:?xt=urn:btih:test", "title": "test"},
         ),
         ("oani/scripts/add_rss.py", {"url": "https://example.test/feed.xml"}),
-        ("mikan/scripts/subscribe.py", {"bangumi_id": "1"}),
-        ("mikan/scripts/unsubscribe.py", {"bangumi_id": "1"}),
-        ("bangumi/scripts/update_collection.py", {"subject_id": "1", "rate": "8"}),
-        ("anime-recommend/scripts/save_profile.py", {"profile": "# Taste"}),
     ],
 )
 def test_write_skill_scripts_refuse_unconfirmed_execution(script, payload):

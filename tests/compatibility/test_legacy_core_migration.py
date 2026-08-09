@@ -1,6 +1,9 @@
 import json
+import os
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
+from pathlib import Path
 
 import pytest
 
@@ -144,6 +147,37 @@ def test_invalid_legacy_task_aborts_without_switching_database(tmp_path):
     assert not data_path.with_name(".data.db.migrating").exists()
 
 
+def test_unknown_legacy_task_state_is_not_silently_finalized(tmp_path):
+    task_path = tmp_path / "task_mementos.json"
+    task_path.write_text(
+        json.dumps(
+            {
+                "tasks": [
+                    {
+                        "task_id": "unknown-state",
+                        "state": "future-state",
+                        "release": {
+                            "title": "Unknown state",
+                            "download_url": "magnet:unknown-state",
+                        },
+                        "base_path": "/anime",
+                        "schema_version": 1,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    data_path = tmp_path / "data.db"
+    runner = LegacyMigrationRunner(data_path, tmp_path / "missing.db", task_path)
+
+    with pytest.raises(RuntimeError, match="Unsupported legacy task state"):
+        runner.run()
+
+    assert not data_path.exists()
+    assert not data_path.with_name(".data.db.migrating").exists()
+
+
 def test_existing_broken_task_database_does_not_fall_back_to_json(tmp_path):
     task_path = tmp_path / "task_mementos.db"
     with closing(sqlite3.connect(task_path)) as connection:
@@ -203,3 +237,111 @@ def test_v2_database_is_upgraded_with_lease_columns(tmp_path):
             ).fetchone()
             is not None
         )
+
+
+def test_concurrent_database_migrations_are_serialized(tmp_path):
+    data_path = tmp_path / "data.db"
+    runners = [
+        LegacyMigrationRunner(
+            data_path,
+            tmp_path / "missing.db",
+            tmp_path / "missing.json",
+        )
+        for _ in range(2)
+    ]
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        list(executor.map(lambda runner: runner.run(), runners))
+
+    with closing(sqlite3.connect(data_path)) as connection:
+        assert connection.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+        assert (
+            connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[
+                0
+            ]
+            == 4
+        )
+    assert len(list((tmp_path / "backups").glob("data-v1-*.db"))) == 0
+
+
+def test_current_version_with_incomplete_schema_is_repaired(tmp_path):
+    data_path = tmp_path / "data.db"
+    runner = LegacyMigrationRunner(
+        data_path,
+        tmp_path / "missing.db",
+        tmp_path / "missing.json",
+    )
+    runner.run()
+    with closing(sqlite3.connect(data_path)) as connection:
+        connection.execute("DROP TABLE notification_deliveries")
+        connection.commit()
+
+    runner.run()
+
+    with closing(sqlite3.connect(data_path)) as connection:
+        assert (
+            connection.execute(
+                "SELECT 1 FROM sqlite_master "
+                "WHERE type = 'table' AND name = 'notification_deliveries'"
+            ).fetchone()
+            is not None
+        )
+    assert len(list((tmp_path / "backups").glob("data-v1-*.db"))) == 1
+
+
+def test_future_database_version_is_rejected_without_modification(tmp_path):
+    data_path = tmp_path / "data.db"
+    with closing(sqlite3.connect(data_path)) as connection:
+        connection.execute(
+            "CREATE TABLE schema_migrations "
+            "(version INTEGER PRIMARY KEY, applied_at TEXT, description TEXT)"
+        )
+        connection.execute(
+            "INSERT INTO schema_migrations VALUES (999, 'future', 'future')"
+        )
+        connection.commit()
+
+    runner = LegacyMigrationRunner(
+        data_path,
+        tmp_path / "missing.db",
+        tmp_path / "missing.json",
+    )
+    with pytest.raises(RuntimeError, match="unsupported downgrade"):
+        runner.run()
+
+    with closing(sqlite3.connect(data_path)) as connection:
+        assert (
+            connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[
+                0
+            ]
+            == 999
+        )
+    assert not (tmp_path / "backups").exists()
+
+
+def test_failed_database_replace_restores_wal_sidecars(tmp_path, monkeypatch):
+    data_path = tmp_path / "data.db"
+    temporary = tmp_path / ".data.db.migrating"
+    data_path.write_bytes(b"old-database")
+    temporary.write_bytes(b"new-database")
+    wal_path = tmp_path / "data.db-wal"
+    shm_path = tmp_path / "data.db-shm"
+    wal_path.write_bytes(b"committed-wal")
+    shm_path.write_bytes(b"shared-memory")
+    real_replace = os.replace
+
+    def fail_database_switch(source, destination):
+        if Path(source) == temporary and Path(destination) == data_path:
+            raise OSError("simulated replace failure")
+        real_replace(source, destination)
+
+    monkeypatch.setattr(os, "replace", fail_database_switch)
+
+    with pytest.raises(OSError, match="simulated replace failure"):
+        LegacyMigrationRunner._replace_database(temporary, data_path)
+
+    assert data_path.read_bytes() == b"old-database"
+    assert temporary.read_bytes() == b"new-database"
+    assert wal_path.read_bytes() == b"committed-wal"
+    assert shm_path.read_bytes() == b"shared-memory"
+    assert not list(tmp_path.glob(".*.pre-migration-*"))

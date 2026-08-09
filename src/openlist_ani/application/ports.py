@@ -238,9 +238,7 @@ class OutboxRepository(Protocol):
 
     async def initialize_targets(self, target_keys: tuple[str, ...]) -> None: ...
 
-    async def claim_due(
-        self, target_key: str, batch_interval: float
-    ) -> list[Any]: ...
+    async def claim_due(self, target_key: str, batch_interval: float) -> list[Any]: ...
 
     async def next_due_delay(
         self, target_keys: tuple[str, ...], batch_interval: float

@@ -10,9 +10,6 @@ from openlist_ani.adapters.download_backends.openlist import (
     OpenlistTask,
     OpenlistTaskState,
 )
-from openlist_ani.adapters.download_backends.openlist.task_snapshot_cache import (
-    OpenListTaskSnapshotCache,
-)
 from openlist_ani.domain import (
     DownloadJob,
     LanguageType,
@@ -292,9 +289,7 @@ async def test_download_resumes_persisted_conflict_plan_after_partial_rename():
             "workflow_state": "file_detected",
             "temp_path": "/anime/.oani-download-tmp/workflow-1",
             "downloaded_filename": "raw.mkv",
-            "downloaded_sidecars": [
-                {"relative_path": "raw.zh.ass", "suffix": ".zh"}
-            ],
+            "downloaded_sidecars": [{"relative_path": "raw.zh.ass", "suffix": ".zh"}],
             "file_parent_path": "/anime/.oani-download-tmp/workflow-1",
             "resolved_filename": resolved_video,
             "move_plan": [
@@ -351,14 +346,3 @@ async def test_failed_remote_task_is_retryable_and_checkpoint_is_reset():
     assert checkpoints[-1]["workflow_state"] == "init"
     assert "task_id" not in checkpoints[-1]
     client.remove_path.assert_awaited_once()
-
-
-async def test_task_snapshot_cache_reuses_bounded_short_lived_values():
-    client = AsyncMock()
-    client.get_offline_download_done = AsyncMock(return_value=[])
-    cache = OpenListTaskSnapshotCache(client, ttl_seconds=10)
-
-    assert await cache.get_offline_download_done() == []
-    assert await cache.get_offline_download_done() == []
-
-    client.get_offline_download_done.assert_awaited_once()

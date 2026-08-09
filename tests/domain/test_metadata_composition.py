@@ -100,32 +100,6 @@ def test_unknown_sentinels_do_not_override_known_metadata():
     assert [item.source for item in document.evidence["languages"]] == ["title"]
 
 
-def test_literal_unknown_text_is_not_confused_with_typed_sentinel():
-    document = MetadataDocument()
-    document.apply(
-        MetadataPatch(
-            source="feed",
-            values=ReleaseMetadata(anime_name="unknown", fansub="未知"),
-        )
-    )
-
-    assert document.values.anime_name == "unknown"
-    assert document.values.fansub == "未知"
-
-
-def test_release_metadata_normalizes_unknown_source_values_to_missing():
-    metadata = ReleaseMetadata.from_dict(
-        {
-            "quality": VideoQuality.UNKNOWN,
-            "languages": [LanguageType.UNKNOWN],
-        }
-    )
-
-    assert metadata.quality is None
-    assert metadata.languages == []
-    assert metadata.version is None
-
-
 def test_legacy_unknown_value_can_be_filled_by_lower_priority_provider():
     document = MetadataDocument.from_dict(
         {

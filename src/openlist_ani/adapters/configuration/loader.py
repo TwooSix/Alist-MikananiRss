@@ -57,9 +57,15 @@ class ConfigManager:
                     f"{self._config.config_version}. Backup: {migration.backup_path}"
                 )
             elif migration.migrated:
+                backup_note = (
+                    f" A backup was written to {migration.backup_path}."
+                    if migration.backup_path
+                    else " A verified backup could not be written."
+                )
                 logger.warning(
                     f"Configuration {self.config_path} was migrated in memory but "
-                    "could not be backed up and rewritten (the file may be read-only). "
+                    "could not be rewritten (the file may be read-only)."
+                    f"{backup_note} "
                     "The legacy file will be migrated again on the next start."
                 )
         except Exception as error:

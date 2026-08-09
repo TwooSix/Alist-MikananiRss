@@ -28,7 +28,13 @@ from openlist_ani.logger import (
 )
 
 
-def _configure_assistant_logger(*, is_cli: bool, level: str = "INFO") -> None:
+def _configure_assistant_logger(
+    *,
+    is_cli: bool,
+    level: str = "INFO",
+    rotation: str = "00:00",
+    retention: str = "1 week",
+) -> None:
     """Configure assistant logs to match project logging format.
 
     Logs are written to file by default and console logging is enabled for
@@ -40,8 +46,8 @@ def _configure_assistant_logger(*, is_cli: bool, level: str = "INFO") -> None:
         LOG_DIR.mkdir(exist_ok=True)
         logger.add(
             LOG_DIR / "assistant_{time:YYYY-MM-DD}.log",
-            rotation="00:00",
-            retention="1 week",
+            rotation=rotation,
+            retention=retention,
             level=level,
             encoding="utf-8",
             mode="a",
@@ -82,6 +88,12 @@ def _telegram_frontend_enabled(assistant_cfg: Any) -> bool:
 
 
 def _validate_frontend_config(assistant_cfg: Any) -> list[str]:
+    if not assistant_cfg.enabled:
+        return [
+            "Assistant is disabled. Set [assistant] enabled = true before "
+            "starting remote frontends."
+        ]
+
     frontends_enabled = _platform_frontends_enabled(assistant_cfg)
 
     errors: list[str] = []
@@ -267,6 +279,10 @@ async def run() -> None:
     )
     from openlist_ani.adapters.configuration import config
 
+    if config.load_failed:
+        logger.log(FATAL_LEVEL, "Configuration could not be parsed; exiting")
+        raise SystemExit(1)
+
     assistant_cfg = config.assistant
     is_cli = "--cli" in sys.argv
     if not is_cli:
@@ -351,13 +367,21 @@ async def run() -> None:
 
 def main() -> None:
     """Console script entry point."""
+    from openlist_ani.adapters.configuration import get_config
+
     is_cli = "--cli" in sys.argv
 
     # Suppress noisy third-party loggers (stdlib logging side)
     for noisy_logger in ("httpx", "httpcore", "urllib3", "asyncio"):
         logging.getLogger(noisy_logger).setLevel(logging.WARNING)
 
-    _configure_assistant_logger(is_cli=is_cli)
+    runtime_config = get_config()
+    _configure_assistant_logger(
+        is_cli=is_cli,
+        level=runtime_config.log.level,
+        rotation=runtime_config.log.rotation,
+        retention=runtime_config.log.retention,
+    )
 
     try:
         asyncio.run(run())

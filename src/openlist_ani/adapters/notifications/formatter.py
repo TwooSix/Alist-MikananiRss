@@ -24,14 +24,18 @@ class NotificationFormatter:
             message = self._render(candidate)
             if current and len(message) > limit:
                 batches.append(
-                    NotificationBatch(self._fit(self._render(current), limit), tuple(current))
+                    NotificationBatch(
+                        self._fit(self._render(current), limit), tuple(current)
+                    )
                 )
                 current = [item]
             else:
                 current = candidate
         if current:
             batches.append(
-                NotificationBatch(self._fit(self._render(current), limit), tuple(current))
+                NotificationBatch(
+                    self._fit(self._render(current), limit), tuple(current)
+                )
             )
         return batches
 
