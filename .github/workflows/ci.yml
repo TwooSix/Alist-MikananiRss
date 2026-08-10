@@ -36,7 +36,9 @@ jobs:
         run: uv lock --check
 
       - name: Install locked dependencies
-        run: uv sync --frozen
+        # sgmllib3k has no wheel; allow its pinned source build only in this
+        # explicit frozen-sync step. All subsequent tool execution is no-build.
+        run: uv sync --frozen  # NOSONAR
 
       - name: Run Ruff
         run: uv run --frozen --no-sync --no-build ruff check .
@@ -61,7 +63,9 @@ jobs:
         run: uv python install 3.11
 
       - name: Install locked dependencies
-        run: uv sync --frozen
+        # sgmllib3k has no wheel; allow its pinned source build only in this
+        # explicit frozen-sync step. All subsequent tool execution is no-build.
+        run: uv sync --frozen  # NOSONAR
 
       - name: Run tests
         run: uv run --frozen --no-sync --no-build pytest -q
