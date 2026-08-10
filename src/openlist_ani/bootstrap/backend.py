@@ -103,6 +103,7 @@ class _RuntimeAssembly:
 async def run() -> None:
     config, core_settings = _load_runtime_config()
     _log_libtorrent_runtime()
+    _log_startup_summary(config, core_settings)
     await asyncio.to_thread(LegacyMigrationRunner().run)
     assembly = await _compose_runtime(config, core_settings)
 
@@ -111,12 +112,17 @@ async def run() -> None:
         await assembly.runtime.start()
         BackendApiService.init(assembly.application)
         server = _create_api_server(config)
+        logger.info(
+            f"Backend API server listening on {config.backend.host}:"
+            f"{config.backend.port}"
+        )
         try:
             await server.serve()
         except asyncio.CancelledError:
             server.should_exit = True
             raise
     finally:
+        logger.info("Shutting down...")
         await assembly.runtime.stop()
 
 
@@ -131,6 +137,28 @@ def _log_libtorrent_runtime() -> None:
         )
     else:
         logger.info(f"libtorrent runtime available: version={version}")
+
+
+def _log_startup_summary(config, core_settings: CoreSettings) -> None:
+    """Print the user-facing runtime summary retained from the legacy pipeline."""
+
+    providers = " -> ".join(core_settings.metadata_providers) or "none"
+    enabled_bots = sum(1 for bot in config.notification.bots if bot.enabled)
+    notification_status = (
+        f"enabled ({enabled_bots} target(s))"
+        if config.notification.enabled and enabled_bots
+        else "disabled"
+    )
+    logger.info("=" * 56)
+    logger.info("OpenList-Ani starting")
+    logger.info(f"RSS sources   : {len(config.rss.urls)} configured")
+    logger.info(f"Download path : {core_settings.download_path}")
+    logger.info(f"Metadata      : {providers}")
+    logger.info(f"Downloader    : {core_settings.download_backend}")
+    logger.info(f"OpenList URL  : {config.downloader.openlist.url}")
+    logger.info(f"Notifications : {notification_status}")
+    logger.info(f"Backend API   : {config.backend.host}:{config.backend.port}")
+    logger.info("=" * 56)
 
 
 def _load_runtime_config() -> tuple[object, CoreSettings]:
@@ -307,8 +335,17 @@ async def _check_download_backend_health(assembly: _RuntimeAssembly) -> None:
                     bundle.name,
                     "health check failed; jobs will retry",
                 )
+                logger.warning(
+                    f"Download backend is degraded: {bundle.name}; "
+                    "health check failed; jobs will retry"
+                )
+            else:
+                logger.info(f"Download backend ready: {bundle.name}")
         except Exception as error:
             assembly.runtime.set_degraded(bundle.name, str(error))
+            logger.warning(
+                f"Download backend is degraded: {bundle.name}; error={error}"
+            )
 
 
 async def _close_callbacks(
@@ -474,7 +511,7 @@ def main() -> None:
     try:
         asyncio.run(run())
     except (KeyboardInterrupt, asyncio.CancelledError):
-        pass
+        logger.info("Interrupted by user.")
     except SystemExit:
         raise
     except Exception as error:

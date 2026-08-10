@@ -142,6 +142,7 @@ class CoreApplicationService:
         self._config.add_rss_url(url)
         self._feed_scheduler.wake()
         updated = list(self._config.rss.urls)
+        logger.info(f"Added RSS URL: {url}")
         return True, f"RSS URL added successfully: {url}", updated
 
     async def preflight_download(
@@ -198,6 +199,7 @@ class CoreApplicationService:
             title,
             allow_downloaded_title=partial_retry is not None,
         ):
+            logger.info(f"Download request skipped: {blocker}")
             return CreateDownloadOutcome(False, blocker)
 
         effective_collection_hint = collection_hint or partial_retry is not None
@@ -215,6 +217,10 @@ class CoreApplicationService:
             acknowledged_conflicts=set(acknowledged_conflicts),
             policy_review_token=policy_review_token,
         ):
+            logger.info(
+                f"Download request requires policy confirmation: {title}; "
+                f"conflicts={len(review.conflicts)}"
+            )
             return confirmation_error
 
         candidate = _manual_candidate(download_url, title, partial_retry=partial_retry)
@@ -229,9 +235,10 @@ class CoreApplicationService:
             initial_metadata=review.metadata,
         )
         if job is None:
+            logger.info(f"Download request skipped: already submitted: {title}")
             return CreateDownloadOutcome(False, f"Already submitted: {title}")
         self._metadata_available.set()
-        logger.info(f"Download job created: job_id={job.id}; title={title}")
+        logger.info(f"Download task created: {title} (id={job.id})")
         return CreateDownloadOutcome(
             True,
             f"Manual download queued: {title}",
@@ -429,6 +436,7 @@ class CoreApplicationService:
             )
             return ParseRSSOutcome(True, message, total, releases)
         except Exception as error:
+            logger.warning(f"parse_rss: feed fetch failed for {url}: {error}")
             return ParseRSSOutcome(False, f"Failed to fetch RSS: {error}")
 
     async def resolve_magnet(self, magnet: str, metadata_timeout: int = 30) -> Any:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections import defaultdict
+from collections import Counter, defaultdict
 from openlist_ani.application.ports import (
     CandidateTransformer,
     JobRepository,
@@ -86,6 +86,7 @@ class MetadataWorker:
                 await self._wait()
 
     async def _process_batch(self, jobs: list[DownloadJob]) -> None:
+        logger.info(f"Metadata processing started: {len(jobs)} release(s)")
         collection_jobs = [
             job
             for job in jobs
@@ -96,10 +97,15 @@ class MetadataWorker:
         if collection_jobs:
             await self._queue_collection_jobs(collection_jobs)
         if not regular_jobs:
+            logger.info(
+                "Metadata processing completed: "
+                f"collections={len(collection_jobs)}, regular=0"
+            )
             return
 
         candidates = [job.candidate for job in regular_jobs]
         documents = [job.metadata for job in regular_jobs]
+        logger.info(f"Metadata parsing started: {len(regular_jobs)} release(s)")
         try:
             retryable, permanent = await self._enrich(
                 regular_jobs, candidates, documents
@@ -113,15 +119,29 @@ class MetadataWorker:
                     f"metadata provider failed: {error}",
                     _metadata_retry_delay(job.attempt_count),
                 )
+            logger.warning(
+                "Metadata parsing failed for batch; "
+                f"releases={len(regular_jobs)}; error={error}"
+            )
             return
 
         ready = await self._classify(regular_jobs, documents, retryable, permanent)
+        logger.info(
+            "Metadata parsing completed: "
+            f"{len(ready)}/{len(regular_jobs)} release(s) ready"
+        )
         if ready:
             await self._apply_release_policies(ready)
+        logger.info(
+            "Metadata processing completed: "
+            f"collections={len(collection_jobs)}, regular={len(regular_jobs)}, "
+            f"ready={len(ready)}"
+        )
 
     async def _queue_collection_jobs(self, jobs: list[DownloadJob]) -> None:
         """Admit batch titles without inventing a parent episode number."""
 
+        logger.info(f"Collection filtering started: {len(jobs)} release(s)")
         existing = await self._library.find_existing_titles(
             [job.candidate.title for job in jobs]
         )
@@ -137,6 +157,16 @@ class MetadataWorker:
                 transformed.get(job.id),
                 transform_errors.get(job.id),
             )
+        reasons = Counter(rejected.values())
+        if transform_errors:
+            reasons["candidate_transform_failed"] += len(transform_errors)
+        summary = _reason_summary(reasons)
+        suffix = f"; reasons: {summary}" if summary else ""
+        logger.info(
+            "Collection filtering completed: "
+            f"{len(selected) - len(transform_errors)} accepted, "
+            f"{len(jobs) - len(selected) + len(transform_errors)} skipped{suffix}"
+        )
 
     def _classify_collection_jobs(
         self,
@@ -174,9 +204,16 @@ class MetadataWorker:
         transform_error: Exception | None,
     ) -> None:
         if rejection:
+            logger.debug(
+                f"Skipping collection release {job.candidate.title}: {rejection}"
+            )
             await self._persist_collection_rejection(job, rejection)
             return
         if transform_error:
+            logger.warning(
+                "Collection candidate transform failed for "
+                f"{job.candidate.title}: {transform_error}"
+            )
             await self._persist_collection_transform_error(job, transform_error)
             return
         job.candidate = transformed or job.candidate
@@ -267,26 +304,45 @@ class MetadataWorker:
         for index, job in enumerate(jobs):
             job.metadata = documents[index]
             if retryable[index] and job.attempt_count < 3:
+                delay = _metadata_retry_delay(job.attempt_count)
                 await self._jobs.reschedule(
                     job,
                     retryable[index] or "metadata temporarily unavailable",
-                    _metadata_retry_delay(job.attempt_count),
+                    delay,
+                )
+                logger.warning(
+                    f"Metadata parsing incomplete for {job.candidate.title}; "
+                    f"will retry in {delay:g}s: {retryable[index]}"
                 )
                 continue
             if not job.metadata.values.minimum_complete():
                 if permanent[index] and not retryable[index]:
-                    await self._jobs.fail(job, permanent[index] or "metadata invalid")
+                    reason = permanent[index] or "metadata invalid"
+                    await self._jobs.fail(job, reason)
+                    logger.warning(
+                        f"Metadata extraction failed for {job.candidate.title}: "
+                        f"{reason}"
+                    )
                 else:
+                    reason = (
+                        retryable[index] or permanent[index] or "metadata incomplete"
+                    )
+                    delay = min(21600, _metadata_retry_delay(job.attempt_count))
                     await self._jobs.reschedule(
                         job,
-                        retryable[index] or permanent[index] or "metadata incomplete",
-                        min(21600, _metadata_retry_delay(job.attempt_count)),
+                        reason,
+                        delay,
+                    )
+                    logger.warning(
+                        f"Metadata extraction incomplete for {job.candidate.title}; "
+                        f"will retry in {delay:g}s: {reason}"
                     )
                 continue
             ready.append(job)
         return ready
 
     async def _apply_release_policies(self, ready: list[DownloadJob]) -> None:
+        logger.info(f"Filtering started: {len(ready)} release(s)")
         existing = await self._library.find_existing_titles(
             [job.candidate.title for job in ready]
         )
@@ -308,6 +364,16 @@ class MetadataWorker:
         transformed, transform_errors = await self._transform_candidates(selected)
         await self._persist_policy_results(
             ready, rejected, transformed, transform_errors, reserved_titles
+        )
+        reasons = Counter(rejected.values())
+        if transform_errors:
+            reasons["candidate_transform_failed"] += len(transform_errors)
+        accepted = len(selected) - len(transform_errors)
+        summary = _reason_summary(reasons)
+        suffix = f"; reasons: {summary}" if summary else ""
+        logger.info(
+            f"Filtering completed: {accepted} accepted, "
+            f"{len(ready) - accepted} skipped{suffix}"
         )
 
     def _initial_policy_results(
@@ -365,12 +431,14 @@ class MetadataWorker:
     ) -> None:
         for job in ready:
             if reason := rejected.get(job.id):
+                logger.debug(f"Skipping release {job.candidate.title}: {reason}")
                 if manual_policy_is_approved(job) and reason != "release_policy":
                     await self._jobs.fail(job, reason)
                 else:
                     await self._jobs.skip(job, reason)
             elif error := transform_errors.get(job.id):
                 message = f"candidate transform failed: {error}"
+                logger.warning(f"{message} for {job.candidate.title}")
                 if job.attempt_count >= 3:
                     await self._jobs.fail(job, message)
                 else:
@@ -491,6 +559,12 @@ class MetadataWorker:
 
 def _metadata_retry_delay(attempt: int) -> float:
     return (60.0, 300.0, 900.0, 21600.0)[min(max(attempt - 1, 0), 3)]
+
+
+def _reason_summary(reasons: Counter[str]) -> str:
+    return ", ".join(
+        f"{reason}={count}" for reason, count in sorted(reasons.items()) if count
+    )
 
 
 def _policy_rejection_reason(job: DownloadJob) -> str:

@@ -50,6 +50,7 @@ from openlist_ani.domain import (
 from openlist_ani.domain.naming import (
     ReleaseDirectoryPlanner,
     ReleaseFilenamePlanner,
+    format_anime_episode,
 )
 from openlist_ani.domain.policies import (
     best_indices,
@@ -156,13 +157,29 @@ class DownloadWorkerPool:
         await self._cleanup_terminal_staging(job)
         job.artifact.pop("terminal_cleanup_pending", None)
         await self._jobs.fail(job, str(terminal_error))
+        logger.error(
+            f"Download job failed after staging cleanup: {_job_label(job)}; "
+            f"job_id={job.id}; error={terminal_error}"
+        )
         return True
 
     async def _run_job_step(self, job: DownloadJob, worker_id: int) -> bool:
         if job.step == JobStep.DOWNLOAD:
             await self._download(job)
         elif job.step == JobStep.RESOLVE_FILES:
+            logger.info(
+                f"Downloaded file analysis started: {_job_label(job)}; job_id={job.id}"
+            )
             await self._resolve_files(job)
+            states = Counter(
+                str(item.get("state") or "unknown")
+                for item in job.artifact.get("resolved_items", [])
+            )
+            logger.info(
+                f"Downloaded file analysis completed: {_job_label(job)}; "
+                f"ready={states['ready']}, skipped={states['skipped']}, "
+                f"failed={states['failed']}"
+            )
         elif job.step == JobStep.ORGANIZE:
             await self._organize(job)
         elif job.step == JobStep.FINALIZE:
@@ -173,10 +190,13 @@ class DownloadWorkerPool:
         return False
 
     async def _reschedule_download_work(self, job: DownloadJob, error: str) -> None:
-        await self._jobs.reschedule(
-            job, error, _download_retry_delay(job.attempt_count)
-        )
+        delay = _download_retry_delay(job.attempt_count)
+        await self._jobs.reschedule(job, error, delay)
         self._work_available.set()
+        logger.warning(
+            f"Download work paused for {_job_label(job)}; step={job.step.value}, "
+            f"attempt={job.attempt_count}, retry_in={delay:g}s; error={error}"
+        )
 
     async def _handle_processing_failure(
         self, job: DownloadJob, error: Exception
@@ -254,6 +274,10 @@ class DownloadWorkerPool:
     async def _download(self, job: DownloadJob) -> None:
         bundle = self._bundle(job)
         job.artifact.setdefault("base_path", self._settings.download_path)
+        logger.info(
+            f"Download started: {_job_label(job)}; title={job.candidate.title}; "
+            f"job_id={job.id}; backend={bundle.name}; attempt={job.attempt_count}"
+        )
 
         async def checkpoint(payload: dict[str, Any]) -> None:
             job.checkpoint = dict(payload)
@@ -265,6 +289,10 @@ class DownloadWorkerPool:
         job.advance(JobStep.RESOLVE_FILES)
         job.status = JobStatus.RUNNING
         await self._jobs.save(job)
+        logger.info(
+            f"Download completed: {_job_label(job)}; title={job.candidate.title}; "
+            f"files={len(manifest.files)}; job_id={job.id}"
+        )
 
     async def _resolve_files(self, job: DownloadJob) -> None:
         manifest = _manifest_from_job(job)
@@ -634,6 +662,11 @@ class DownloadWorkerPool:
             _request_from_dict(item)
             for item in job.artifact.get("organization_requests", [])
         )
+        operation = "Rename" if len(requests) == 1 else "Organization"
+        detail = _organization_detail(requests)
+        logger.info(
+            f"{operation} started: {_job_label(job)}; items={len(requests)}{detail}"
+        )
 
         async def checkpoint(payload: dict[str, Any]) -> None:
             job.artifact["organization_checkpoint"] = dict(payload)
@@ -647,6 +680,12 @@ class DownloadWorkerPool:
         job.advance(JobStep.FINALIZE)
         job.status = JobStatus.RUNNING
         await self._jobs.save(job)
+        states = Counter(result.state for result in results)
+        logger.info(
+            f"{operation} completed: {_job_label(job)}; "
+            f"completed={states['completed']}, skipped={states['skipped']}, "
+            f"failed={states['failed']}"
+        )
 
     def _prepare_legacy_organization(self, job: DownloadJob) -> None:
         if job.artifact.get("organization_requests") is not None:
@@ -735,8 +774,13 @@ class DownloadWorkerPool:
             await self._jobs.complete_with_resources(job, resources, summary)
             self._notification_available.set()
             logger.info(
-                f"Download job completed: job_id={job.id}, worker={worker_id}, "
-                f"resources={len(resources)}, warnings={summary['warning_count']}"
+                f"Notification queued: {_job_label(job)}; resources={len(resources)}"
+            )
+            logger.info(
+                f"Download job completed: {_job_label(job)}; "
+                f"title={job.candidate.title}; resources={len(resources)}, "
+                f"warnings={summary['warning_count']}, worker={worker_id}, "
+                f"job_id={job.id}"
             )
             return
 
@@ -1250,3 +1294,25 @@ def _all_policy_skipped(resolved: dict[str, dict[str, Any]]) -> bool:
 
 def _download_retry_delay(attempt: int) -> float:
     return (30.0, 120.0, 600.0)[min(max(attempt - 1, 0), 2)]
+
+
+def _job_label(job: DownloadJob) -> str:
+    metadata = job.metadata.values
+    if (
+        metadata.anime_name
+        or metadata.season is not None
+        or metadata.episode is not None
+    ):
+        return format_anime_episode(
+            metadata.anime_name,
+            metadata.season,
+            metadata.episode,
+        )
+    return job.candidate.title
+
+
+def _organization_detail(requests: tuple[OrganizationRequest, ...]) -> str:
+    if len(requests) != 1:
+        return ""
+    request = requests[0]
+    return f"; {request.video_relative_path} -> {request.target_filename}"
