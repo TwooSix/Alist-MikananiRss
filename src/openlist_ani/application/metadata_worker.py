@@ -8,27 +8,27 @@ from openlist_ani.application.ports import (
     CandidateTransformer,
     JobRepository,
     LibraryRepository,
-    MetadataPhase,
     MetadataProvider,
 )
 from openlist_ani.application.lease import run_with_job_heartbeat
+from openlist_ani.application.metadata_pipeline import MetadataPipelineResolver
 from openlist_ani.application.settings import CoreSettings
 from openlist_ani.domain import (
     DownloadJob,
     JobStep,
     MetadataDocument,
-    MetadataPatch,
     ReleaseCandidate,
 )
 from openlist_ani.domain.naming import ReleaseFilenamePlanner
 from openlist_ani.domain.policies import (
     best_indices,
+    collection_title_reason,
+    configured_title_exclusion_reason,
     dominated_by_records,
     episode_key,
     is_version_upgrade,
     metadata_exclusion_reason,
     priority_levels,
-    title_exclusion_reason,
 )
 from openlist_ani.logger import logger
 
@@ -48,6 +48,7 @@ class MetadataWorker:
         self._jobs = jobs
         self._library = library
         self._providers = providers
+        self._pipeline = MetadataPipelineResolver(providers)
         self._settings = settings
         self._jobs_available = jobs_available
         self._download_available = download_available
@@ -80,14 +81,25 @@ class MetadataWorker:
                 await self._wait()
 
     async def _process_batch(self, jobs: list[DownloadJob]) -> None:
-        candidates = [job.candidate for job in jobs]
-        documents = [job.metadata for job in jobs]
+        collection_jobs = [
+            job for job in jobs if collection_title_reason(job.candidate.title)
+        ]
+        regular_jobs = [job for job in jobs if job not in collection_jobs]
+        if collection_jobs:
+            await self._queue_collection_jobs(collection_jobs)
+        if not regular_jobs:
+            return
+
+        candidates = [job.candidate for job in regular_jobs]
+        documents = [job.metadata for job in regular_jobs]
         try:
-            retryable, permanent = await self._enrich(jobs, candidates, documents)
+            retryable, permanent = await self._enrich(
+                regular_jobs, candidates, documents
+            )
         except asyncio.CancelledError:
             raise
         except Exception as error:
-            for job in jobs:
+            for job in regular_jobs:
                 await self._jobs.reschedule(
                     job,
                     f"metadata provider failed: {error}",
@@ -95,9 +107,60 @@ class MetadataWorker:
                 )
             return
 
-        ready = await self._classify(jobs, documents, retryable, permanent)
+        ready = await self._classify(regular_jobs, documents, retryable, permanent)
         if ready:
             await self._apply_release_policies(ready)
+
+    async def _queue_collection_jobs(self, jobs: list[DownloadJob]) -> None:
+        """Admit batch titles without inventing a parent episode number."""
+
+        existing = await self._library.find_existing_titles(
+            [job.candidate.title for job in jobs]
+        )
+        job_ids = {job.id for job in jobs}
+        active = await self._jobs.list_active()
+        reserved = {item.candidate.title for item in active if item.id not in job_ids}
+        selected: list[DownloadJob] = []
+        rejected: dict[str, str] = {}
+        batch_titles: set[str] = set()
+        for job in jobs:
+            title = job.candidate.title
+            if configured_title_exclusion_reason(
+                title, self._settings.metadata_filter.exclude_patterns
+            ):
+                rejected[job.id] = "release_policy"
+            elif title in existing:
+                rejected[job.id] = "already_downloaded"
+            elif title in reserved or title in batch_titles:
+                rejected[job.id] = "duplicate_active_title"
+            else:
+                selected.append(job)
+                batch_titles.add(title)
+
+        transformed, transform_errors = await self._transform_candidates(selected)
+        for job in jobs:
+            if reason := rejected.get(job.id):
+                await self._jobs.skip(job, reason)
+                continue
+            if error := transform_errors.get(job.id):
+                message = f"candidate transform failed: {error}"
+                if job.attempt_count >= 3:
+                    await self._jobs.fail(job, message)
+                else:
+                    await self._jobs.reschedule(
+                        job, message, _metadata_retry_delay(job.attempt_count)
+                    )
+                continue
+            job.candidate = transformed.get(job.id, job.candidate)
+            job.artifact.update(
+                {
+                    "base_path": self._settings.download_path,
+                    "collection_hint": True,
+                }
+            )
+            job.advance(JobStep.DOWNLOAD)
+            await self._jobs.save(job)
+            self._download_available.set()
 
     async def _enrich(
         self,
@@ -105,26 +168,16 @@ class MetadataWorker:
         candidates: list[ReleaseCandidate],
         documents: list[MetadataDocument],
     ) -> tuple[list[str | None], list[str | None]]:
-        retryable: list[str | None] = [None] * len(jobs)
-        permanent: list[str | None] = [None] * len(jobs)
-        title_providers = [
-            item for item in self._providers if item.phase == MetadataPhase.TITLE
-        ]
-        enrichment_providers = [
-            item for item in self._providers if item.phase != MetadataPhase.TITLE
-        ]
-        for provider in title_providers:
-            await self._apply_provider(
-                provider, jobs, candidates, documents, retryable, permanent
-            )
-
-        self._apply_feed_metadata(candidates, documents)
-
-        for provider in enrichment_providers:
-            await self._apply_provider(
-                provider, jobs, candidates, documents, retryable, permanent
-            )
-        return retryable, permanent
+        resolutions = await self._pipeline.resolve_many(
+            candidates,
+            documents,
+            [job.attempt_count for job in jobs],
+        )
+        documents[:] = [item.document for item in resolutions]
+        return (
+            [item.retryable_error for item in resolutions],
+            [item.permanent_error for item in resolutions],
+        )
 
     async def _apply_provider(
         self,
@@ -154,20 +207,7 @@ class MetadataWorker:
     def _apply_feed_metadata(
         candidates: list[ReleaseCandidate], documents: list[MetadataDocument]
     ) -> None:
-        for candidate, document in zip(candidates, documents):
-            already_applied = any(
-                item.source == candidate.source_name
-                for history in document.evidence.values()
-                for item in history
-            )
-            if not already_applied:
-                document.apply(
-                    MetadataPatch(
-                        source=candidate.source_name,
-                        values=candidate.source_metadata,
-                        priority=20,
-                    )
-                )
+        MetadataPipelineResolver.apply_source_metadata(candidates, documents)
 
     async def _classify(
         self,
@@ -258,7 +298,7 @@ class MetadataWorker:
         ):
             return "duplicate_active_title"
         metadata_filter = self._settings.metadata_filter
-        if title_exclusion_reason(
+        if configured_title_exclusion_reason(
             job.candidate.title, metadata_filter.exclude_patterns
         ):
             return "release_policy"

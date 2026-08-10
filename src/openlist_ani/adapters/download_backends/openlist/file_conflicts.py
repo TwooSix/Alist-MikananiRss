@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Awaitable, Callable
 
+from openlist_ani.application.organization import (
+    FilenameConflictError,
+    next_available_name,
+)
 from openlist_ani.logger import logger
 
 from .client import OpenListClient
 
 
-class OpenListFileConflictError(Exception):
+class OpenListFileConflictError(FilenameConflictError):
     """Raised when OpenList storage cannot resolve a destination filename."""
 
 
@@ -98,16 +101,14 @@ class OpenListFileConflictResolver:
         filename: str,
         existing_names: set[str],
     ) -> str:
-        stem, ext = os.path.splitext(filename)
-        for i in range(1, self._MAX_CONFLICT_SUFFIX + 1):
-            candidate = f"{stem} ({i}){ext}"
-            if candidate not in existing_names:
-                return candidate
-
-        raise OpenListFileConflictError(
-            f"Cannot resolve filename conflict: '{filename}' "
-            f"(tried up to ({self._MAX_CONFLICT_SUFFIX}))"
-        )
+        try:
+            return next_available_name(
+                filename,
+                existing_names | {filename},
+                max_suffix=self._MAX_CONFLICT_SUFFIX,
+            )
+        except FilenameConflictError as error:
+            raise OpenListFileConflictError(str(error)) from error
 
     def next_available_name(self, filename: str, existing_names: set[str]) -> str:
         """Return a deterministic unused name without mutating remote storage."""

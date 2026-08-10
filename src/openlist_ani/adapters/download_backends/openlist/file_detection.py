@@ -38,6 +38,16 @@ class DetectedFiles:
     sidecars: tuple[DetectedSidecar, ...] = ()
 
 
+@dataclass(frozen=True)
+class InventoryFile:
+    relative_path: str
+    size: int = 0
+
+
+class _IncompleteInventorySnapshot(RuntimeError):
+    """Raised when any directory in a recursive inventory cannot be listed."""
+
+
 def _is_video_file(name: str) -> bool:
     _, ext = os.path.splitext(name)
     return ext.lower() in _VIDEO_EXTENSIONS
@@ -80,6 +90,85 @@ class OpenListFileDetector:
                 return None
 
             await self._sleep(10)
+
+    async def inventory(self, temp_path: str) -> tuple[InventoryFile, ...]:
+        """Recursively inventory every leaf file below ``temp_path``.
+
+        Transfer completion can become visible before the destination listing is
+        refreshed.  A snapshot is therefore accepted only after three consecutive,
+        complete recursive scans agree.  If any nested listing fails, the whole
+        scan is discarded so a partial manifest can never drive staging cleanup.
+        """
+
+        start_time = time.monotonic()
+        previous_snapshot: tuple[InventoryFile, ...] | None = None
+        stable_scans = 0
+        logger.debug(f"Inventorying downloaded files in {temp_path}")
+        while True:
+            try:
+                collected = await self._collect_leaf_files(temp_path, "")
+            except _IncompleteInventorySnapshot as exc:
+                previous_snapshot = None
+                stable_scans = 0
+                logger.debug(f"Discarding incomplete inventory for {temp_path}: {exc}")
+            else:
+                collected.sort(key=lambda item: item.relative_path.casefold())
+                snapshot = tuple(collected)
+                if snapshot and snapshot == previous_snapshot:
+                    stable_scans += 1
+                elif snapshot:
+                    stable_scans = 1
+                else:
+                    stable_scans = 0
+                if stable_scans >= 3:
+                    logger.debug(
+                        f"Inventoried {len(snapshot)} stable downloaded file(s) "
+                        f"in {temp_path}"
+                    )
+                    return snapshot
+                previous_snapshot = snapshot if snapshot else None
+
+            if time.monotonic() - start_time >= self._timeout_seconds:
+                logger.warning(
+                    f"Complete stable file inventory timed out in {temp_path}"
+                )
+                return ()
+            await self._sleep(10)
+
+    async def _collect_leaf_files(
+        self,
+        current_path: str,
+        relative_prefix: str,
+    ) -> list[InventoryFile]:
+        try:
+            entries = await self._client.list_files(current_path)
+        except Exception as exc:
+            raise _IncompleteInventorySnapshot(
+                f"listing raised for {current_path}: {exc}"
+            ) from exc
+        if entries is None:
+            raise _IncompleteInventorySnapshot(f"listing failed for {current_path}")
+        if not entries:
+            return []
+
+        collected: list[InventoryFile] = []
+        for entry in entries:
+            name = str(entry.name or "").replace("\\", "/").strip("/")
+            if not name or name in {".", ".."} or "/" in name:
+                logger.warning(f"Ignoring unsafe OpenList entry name: {entry.name!r}")
+                continue
+            relative_name = f"{relative_prefix}/{name}" if relative_prefix else name
+            if entry.is_dir:
+                collected.extend(
+                    await self._collect_leaf_files(
+                        f"{current_path.rstrip('/')}/{name}",
+                        relative_name,
+                    )
+                )
+                continue
+            size = entry.size if isinstance(entry.size, int) else 0
+            collected.append(InventoryFile(relative_name, size))
+        return collected
 
     async def _detect_sidecars(
         self,

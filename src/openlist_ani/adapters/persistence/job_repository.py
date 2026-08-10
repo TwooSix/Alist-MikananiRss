@@ -7,6 +7,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from openlist_ani.application.ports import CompletedResource
 from openlist_ani.domain import (
     DownloadJob,
     JobStatus,
@@ -101,7 +102,13 @@ class SqliteJobRepository:
 
     async def claim_download_work(self, limit: int) -> list[DownloadJob]:
         return await self._claim_steps(
-            (JobStep.DOWNLOAD, JobStep.ORGANIZE, JobStep.FINALIZE), limit
+            (
+                JobStep.DOWNLOAD,
+                JobStep.RESOLVE_FILES,
+                JobStep.ORGANIZE,
+                JobStep.FINALIZE,
+            ),
+            limit,
         )
 
     async def _claim_steps(
@@ -247,88 +254,149 @@ class SqliteJobRepository:
             ).fetchall()
         return [_row_to_job(row) for row in rows]
 
+    async def complete_with_resources(
+        self,
+        job: DownloadJob,
+        resources: tuple[CompletedResource, ...],
+        summary: dict[str, Any] | None = None,
+    ) -> None:
+        ordered_resources = _validate_and_sort_resources(resources)
+        now = utc_now()
+        download_url = job.candidate.download_url
+        async with self._database.operation(write=True) as db:
+            for resource in ordered_resources:
+                metadata_payload = resource.metadata.to_dict()
+                release = resource.metadata.values
+                await db.execute(
+                    """
+                    INSERT INTO resources (
+                        url, title, anime_name, season, episode, fansub, quality,
+                        languages, version, downloaded_at, job_id, item_key,
+                        source_path, final_path, metadata_json, provenance_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(job_id, item_key) DO NOTHING
+                    """,
+                    (
+                        download_url,
+                        resource.title,
+                        release.anime_name,
+                        release.season,
+                        release.episode,
+                        release.fansub,
+                        release.quality.value if release.quality else None,
+                        "".join(item.value for item in release.languages),
+                        release.version or 1,
+                        now,
+                        job.id,
+                        resource.item_key,
+                        resource.source_path,
+                        resource.final_path,
+                        _json(metadata_payload.get("values", {})),
+                        _json(metadata_payload.get("evidence", {})),
+                    ),
+                )
+
+            requested_keys = tuple(resource.item_key for resource in ordered_resources)
+            stored_rows = await (
+                await db.execute(
+                    "SELECT item_key, title, source_path, final_path, metadata_json, "
+                    "provenance_json FROM resources "
+                    "WHERE job_id = ?",
+                    (job.id,),
+                )
+            ).fetchall()
+            stored = {row["item_key"]: row for row in stored_rows}
+            missing = [key for key in requested_keys if key not in stored]
+            if missing:
+                raise RuntimeError(
+                    f"Resource completion lost item keys for job {job.id}: "
+                    + ", ".join(missing[:5])
+                )
+            for resource in ordered_resources:
+                row = stored[resource.item_key]
+                metadata_payload = resource.metadata.to_dict()
+                if (
+                    row["title"] != resource.title
+                    or row["source_path"] != resource.source_path
+                    or row["final_path"] != resource.final_path
+                    or row["metadata_json"] != _json(metadata_payload.get("values", {}))
+                    or row["provenance_json"]
+                    != _json(metadata_payload.get("evidence", {}))
+                ):
+                    raise RuntimeError(
+                        "Resource completion conflicts with an existing item: "
+                        f"{resource.item_key}"
+                    )
+            output_path = next(
+                stored[resource.item_key]["final_path"]
+                for resource in ordered_resources
+            )
+
+            first_release = ordered_resources[0].metadata.values
+            await db.execute(
+                """
+                INSERT INTO notification_outbox (
+                    job_id, anime_name, title, status, created_at, updated_at,
+                    summary_json
+                ) VALUES (?, ?, ?, 'pending', ?, ?, ?)
+                ON CONFLICT(job_id) DO NOTHING
+                """,
+                (
+                    job.id,
+                    first_release.anime_name
+                    or job.metadata.values.anime_name
+                    or "Unknown",
+                    job.candidate.title,
+                    now,
+                    now,
+                    _json(summary or {}),
+                ),
+            )
+            outbox_row = await (
+                await db.execute(
+                    "SELECT anime_name, title, summary_json FROM notification_outbox "
+                    "WHERE job_id = ?",
+                    (job.id,),
+                )
+            ).fetchone()
+            expected_anime_name = (
+                first_release.anime_name or job.metadata.values.anime_name or "Unknown"
+            )
+            if (
+                outbox_row is None
+                or outbox_row["anime_name"] != expected_anime_name
+                or outbox_row["title"] != job.candidate.title
+                or outbox_row["summary_json"] != _json(summary or {})
+            ):
+                raise RuntimeError(
+                    f"Notification completion conflicts for job {job.id}"
+                )
+            job.status = JobStatus.COMPLETED
+            job.step = JobStep.FINALIZE
+            job.output_path = output_path
+            job.completed_at = now
+            job.updated_at = now
+            job.last_error = None
+            await self._update_job(db, job, expected_lease=job.lease_token)
+
     async def complete_with_resource(
         self,
         job: DownloadJob,
         final_path: str,
     ) -> None:
-        now = utc_now()
-        metadata_payload = job.metadata.to_dict()
-        release = job.metadata.values
-        title = job.candidate.title
-        download_url = job.candidate.download_url
-        async with self._database.operation(write=True) as db:
-            existing = await (
-                await db.execute(
-                    """
-                    SELECT id, job_id, final_path FROM resources
-                    WHERE job_id = ? OR title = ?
-                    ORDER BY CASE WHEN job_id = ? THEN 0 ELSE 1 END
-                    LIMIT 1
-                    """,
-                    (job.id, title, job.id),
-                )
-            ).fetchone()
-            if existing is not None:
-                job.step = JobStep.FINALIZE
-                job.output_path = existing["final_path"] or final_path
-                job.completed_at = now
-                job.updated_at = now
-                if existing["job_id"] == job.id:
-                    job.status = JobStatus.COMPLETED
-                    job.last_error = None
-                else:
-                    job.status = JobStatus.SKIPPED
-                    job.last_error = "duplicate_resource_title"
-                await self._update_job(db, job, expected_lease=job.lease_token)
-                return
-
-            await db.execute(
-                """
-                INSERT INTO resources (
-                    url, title, anime_name, season, episode, fansub, quality,
-                    languages, version, downloaded_at, job_id, final_path,
-                    metadata_json, provenance_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    download_url,
-                    title,
-                    release.anime_name,
-                    release.season,
-                    release.episode,
-                    release.fansub,
-                    release.quality.value if release.quality else None,
-                    "".join(item.value for item in release.languages),
-                    release.version or 1,
-                    now,
-                    job.id,
-                    final_path,
-                    _json(metadata_payload.get("values", {})),
-                    _json(metadata_payload.get("evidence", {})),
+        """Compatibility shim for pre-v5 single-resource callers."""
+        await self.complete_with_resources(
+            job,
+            (
+                CompletedResource(
+                    item_key="single-resource",
+                    source_path=final_path,
+                    title=job.candidate.title,
+                    metadata=job.metadata,
+                    final_path=final_path,
                 ),
-            )
-            await db.execute(
-                """
-                INSERT INTO notification_outbox (
-                    job_id, anime_name, title, status, created_at, updated_at
-                ) VALUES (?, ?, ?, 'pending', ?, ?)
-                """,
-                (
-                    job.id,
-                    release.anime_name or "Unknown",
-                    title,
-                    now,
-                    now,
-                ),
-            )
-            job.status = JobStatus.COMPLETED
-            job.step = JobStep.FINALIZE
-            job.output_path = final_path
-            job.completed_at = now
-            job.updated_at = now
-            job.last_error = None
-            await self._update_job(db, job, expected_lease=job.lease_token)
+            ),
+        )
 
     async def _update_job(
         self,
@@ -528,6 +596,47 @@ def _row_to_job(row) -> DownloadJob:
         completed_at=row["completed_at"],
         lease_token=row["lease_token"],
         lease_expires_at=row["lease_expires_at"],
+    )
+
+
+def _validate_and_sort_resources(
+    resources: tuple[CompletedResource, ...],
+) -> tuple[CompletedResource, ...]:
+    if not resources:
+        raise ValueError("At least one completed resource is required")
+    seen: set[str] = set()
+    for resource in resources:
+        if not resource.item_key:
+            raise ValueError("Completed resource item_key must not be empty")
+        if resource.item_key in seen:
+            raise ValueError(
+                f"Duplicate completed resource item_key: {resource.item_key}"
+            )
+        seen.add(resource.item_key)
+        if not resource.source_path:
+            raise ValueError(
+                f"Completed resource source_path must not be empty: {resource.item_key}"
+            )
+        if not resource.final_path:
+            raise ValueError(
+                f"Completed resource final_path must not be empty: {resource.item_key}"
+            )
+        if not resource.title:
+            raise ValueError(
+                f"Completed resource title must not be empty: {resource.item_key}"
+            )
+    return tuple(sorted(resources, key=_completed_resource_sort_key))
+
+
+def _completed_resource_sort_key(resource: CompletedResource) -> tuple[Any, ...]:
+    values = resource.metadata.values
+    missing_number = 2**63 - 1
+    return (
+        values.anime_name or "",
+        values.season if values.season is not None else missing_number,
+        values.episode if values.episode is not None else missing_number,
+        resource.item_key,
+        resource.final_path,
     )
 
 

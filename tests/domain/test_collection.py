@@ -21,6 +21,11 @@ def test_collection_release_titles_are_excluded(title):
         "[Sakurato] Anime Title - 01 [1080p]",
         "Show S01E05 1080p",
         "[ANi] Show Season 2 - 18 [1080P][CHT][MP4]",
+        "[ANi] Show Season 02 - 18 [1080P][CHT][MP4]",
+        "Anime 10-12bit [1080p]",
+        "Anime 8-10bit HEVC",
+        "Anime 23-24fps",
+        "Anime 01-12bit",
     ],
 )
 def test_single_episode_release_titles_are_not_excluded(title):

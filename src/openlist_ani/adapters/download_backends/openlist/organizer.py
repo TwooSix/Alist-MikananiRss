@@ -1,156 +1,100 @@
-"""OpenList video and sidecar rename organizer."""
+"""OpenList composition root for the shared durable organizer."""
 
 from __future__ import annotations
 
 import asyncio
-import os
 from collections.abc import Awaitable, Callable
 
+from openlist_ani.application.organization import DurableOrganizationExecutor
 from openlist_ani.application.ports import (
     CheckpointCallback,
     DownloadedAsset,
+    DownloadManifest,
+    DownloadedFile,
     OrganizedAsset,
+    OrganizationRequest,
+    OrganizationSidecar,
 )
 from openlist_ani.domain import DownloadJob
-from openlist_ani.logger import logger
 
 from .client import OpenListClient
-from .file_conflicts import OpenListFileConflictResolver
+from .storage import OpenListStorageOperations
 
 
 class OpenListOrganizerAdapter:
+    backend_name = "openlist"
+
     def __init__(
         self,
         client: OpenListClient,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
         self._client = client
-        self._sleep = sleep
+        self._storage = OpenListStorageOperations(client, sleep)
+        self._executor = DurableOrganizationExecutor(self._storage)
 
     async def organize(
         self,
         job: DownloadJob,
-        asset: DownloadedAsset,
-        target_filename: str,
+        manifest: DownloadManifest | DownloadedAsset,
+        requests: tuple[OrganizationRequest, ...] | str,
         checkpoint_callback: CheckpointCallback | None = None,
-    ) -> OrganizedAsset:
-        plan = await self._load_plan(job, asset, target_filename, checkpoint_callback)
+    ):
+        """Organize all requests using the OpenList storage driver.
 
-        if not plan or plan[0].get("kind") != "video":
-            raise RuntimeError("Organizer rename plan has no video")
+        The ``DownloadedAsset``/string branch only exists so persisted v1 jobs
+        and integrations can finish after an upgrade.  New jobs always use a
+        manifest plus a tuple of requests.
+        """
 
-        renamed_any = False
-        for item in plan:
-            renamed_any = (
-                await self._rename_plan_item(job, asset.directory_path, item)
-                or renamed_any
+        if isinstance(manifest, DownloadedAsset):
+            if not isinstance(requests, str):
+                raise TypeError("legacy organizer target filename must be a string")
+            legacy_asset = manifest
+            converted_manifest = DownloadManifest(
+                root_path=legacy_asset.directory_path,
+                files=(
+                    DownloadedFile(legacy_asset.filename),
+                    *(
+                        DownloadedFile(sidecar.filename)
+                        for sidecar in legacy_asset.sidecars
+                    ),
+                ),
+                checkpoint=dict(legacy_asset.checkpoint),
+                legacy_materialized=True,
+            )
+            converted_request = OrganizationRequest(
+                item_key="legacy",
+                video_relative_path=legacy_asset.filename,
+                sidecars=tuple(
+                    OrganizationSidecar(sidecar.filename, sidecar.suffix)
+                    for sidecar in legacy_asset.sidecars
+                ),
+                target_directory_path=legacy_asset.directory_path,
+                target_filename=requests,
+                metadata=job.metadata,
+            )
+            results = await self._executor.organize(
+                job,
+                converted_manifest,
+                (converted_request,),
+                checkpoint_callback,
+            )
+            result = results[0]
+            if result.state != "completed" or not result.final_path:
+                raise RuntimeError(result.error or "Legacy organization failed")
+            directory_path, filename = result.final_path.rsplit("/", 1)
+            return OrganizedAsset(
+                directory_path,
+                filename,
+                tuple(path.rsplit("/", 1)[-1] for path in result.sidecar_paths),
             )
 
-        if renamed_any:
-            await self._sleep(5)
-
-        video = plan[0]["target"]
-        sidecars = tuple(
-            item["target"] for item in plan if item.get("kind") == "subtitle"
+        if isinstance(requests, str):
+            raise TypeError("organization requests must be a tuple")
+        return await self._executor.organize(
+            job,
+            manifest,
+            requests,
+            checkpoint_callback,
         )
-        return OrganizedAsset(asset.directory_path, video, sidecars)
-
-    async def _load_plan(
-        self,
-        job: DownloadJob,
-        asset: DownloadedAsset,
-        target_filename: str,
-        checkpoint_callback: CheckpointCallback | None,
-    ) -> list[dict[str, str]]:
-        if saved_plan := job.artifact.get("organize_plan"):
-            return [dict(item) for item in saved_plan.get("files", [])]
-        plan = await self._build_plan(asset, target_filename)
-        if checkpoint_callback is not None:
-            await checkpoint_callback({"files": plan})
-        return plan
-
-    async def _rename_plan_item(
-        self,
-        job: DownloadJob,
-        directory_path: str,
-        item: dict[str, str],
-    ) -> bool:
-        source = item["source"]
-        target = item["target"]
-        entries = await self._client.list_files(directory_path)
-        if entries is None:
-            raise RuntimeError(f"Cannot inspect organizer directory: {directory_path}")
-        names = {entry.name for entry in entries}
-        if source == target and source in names:
-            return False
-        if source not in names and target in names:
-            return False
-        if source not in names:
-            raise RuntimeError(f"Rename source is missing: {directory_path}/{source}")
-        if target in names:
-            raise RuntimeError(
-                f"Rename source and target both exist: {source} -> {target}"
-            )
-
-        source_path = f"{directory_path.rstrip('/')}/{source}"
-        logger.debug(f"OpenList rename: job={job.id}, source={source}, target={target}")
-        if await self._client.rename_file(source_path, target):
-            return True
-        refreshed = await self._client.list_files(directory_path)
-        refreshed_names = {entry.name for entry in refreshed or []}
-        if source not in refreshed_names and target in refreshed_names:
-            return False
-        raise RuntimeError(f"Failed to rename '{source}' to '{target}'")
-
-    async def _build_plan(
-        self,
-        asset: DownloadedAsset,
-        target_filename: str,
-    ) -> list[dict[str, str]]:
-        entries = await self._client.list_files(asset.directory_path)
-        if entries is None:
-            raise RuntimeError(
-                f"Cannot inspect organizer directory: {asset.directory_path}"
-            )
-        names = {entry.name for entry in entries}
-        source_names = {asset.filename, *(item.filename for item in asset.sidecars)}
-        occupied = names - source_names
-        resolver = OpenListFileConflictResolver(self._client, self._sleep)
-
-        if asset.filename not in names and target_filename in names:
-            resolved_video = target_filename
-        elif asset.filename not in names:
-            raise RuntimeError(
-                f"Rename source is missing: {asset.directory_path}/{asset.filename}"
-            )
-        elif target_filename in occupied:
-            resolved_video = resolver.next_available_name(target_filename, occupied)
-        else:
-            resolved_video = target_filename
-
-        plan = [
-            {
-                "kind": "video",
-                "source": asset.filename,
-                "target": resolved_video,
-            }
-        ]
-        resolved_stem = os.path.splitext(resolved_video)[0]
-        reserved = occupied | {resolved_video}
-        for sidecar in asset.sidecars:
-            extension = os.path.splitext(sidecar.filename)[1]
-            desired = f"{resolved_stem}{sidecar.suffix}{extension}"
-            target = (
-                resolver.next_available_name(desired, reserved)
-                if desired in reserved
-                else desired
-            )
-            reserved.add(target)
-            plan.append(
-                {
-                    "kind": "subtitle",
-                    "source": sidecar.filename,
-                    "target": target,
-                }
-            )
-        return plan

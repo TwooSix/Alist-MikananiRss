@@ -65,7 +65,9 @@ from openlist_ani.adapters.registry import AdapterRegistry
 from openlist_ani.application.download_worker import DownloadWorkerPool
 from openlist_ani.application.feed_scheduler import FeedScheduler
 from openlist_ani.application.metadata_worker import MetadataWorker
+from openlist_ani.application.metadata_pipeline import MetadataPipelineResolver
 from openlist_ani.application.notification_worker import NotificationWorker
+from openlist_ani.application.ports import DownloadBackendBundle
 from openlist_ani.application.service import CoreApplicationService
 from openlist_ani.application.settings import CoreSettings
 from openlist_ani.bootstrap.runtime import AppRuntime
@@ -85,7 +87,14 @@ config = None
 class _RuntimeAssembly:
     runtime: AppRuntime
     application: CoreApplicationService
-    openlist_client: OpenListClient
+    download_backend: DownloadBackendBundle
+    download_backends: tuple[DownloadBackendBundle, ...] = ()
+
+    @property
+    def openlist_client(self):
+        """Compatibility hook for the manual crash-recovery harness."""
+
+        return getattr(self.download_backend.downloader, "_client", None)
 
 
 async def run() -> None:
@@ -94,7 +103,7 @@ async def run() -> None:
     assembly = await _compose_runtime(config, core_settings)
 
     try:
-        await _check_openlist_health(assembly, config)
+        await _check_download_backend_health(assembly)
         await assembly.runtime.start()
         BackendApiService.init(assembly.application)
         server = _create_api_server(config)
@@ -131,11 +140,6 @@ async def _compose_runtime(config, core_settings: CoreSettings) -> _RuntimeAssem
     await database.start()
     close_callbacks.append(database.close)
 
-    openlist_client = OpenListClient(
-        base_url=config.downloader.openlist.url,
-        token=config.downloader.openlist.token,
-    )
-    close_callbacks.append(openlist_client.close)
     feed_session = aiohttp.ClientSession(
         timeout=aiohttp.ClientTimeout(total=30),
         trust_env=True,
@@ -146,10 +150,13 @@ async def _compose_runtime(config, core_settings: CoreSettings) -> _RuntimeAssem
         registry = _build_registry(
             config,
             core_settings,
-            openlist_client,
+            None,
             feed_session,
             metadata_cache,
         )
+        for bundle in registry.download_backends.values():
+            if bundle.close is not None:
+                close_callbacks.append(bundle.close)
         close_callbacks.extend(
             provider.close for provider in registry.metadata.values()
         )
@@ -157,7 +164,6 @@ async def _compose_runtime(config, core_settings: CoreSettings) -> _RuntimeAssem
             config,
             core_settings,
             database,
-            openlist_client,
             registry,
             close_callbacks,
         )
@@ -170,13 +176,13 @@ async def _create_runtime_assembly(
     config,
     core_settings: CoreSettings,
     database: Database,
-    openlist_client: OpenListClient,
     registry: AdapterRegistry,
     close_callbacks: list[Callable[[], Awaitable[None]]],
 ) -> _RuntimeAssembly:
+    download_backend = registry.download_backend(core_settings.download_backend)
     jobs = SqliteJobRepository(
         database,
-        downloader_name=core_settings.downloader,
+        downloader_name=download_backend.name,
         lease_seconds=core_settings.job_lease_seconds,
     )
     feeds = SqliteFeedStateRepository(database)
@@ -205,10 +211,12 @@ async def _create_runtime_assembly(
         concurrency=core_settings.feed_concurrency,
         jobs_available=metadata_available,
     )
+    metadata_providers = registry.metadata_pipeline(core_settings.metadata_providers)
+    metadata_resolver = MetadataPipelineResolver(metadata_providers)
     metadata_worker = MetadataWorker(
         jobs=jobs,
         library=library,
-        providers=registry.metadata_pipeline(core_settings.metadata_providers),
+        providers=metadata_providers,
         settings=core_settings,
         jobs_available=metadata_available,
         download_available=download_available,
@@ -216,8 +224,9 @@ async def _create_runtime_assembly(
     )
     download_workers = DownloadWorkerPool(
         jobs=jobs,
-        downloader=registry.downloader(core_settings.downloader),
-        organizer=registry.organizer(core_settings.organizer),
+        backends=registry,
+        metadata_resolver=metadata_resolver,
+        library=library,
         settings=core_settings,
         work_available=download_available,
         notification_available=notification_available,
@@ -256,23 +265,26 @@ async def _create_runtime_assembly(
     return _RuntimeAssembly(
         runtime=runtime,
         application=application,
-        openlist_client=openlist_client,
+        download_backend=download_backend,
+        download_backends=tuple(registry.download_backends.values()),
     )
 
 
-async def _check_openlist_health(assembly: _RuntimeAssembly, config) -> None:
-    try:
-        healthy = await OpenListHealthCheck(
-            client=assembly.openlist_client,
-            base_url=config.downloader.openlist.url,
-            offline_download_tool=config.downloader.openlist.offline_download_tool,
-        ).validate()
-        if not healthy:
-            assembly.runtime.set_degraded(
-                "openlist", "health check failed; jobs will retry"
-            )
-    except Exception as error:
-        assembly.runtime.set_degraded("openlist", str(error))
+async def _check_download_backend_health(assembly: _RuntimeAssembly) -> None:
+    bundles = assembly.download_backends or (assembly.download_backend,)
+    for bundle in bundles:
+        check = bundle.health_check
+        if check is None:
+            continue
+        try:
+            healthy = await check()
+            if not healthy:
+                assembly.runtime.set_degraded(
+                    bundle.name,
+                    "health check failed; jobs will retry",
+                )
+        except Exception as error:
+            assembly.runtime.set_degraded(bundle.name, str(error))
 
 
 async def _close_callbacks(
@@ -288,7 +300,7 @@ async def _close_callbacks(
 def _build_registry(
     config,
     core_settings,
-    openlist_client: OpenListClient,
+    openlist_client: OpenListClient | None,
     feed_session: aiohttp.ClientSession,
     metadata_cache=None,
 ) -> AdapterRegistry:
@@ -327,14 +339,38 @@ def _build_registry(
         )
 
     registry.register_download_backend(
-        "openlist",
-        downloader=OpenListDownloadAdapter(
-            client=openlist_client,
-            offline_download_tool=config.downloader.openlist.offline_download_tool,
-        ),
-        organizer=OpenListOrganizerAdapter(openlist_client),
+        _create_openlist_backend_bundle(config, client=openlist_client)
     )
     return registry
+
+
+def _create_openlist_backend_bundle(
+    config,
+    *,
+    client: OpenListClient | None = None,
+) -> DownloadBackendBundle:
+    """Own the OpenList client and all lifecycle hooks inside one bundle."""
+
+    client = client or OpenListClient(
+        base_url=config.downloader.openlist.url,
+        token=config.downloader.openlist.token,
+    )
+    health = OpenListHealthCheck(
+        client=client,
+        base_url=config.downloader.openlist.url,
+        offline_download_tool=config.downloader.openlist.offline_download_tool,
+    )
+    close = getattr(client, "close", None)
+    return DownloadBackendBundle(
+        name="openlist",
+        downloader=OpenListDownloadAdapter(
+            client=client,
+            offline_download_tool=config.downloader.openlist.offline_download_tool,
+        ),
+        organizer=OpenListOrganizerAdapter(client),
+        health_check=health.validate,
+        close=close if callable(close) else None,
+    )
 
 
 def _validator_llm_client(config, *, use_llm: bool | None = None):

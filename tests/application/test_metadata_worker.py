@@ -11,7 +11,7 @@ from openlist_ani.adapters.persistence import (
 )
 from openlist_ani.adapters.torrent import TorrentToMagnetCandidateTransformer
 from openlist_ani.application.metadata_worker import MetadataWorker
-from openlist_ani.application.settings import CoreSettings
+from openlist_ani.application.settings import CoreSettings, MetadataFilterSettings
 from openlist_ani.domain import (
     DownloadJob,
     JobStatus,
@@ -298,3 +298,82 @@ def test_feed_unknown_quality_does_not_override_title_resolution():
     assert document.values.version == 2
     assert [item.source for item in document.evidence["quality"]] == ["llm"]
     assert [item.source for item in document.evidence["version"]] == ["llm"]
+
+
+@pytest.mark.asyncio
+async def test_collection_title_enters_download_without_parent_episode_metadata():
+    jobs = AsyncMock()
+    library = AsyncMock()
+    library.find_existing_titles.return_value = set()
+    jobs.list_active.return_value = []
+    download_available = asyncio.Event()
+    worker = MetadataWorker(
+        jobs=jobs,
+        library=library,
+        providers=[],
+        settings=CoreSettings(
+            download_path="/anime",
+            rename_format="{anime_name} S{season:02d}E{episode:02d}",
+            rss_interval_seconds=300,
+            metadata_providers=(),
+        ),
+        jobs_available=asyncio.Event(),
+        download_available=download_available,
+    )
+    job = DownloadJob(
+        id="collection-job",
+        candidate=ReleaseCandidate.create(
+            source_name="feed",
+            source_url="https://feed.invalid/rss",
+            title="Example S01E01-E12 Batch",
+            download_url="magnet:?xt=urn:btih:batch",
+        ),
+        status=JobStatus.RUNNING,
+        attempt_count=1,
+    )
+
+    await worker._process_batch([job])
+
+    assert job.step == JobStep.DOWNLOAD
+    assert job.artifact["collection_hint"] is True
+    jobs.save.assert_awaited_once_with(job)
+    jobs.reschedule.assert_not_awaited()
+    assert download_available.is_set()
+
+
+@pytest.mark.asyncio
+async def test_user_pattern_can_explicitly_disable_collection_downloads():
+    jobs = AsyncMock()
+    library = AsyncMock()
+    library.find_existing_titles.return_value = set()
+    jobs.list_active.return_value = []
+    worker = MetadataWorker(
+        jobs=jobs,
+        library=library,
+        providers=[],
+        settings=CoreSettings(
+            download_path="/anime",
+            rename_format="{anime_name} S{season:02d}E{episode:02d}",
+            rss_interval_seconds=300,
+            metadata_providers=(),
+            metadata_filter=MetadataFilterSettings(exclude_patterns=["Batch"]),
+        ),
+        jobs_available=asyncio.Event(),
+        download_available=asyncio.Event(),
+    )
+    job = DownloadJob(
+        id="collection-job",
+        candidate=ReleaseCandidate.create(
+            source_name="feed",
+            source_url="https://feed.invalid/rss",
+            title="Example S01E01-E12 Batch",
+            download_url="magnet:?xt=urn:btih:batch",
+        ),
+        status=JobStatus.RUNNING,
+        attempt_count=1,
+    )
+
+    await worker._process_batch([job])
+
+    jobs.skip.assert_awaited_once_with(job, "release_policy")
+    jobs.save.assert_not_awaited()

@@ -32,10 +32,8 @@ def validate_core_settings(settings: CoreSettings) -> None:
     if invalid:
         raise ValueError(f"Core settings must be positive: {', '.join(invalid)}")
     validate_metadata_pipeline(settings.metadata_providers)
-    if not settings.downloader.strip():
+    if not settings.download_backend.strip():
         raise ValueError("A download backend is required")
-    if not settings.organizer.strip():
-        raise ValueError("An organizer is required")
     if settings.job_heartbeat_seconds >= settings.job_lease_seconds:
         raise ValueError("Job heartbeat must be shorter than the job lease")
 

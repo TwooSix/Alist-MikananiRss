@@ -168,7 +168,7 @@ retention = "1 week"  # How long to keep old logs: "1 week", "30 days", "3 month
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
-| `exclude_patterns` | list | `[]` | 正则排除模式列表。匹配任一正则的 RSS 条目将被排除（不下载）。使用 `re.search()` 部分匹配 |
+| `exclude_patterns` | list | `[]` | 正则排除模式列表。匹配任一正则的 RSS 条目将被排除（不下载）。使用 `re.search()` 部分匹配；配置 `"合集"` 会主动禁用标题含「合集」的合集下载 |
 | `exclude_fansub` | list | `[]` | 排除的字幕组列表（精确匹配），如 `["XX字幕组", "YY字幕组"]` |
 | `exclude_quality` | list | `[]` | 排除的清晰度列表（精确匹配），如 `["480p"]` |
 | `exclude_languages` | list | `[]` | 排除的语言列表。资源的任一语言命中即排除。可选值：`"简"`、`"繁"`、`"日"`、`"英"`、`"未知"` |
@@ -177,7 +177,7 @@ retention = "1 week"  # How long to keep old logs: "1 week", "30 days", "3 month
 
 ```toml
 [rss.filter]
-exclude_patterns = ["合集", "SP\\d+"]  # 排除标题含「合集」或「SP+数字」的条目
+exclude_patterns = ["合集", "SP\\d+"]  # 主动禁用标题含「合集」的合集，并排除「SP+数字」
 exclude_fansub = ["XX字幕组"]  # 排除指定字幕组
 exclude_quality = ["480p"]     # 排除 480p 资源
 exclude_languages = ["未知"]   # 排除语言未知的资源
@@ -237,6 +237,11 @@ quality = ["2160p", "1080p", "720p", "480p", "360p"]
 
 ### Downloader 与 OpenList
 
+下载器和整理器由程序作为同一个下载后端固定绑定，不可独立搭配，也没有单独的
+`organizer` 配置项。当前内置的 `openlist` 后端始终使用 OpenList 下载器与基于
+OpenList API 的整理器；任务恢复时继续使用任务创建时保存的后端，不会切换到
+当前默认后端。未来增加本地下载后端时，也会自动使用对应的本地文件系统整理器。
+
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
 | `downloader.download_path` | string | `"/"` | 下载保存路径 |
@@ -244,6 +249,28 @@ quality = ["2160p", "1080p", "720p", "480p", "360p"]
 | `downloader.openlist.url` | string | `"http://localhost:5244"` | OpenList 访问地址 |
 | `downloader.openlist.token` | string | `""` | 令牌，见「设置 → 其他 → 令牌」 |
 | `downloader.openlist.offline_download_tool` | string | `"qBittorrent"` | 离线下载工具（不区分大小写）。可选值：`aria2`、`qBittorrent`、`PikPak`、`115 Cloud`、`115 Open`、`123Pan`、`123 Open`、`SimpleHttp`、`Thunder`、`ThunderBrowser`、`ThunderX`、`Transmission` |
+
+#### 合集下载与整理
+
+一个下载链接可以包含多个独立的视频文件。下载完成后，程序会递归读取该任务的
+完整文件清单，对每个疑似正片的视频重新执行 metadata pipeline，并分别生成季度
+目录、视频文件名和字幕文件名。`01.mkv` 这类只有集数的文件名会结合合集标题中的
+番名与季度解析；程序不会根据文件排序猜测集数，也不会拆分单个视频内部的章节。
+
+仅元数据完整且季数、集数均大于 0 的正片会进入媒体库。SP、OVA、OAD、OP、ED、
+NCOP、NCED、PV、CM、Trailer、Sample、特典等附加内容会跳过。字幕按目录和文件名
+匹配，每个字幕最多绑定到一个视频。同一包中的重复集与已有资源仍使用
+`rss.priority`、`rss.strict` 和 metadata filter 判断。
+
+合集至少成功整理一集时，父任务会完成，并在 API 与通知中给出未处理文件的 warning；
+解析失败、策略跳过、整理失败和无关文件会从该任务的临时下载目录清理。没有任何一集
+成功时，程序会清理整包并将任务标记为失败（全部因已有资源或过滤策略被拒绝时标记为
+跳过）。如果不希望下载合集，可配置：
+
+```toml
+[rss.filter]
+exclude_patterns = ["合集"]
+```
 
 #### 重命名格式
 

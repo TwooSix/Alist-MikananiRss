@@ -9,7 +9,11 @@ from .metadata import ReleaseMetadata
 
 
 def sanitize_filename(name: str) -> str:
-    return re.sub(r'[<>:"/\\|?*]', " ", name).strip()
+    sanitized = re.sub(r'[<>:"/\\|?*]', " ", name).strip()
+    # A metadata-derived directory component must never be able to resolve to
+    # the current or parent directory.  Empty names receive the same stable
+    # fallback used by the naming planners.
+    return "Unknown" if sanitized in {"", ".", ".."} else sanitized
 
 
 def format_anime_episode(

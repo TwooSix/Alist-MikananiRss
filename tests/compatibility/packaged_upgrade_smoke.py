@@ -356,7 +356,7 @@ def _verify_current_state(runtime: Path) -> None:
             connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[
                 0
             ]
-            == 4
+            == 5
         )
         resources = [
             dict(row)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import posixpath
 from collections.abc import Awaitable, Callable
 from enum import StrEnum
 
@@ -31,6 +32,7 @@ class OpenListWorkflowState(StrEnum):
     SUBMITTED = "submitted"
     DOWNLOAD_DONE = "download_done"
     TRANSFER_DONE = "transfer_done"
+    MANIFEST_READY = "manifest_ready"
     FILE_DETECTED = "file_detected"
     FILE_RESOLVED = "file_resolved"
     MOVING = "moving"
@@ -60,14 +62,20 @@ def _temp_root_path(base_path: str) -> str:
 
 
 def _directory_creation_paths(base_path: str, target_path: str) -> list[str]:
-    base = (base_path or "/").rstrip("/") or "/"
-    target = (target_path or "/").rstrip("/") or "/"
+    raw_base = (base_path or "/").replace("\\", "/")
+    raw_target = (target_path or "/").replace("\\", "/")
+    if any(part in {".", ".."} for part in raw_target.split("/") if part):
+        raise DownloadBackendError(f"Unsafe OpenList target directory: {target_path}")
+    base = posixpath.normpath(raw_base)
+    target = posixpath.normpath(raw_target)
     if target == base:
         return []
 
     prefix = "/" if base == "/" else f"{base}/"
     if not target.startswith(prefix):
-        return [target]
+        raise DownloadBackendError(
+            f"OpenList target directory escapes base path: {target_path}"
+        )
 
     relative_path = target[len(prefix) :]
     parts = [part for part in relative_path.split("/") if part]
@@ -139,6 +147,48 @@ class OpenListDownloadWorkflow:
         finally:
             if _workflow_state(task) == OpenListWorkflowState.DONE:
                 await self._safe_cleanup(task)
+
+    async def run_to_manifest(
+        self,
+        task: OpenListWorkflowContext,
+        checkpoint: WorkflowCheckpoint | None = None,
+    ) -> OpenListWorkflowContext:
+        """Run download/transfer and persist a recursive inventory in staging.
+
+        Unlike the legacy workflow, this deliberately leaves the job staging
+        directory untouched.  Cleanup belongs to the organizer after every
+        requested item has reached a terminal state.
+        """
+
+        try:
+            while True:
+                state = _workflow_state(task)
+                if state == OpenListWorkflowState.MANIFEST_READY:
+                    return task
+                if state == OpenListWorkflowState.TRANSFER_DONE:
+                    await self._inventory_files(task)
+                    await self._checkpoint(
+                        task,
+                        OpenListWorkflowState.MANIFEST_READY,
+                        checkpoint,
+                    )
+                    continue
+                if state in {
+                    OpenListWorkflowState.FILE_DETECTED,
+                    OpenListWorkflowState.FILE_RESOLVED,
+                    OpenListWorkflowState.MOVING,
+                    OpenListWorkflowState.MOVED,
+                    OpenListWorkflowState.DONE,
+                }:
+                    raise DownloadBackendError(
+                        "Cannot resume a materialized legacy checkpoint as manifest v2"
+                    )
+                await self._run_state_step(task, state, checkpoint)
+        except OpenListRemoteTaskFailed:
+            await self._safe_cleanup(task)
+            self._reset_remote_task(task)
+            await self._checkpoint(task, OpenListWorkflowState.INIT, checkpoint)
+            raise
 
     async def _run_state_step(
         self,
@@ -213,8 +263,21 @@ class OpenListDownloadWorkflow:
             "resolved_filename",
             "move_plan",
             "file_parent_path",
+            "downloaded_files",
         ):
             task.downloader_data.pop(key, None)
+
+    async def _inventory_files(self, task: OpenListWorkflowContext) -> None:
+        temp_path = task.downloader_data.get("temp_path")
+        if not temp_path:
+            raise DownloadBackendError("No temp_path available")
+        inventory = await self._file_detector.inventory(temp_path)
+        if not inventory:
+            raise DownloadBackendError("Could not inventory downloaded files")
+        task.downloader_data["downloaded_files"] = [
+            {"relative_path": item.relative_path, "size": item.size}
+            for item in inventory
+        ]
 
     async def _prepare_submission(  # NOSONAR - uniform async state-handler contract
         self, task: OpenListWorkflowContext
@@ -719,9 +782,17 @@ class OpenListDownloadWorkflow:
             return
         try:
             logger.debug(f"Cleaning up temporary directory: {task.id}")
-            await self._client.remove_path(_temp_root_path(task.base_path), [task.id])
+            removed = await self._client.remove_path(
+                _temp_root_path(task.base_path), [task.id]
+            )
         except Exception as e:
-            logger.warning(f"Cleanup failed for {task.id}: {e}")
+            raise DownloadBackendError(
+                f"Failed to clean OpenList staging for {task.id}: {e}"
+            ) from e
+        if not removed:
+            raise DownloadBackendError(
+                f"Failed to clean OpenList staging for {task.id}"
+            )
 
     def _log_progress(
         self,

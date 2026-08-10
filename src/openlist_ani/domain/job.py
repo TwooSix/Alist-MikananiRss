@@ -14,6 +14,7 @@ from .release import ReleaseCandidate
 class JobStep(StrEnum):
     METADATA = "metadata"
     DOWNLOAD = "download"
+    RESOLVE_FILES = "resolve_files"
     ORGANIZE = "organize"
     FINALIZE = "finalize"
 
@@ -46,7 +47,7 @@ class DownloadJob:
     metadata: MetadataDocument = field(default_factory=MetadataDocument)
     downloader_name: str = "openlist"
     checkpoint: dict[str, Any] = field(default_factory=dict)
-    checkpoint_version: int = 1
+    checkpoint_version: int = 2
     artifact: dict[str, Any] = field(default_factory=dict)
     attempt_count: int = 0
     next_attempt_at: str | None = None
@@ -83,6 +84,8 @@ class DownloadJob:
             return "pending"
         if self.step == JobStep.DOWNLOAD:
             return "downloading" if self.status == JobStatus.RUNNING else "pending"
+        if self.step == JobStep.RESOLVE_FILES:
+            return "resolving" if self.status == JobStatus.RUNNING else "downloaded"
         if self.step == JobStep.ORGANIZE:
             return "renaming" if self.status == JobStatus.RUNNING else "downloaded"
         return "notifying" if self.status == JobStatus.RUNNING else "renamed"

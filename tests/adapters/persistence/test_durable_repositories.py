@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import closing
+import json
 import sqlite3
 
 import pytest
@@ -13,6 +14,7 @@ from openlist_ani.adapters.persistence import (
     SqliteJobRepository,
     SqliteOutboxRepository,
 )
+from openlist_ani.application.ports import CompletedResource
 from openlist_ani.domain import (
     JobStep,
     MetadataDocument,
@@ -112,7 +114,7 @@ async def test_expired_leases_are_reclaimed_and_stale_workers_are_rejected(tmp_p
 
 
 @pytest.mark.asyncio
-async def test_duplicate_resource_title_does_not_emit_false_completion(tmp_path):
+async def test_duplicate_resource_titles_are_allowed_across_jobs(tmp_path):
     _, database, jobs, _ = await _repositories(tmp_path)
     first = await _claim_with_metadata(jobs, "Conflicting title", "magnet:first")
     await jobs.complete_with_resource(first, "/anime/first.mkv")
@@ -122,8 +124,8 @@ async def test_duplicate_resource_title_does_not_emit_false_completion(tmp_path)
 
     stored = await jobs.get(second.id)
     assert stored is not None
-    assert stored.status.value == "skipped"
-    assert stored.last_error == "duplicate_resource_title"
+    assert stored.status.value == "completed"
+    assert stored.last_error is None
     async with database.operation() as connection:
         resources = await (
             await connection.execute("SELECT COUNT(*) FROM resources")
@@ -131,8 +133,136 @@ async def test_duplicate_resource_title_does_not_emit_false_completion(tmp_path)
         notifications = await (
             await connection.execute("SELECT COUNT(*) FROM notification_outbox")
         ).fetchone()
-    assert resources[0] == 1
-    assert notifications[0] == 1
+    assert resources[0] == 2
+    assert notifications[0] == 2
+    await database.close()
+
+
+@pytest.mark.asyncio
+async def test_collection_resources_and_summary_are_committed_once(tmp_path):
+    _, database, jobs, outbox = await _repositories(tmp_path)
+    job = await _claim_with_metadata(jobs, "Example collection", "magnet:batch")
+    episode_two = MetadataDocument(
+        values=ReleaseMetadata(anime_name="Example", season=1, episode=2)
+    )
+    episode_one = MetadataDocument(
+        values=ReleaseMetadata(anime_name="Example", season=1, episode=1)
+    )
+    resources = (
+        CompletedResource(
+            item_key="episode-2",
+            source_path="disc/02.mkv",
+            title="Example 02",
+            metadata=episode_two,
+            final_path="/anime/Example/Season 1/Example S01E02.mkv",
+        ),
+        CompletedResource(
+            item_key="episode-1",
+            source_path="disc/01.mkv",
+            title="Example 01",
+            metadata=episode_one,
+            final_path="/anime/Example/Season 1/Example S01E01.mkv",
+        ),
+    )
+    summary = {"success_count": 2, "warning_count": 1, "episodes": [1, 2]}
+
+    await jobs.complete_with_resources(job, resources, summary)
+    await jobs.complete_with_resources(job, resources, summary)
+
+    stored = await jobs.get(job.id)
+    assert stored is not None
+    assert stored.status.value == "completed"
+    assert stored.output_path == resources[1].final_path
+    async with database.operation() as connection:
+        rows = await (
+            await connection.execute(
+                "SELECT title, item_key, source_path, final_path, metadata_json "
+                "FROM resources WHERE job_id = ? ORDER BY item_key",
+                (job.id,),
+            )
+        ).fetchall()
+        outbox_row = await (
+            await connection.execute(
+                "SELECT summary_json FROM notification_outbox WHERE job_id = ?",
+                (job.id,),
+            )
+        ).fetchone()
+    assert [row["item_key"] for row in rows] == ["episode-1", "episode-2"]
+    assert [row["title"] for row in rows] == ["Example 01", "Example 02"]
+    assert rows[0]["source_path"] == "disc/01.mkv"
+    assert json.loads(rows[0]["metadata_json"])["episode"] == 1
+    assert json.loads(outbox_row["summary_json"]) == summary
+
+    notification = (await outbox.claim(1))[0]
+    assert notification.summary == summary
+    await database.close()
+
+
+@pytest.mark.asyncio
+async def test_collection_resource_replay_must_match_persisted_content(tmp_path):
+    _, database, jobs, _ = await _repositories(tmp_path)
+    job = await _claim_with_metadata(jobs, "Example collection", "magnet:batch")
+    original = CompletedResource(
+        item_key="episode-1",
+        source_path="disc/01.mkv",
+        title="Example 01",
+        metadata=MetadataDocument(
+            values=ReleaseMetadata(anime_name="Example", season=1, episode=1)
+        ),
+        final_path="/anime/Example/Season 1/Example S01E01.mkv",
+    )
+    await jobs.complete_with_resources(job, (original,), {})
+    conflicting = CompletedResource(
+        item_key=original.item_key,
+        source_path=original.source_path,
+        title=original.title,
+        metadata=MetadataDocument(
+            values=ReleaseMetadata(anime_name="Other", season=1, episode=1)
+        ),
+        final_path=original.final_path,
+    )
+
+    with pytest.raises(RuntimeError, match="conflicts with an existing item"):
+        await jobs.complete_with_resources(job, (conflicting,), {})
+
+    await database.close()
+
+
+@pytest.mark.asyncio
+async def test_collection_completion_replay_must_match_persisted_summary(tmp_path):
+    _, database, jobs, _ = await _repositories(tmp_path)
+    job = await _claim_with_metadata(jobs, "Example collection", "magnet:batch")
+    resource = CompletedResource(
+        item_key="episode-1",
+        source_path="01.mkv",
+        title="Example 01",
+        metadata=MetadataDocument(
+            values=ReleaseMetadata(anime_name="Example", season=1, episode=1)
+        ),
+        final_path="/anime/Example/Season 1/Example S01E01.mkv",
+    )
+    await jobs.complete_with_resources(job, (resource,), {"success_count": 1})
+
+    with pytest.raises(RuntimeError, match="Notification completion conflicts"):
+        await jobs.complete_with_resources(job, (resource,), {"success_count": 9})
+
+    await database.close()
+
+
+@pytest.mark.asyncio
+async def test_resolve_files_jobs_are_claimed_as_download_work(tmp_path):
+    _, database, jobs, _ = await _repositories(tmp_path)
+    created = await jobs.add_candidate(_candidate("Collection", "magnet:resolve"))
+    assert created is not None
+    async with database.operation(write=True) as connection:
+        await connection.execute(
+            "UPDATE jobs SET step = 'resolve_files' WHERE id = ?", (created.id,)
+        )
+
+    claimed = await jobs.claim_download_work(1)
+
+    assert [job.id for job in claimed] == [created.id]
+    assert claimed[0].step == JobStep.RESOLVE_FILES
     await database.close()
 
 

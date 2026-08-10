@@ -1,5 +1,8 @@
+import pytest
+
 from openlist_ani.domain import LanguageType, ReleaseMetadata, VideoQuality
 from openlist_ani.domain.policies import (
+    collection_title_reason,
     dominated_by_records,
     is_version_upgrade,
     metadata_exclusion_reason,
@@ -26,6 +29,24 @@ def test_title_policy_rejects_collection_but_accepts_single_episode():
     assert title_exclusion_reason("[Group] Show Complete BDRip", [])
     assert title_exclusion_reason("Show S02 - 14 [1080p]", []) is None
     assert title_exclusion_reason("The Bad Batch - 01", []) is None
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Example Season 2 Batch",
+        "Example S02 Batch",
+        "Anime 1-12 [1080p]",
+        "Anime E01-E12",
+        "Anime 1~12 Batch",
+    ],
+)
+def test_collection_classifier_accepts_common_unbracketed_batch_titles(title):
+    assert collection_title_reason(title)
+
+
+def test_collection_classifier_does_not_treat_real_bad_batch_episode_as_batch():
+    assert collection_title_reason("The Bad Batch - 01") is None
 
 
 def test_metadata_policy_matches_configured_values():

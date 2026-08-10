@@ -346,3 +346,100 @@ async def test_failed_remote_task_is_retryable_and_checkpoint_is_reset():
     assert checkpoints[-1]["workflow_state"] == "init"
     assert "task_id" not in checkpoints[-1]
     client.remove_path.assert_awaited_once()
+
+
+async def test_failed_remote_task_is_not_reset_when_staging_cleanup_fails():
+    adapter, client = _adapter()
+    client.remove_path = AsyncMock(return_value=False)
+    client.get_offline_download_undone = AsyncMock(return_value=[])
+    client.get_offline_download_done = AsyncMock(
+        return_value=[
+            OpenlistTask(
+                id="offline-1",
+                name="offline",
+                state=OpenlistTaskState.FAILED,
+                error="qbit failed",
+            )
+        ]
+    )
+    checkpoints = []
+    job = _job(
+        checkpoint={
+            "workflow_state": "submitted",
+            "task_id": "offline-1",
+            "temp_path": "/anime/.oani-download-tmp/workflow-1",
+        }
+    )
+
+    with pytest.raises(DownloadBackendError, match="Failed to clean OpenList staging"):
+        await _run(adapter, job, checkpoints)
+
+    assert job.checkpoint["workflow_state"] == "submitted"
+    assert job.checkpoint["task_id"] == "offline-1"
+    assert checkpoints == []
+
+
+async def test_v2_download_returns_recursive_manifest_without_materializing():
+    adapter, client = _adapter()
+    client.add_offline_download = AsyncMock(
+        return_value=[OpenlistTask(id="offline-1", name="offline")]
+    )
+    client.get_offline_download_undone = AsyncMock(return_value=[])
+    client.get_offline_download_done = AsyncMock(
+        return_value=[
+            OpenlistTask(
+                id="offline-1",
+                name="offline",
+                state=OpenlistTaskState.SUCCEEDED,
+            )
+        ]
+    )
+    client.get_offline_download_transfer_undone = AsyncMock(return_value=[])
+    client.get_offline_download_transfer_done = AsyncMock(return_value=[])
+    client.list_files = AsyncMock(
+        side_effect=[
+            [
+                SimpleNamespace(name="Season 1", is_dir=True, size=0),
+                SimpleNamespace(name="readme.txt", is_dir=False, size=3),
+            ],
+            [
+                SimpleNamespace(name="01.mkv", is_dir=False, size=100),
+                SimpleNamespace(name="01.ass", is_dir=False, size=4),
+            ],
+            [
+                SimpleNamespace(name="Season 1", is_dir=True, size=0),
+                SimpleNamespace(name="readme.txt", is_dir=False, size=3),
+            ],
+            [
+                SimpleNamespace(name="01.mkv", is_dir=False, size=100),
+                SimpleNamespace(name="01.ass", is_dir=False, size=4),
+            ],
+            [
+                SimpleNamespace(name="Season 1", is_dir=True, size=0),
+                SimpleNamespace(name="readme.txt", is_dir=False, size=3),
+            ],
+            [
+                SimpleNamespace(name="01.mkv", is_dir=False, size=100),
+                SimpleNamespace(name="01.ass", is_dir=False, size=4),
+            ],
+        ]
+    )
+    job = _job()
+    checkpoints = []
+
+    async def checkpoint(payload):
+        checkpoints.append(dict(payload))
+
+    result = await adapter.start_or_resume(job, checkpoint)
+
+    assert result.root_path == "/anime/.oani-download-tmp/workflow-1"
+    assert result.cleanup_root == result.root_path
+    assert [(item.relative_path, item.size) for item in result.files] == [
+        ("readme.txt", 3),
+        ("Season 1/01.ass", 4),
+        ("Season 1/01.mkv", 100),
+    ]
+    assert result.checkpoint["workflow_state"] == "manifest_ready"
+    client.move_file.assert_not_awaited()
+    client.rename_file.assert_not_awaited()
+    client.remove_path.assert_not_awaited()

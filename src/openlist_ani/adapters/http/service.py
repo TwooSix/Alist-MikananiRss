@@ -6,6 +6,7 @@ from typing import Any
 from openlist_ani.application.service import DownloadView, ReleaseView
 
 from .schemas import (
+    DownloadItemResponse,
     DownloadTaskResponse,
     ParseRSSEntry,
     ParseRSSResponse,
@@ -34,6 +35,21 @@ def _build_task_response(task: DownloadView) -> DownloadTaskResponse:
         completed_at=task.completed_at,
         save_path=task.save_path,
         final_path=task.final_path,
+        final_paths=list(task.final_paths),
+        warning_count=task.warning_count,
+        items=[
+            DownloadItemResponse(
+                item_key=item.item_key,
+                state=item.state,
+                source_path=item.source_path,
+                final_path=item.final_path,
+                error=item.error,
+                anime_name=item.anime_name,
+                season=item.season,
+                episode=item.episode,
+            )
+            for item in task.items
+        ],
     )
 
 

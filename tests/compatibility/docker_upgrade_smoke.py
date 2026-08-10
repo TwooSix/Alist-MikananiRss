@@ -174,7 +174,7 @@ def _verify_state(root: Path, original_config: bytes) -> None:
             connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[
                 0
             ]
-            == 4
+            == 5
         )
         assert connection.execute("SELECT COUNT(*) FROM resources").fetchone()[0] == 1
         assert (
@@ -211,12 +211,12 @@ def main() -> None:
 
         first_logs = _run_once(args.image, root, read_only_config=True)
         assert "migrated in memory" in first_logs
-        assert "Database schema migrated to v4" in first_logs
+        assert "Database schema migrated to v5" in first_logs
         _verify_state(root, original_config)
 
         second_logs = _run_once(args.image, root, read_only_config=False)
         assert "migrated in memory" in second_logs
-        assert "Database schema migrated to v4" not in second_logs
+        assert "Database schema migrated to v5" not in second_logs
         _verify_state(root, original_config)
 
     print(f"Docker upgrade passed: image={args.image}", flush=True)

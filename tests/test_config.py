@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 
 import pytest
 from pydantic import ValidationError
 
-from openlist_ani.adapters.configuration import ConfigManager, ConfigValidator
+from openlist_ani.adapters.configuration import (
+    ConfigManager,
+    ConfigValidator,
+    compile_core_settings,
+    validate_core_settings,
+)
 from openlist_ani.adapters.configuration.models import (
     BotConfig,
     DownloaderConfig,
@@ -38,6 +44,17 @@ def test_minimal_user_config_is_ready_to_run():
     assert config.metadata_provider_names() == ("regex", "tmdb")
     assert config.rss.torrent_to_magnet is False
     assert ConfigValidator(config).validate() is True
+
+
+def test_core_settings_select_one_bound_download_backend():
+    settings = compile_core_settings(_valid_config())
+
+    assert settings.download_backend == "openlist"
+    assert not hasattr(settings, "downloader")
+    assert not hasattr(settings, "organizer")
+
+    with pytest.raises(ValueError, match="A download backend is required"):
+        validate_core_settings(replace(settings, download_backend=" "))
 
 
 def test_torrent_to_magnet_can_be_enabled_in_rss_config():

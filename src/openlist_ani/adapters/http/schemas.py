@@ -26,6 +26,19 @@ class CreateDownloadRequest(BaseModel):
     title: str = Field(..., description="Release title for identification")
 
 
+class DownloadItemResponse(BaseModel):
+    """Per-file outcome for a single item in a download task."""
+
+    item_key: str
+    state: str
+    source_path: str | None = None
+    final_path: str | None = None
+    error: str | None = None
+    anime_name: str | None = None
+    season: int | None = None
+    episode: int | None = None
+
+
 class DownloadTaskResponse(BaseModel):
     """Response model for a single download task."""
 
@@ -46,6 +59,9 @@ class DownloadTaskResponse(BaseModel):
     completed_at: str | None = None
     save_path: str = ""
     final_path: str | None = None
+    final_paths: list[str] = Field(default_factory=list)
+    warning_count: int = 0
+    items: list[DownloadItemResponse] = Field(default_factory=list)
 
 
 class DownloadListResponse(BaseModel):

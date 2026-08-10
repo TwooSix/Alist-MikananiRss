@@ -50,6 +50,59 @@ class DownloadedAsset:
 
 
 @dataclass(frozen=True)
+class DownloadedFile:
+    """One leaf file materialized below a backend-owned download root."""
+
+    relative_path: str
+    size: int = 0
+
+
+@dataclass(frozen=True)
+class DownloadManifest:
+    """Durable inventory returned after a backend finishes downloading."""
+
+    root_path: str
+    files: tuple[DownloadedFile, ...]
+    checkpoint: dict[str, Any] = field(default_factory=dict)
+    cleanup_root: str | None = None
+    legacy_materialized: bool = False
+
+
+@dataclass(frozen=True)
+class OrganizationSidecar:
+    relative_path: str
+    suffix: str = ""
+
+
+@dataclass(frozen=True)
+class OrganizationRequest:
+    item_key: str
+    video_relative_path: str
+    sidecars: tuple[OrganizationSidecar, ...]
+    target_directory_path: str
+    target_filename: str
+    metadata: MetadataDocument
+
+
+@dataclass(frozen=True)
+class OrganizationResult:
+    item_key: str
+    state: str
+    final_path: str | None = None
+    sidecar_paths: tuple[str, ...] = ()
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class CompletedResource:
+    item_key: str
+    source_path: str
+    title: str
+    metadata: MetadataDocument
+    final_path: str
+
+
+@dataclass(frozen=True)
 class OrganizedAsset:
     directory_path: str
     filename: str
@@ -120,19 +173,38 @@ class DownloadAdapter(Protocol):
     async def start_or_resume(
         self,
         job: DownloadJob,
-        target_directory_path: str,
         checkpoint_callback: CheckpointCallback,
-    ) -> DownloadedAsset: ...
+    ) -> DownloadManifest: ...
 
 
 class Organizer(Protocol):
+    @property
+    def backend_name(self) -> str: ...
+
     async def organize(
         self,
         job: DownloadJob,
-        asset: DownloadedAsset,
-        target_filename: str,
+        manifest: DownloadManifest,
+        requests: tuple[OrganizationRequest, ...],
         checkpoint_callback: CheckpointCallback | None = None,
-    ) -> OrganizedAsset: ...
+    ) -> tuple[OrganizationResult, ...]: ...
+
+
+BackendHealthCheck = Callable[[], Awaitable[bool]]
+BackendClose = Callable[[], Awaitable[None]]
+
+
+@dataclass(frozen=True)
+class DownloadBackendBundle:
+    name: str
+    downloader: DownloadAdapter
+    organizer: Organizer
+    health_check: BackendHealthCheck | None = None
+    close: BackendClose | None = None
+
+
+class DownloadBackendResolver(Protocol):
+    def download_backend(self, name: str) -> DownloadBackendBundle: ...
 
 
 class JobRepository(Protocol):
@@ -162,10 +234,11 @@ class JobRepository(Protocol):
 
     async def list_active(self) -> list[DownloadJob]: ...
 
-    async def complete_with_resource(
+    async def complete_with_resources(
         self,
         job: DownloadJob,
-        final_path: str,
+        resources: tuple[CompletedResource, ...],
+        summary: dict[str, Any] | None = None,
     ) -> None: ...
 
 

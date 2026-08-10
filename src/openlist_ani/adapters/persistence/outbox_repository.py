@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from openlist_ani.domain.job import utc_now
 
@@ -19,6 +21,7 @@ class OutboxItem:
     title: str
     attempt_count: int
     lease_token: str
+    summary: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -32,6 +35,7 @@ class OutboxDelivery:
     attempt_count: int
     lease_token: str
     created_at: str
+    summary: dict[str, Any] = field(default_factory=dict)
 
 
 class LostOutboxLease(RuntimeError):
@@ -158,7 +162,8 @@ class SqliteOutboxRepository:
                 await db.execute(
                     f"""
                     SELECT d.id, d.outbox_id, d.target_key, d.attempt_count,
-                           o.job_id, o.anime_name, o.title, o.created_at
+                            o.job_id, o.anime_name, o.title, o.created_at,
+                            o.summary_json
                     FROM notification_deliveries d
                     JOIN notification_outbox o ON o.id = d.outbox_id
                     WHERE d.target_key = ? AND (
@@ -193,6 +198,7 @@ class SqliteOutboxRepository:
                 attempt_count=item["attempt_count"] + 1,
                 lease_token=tokens[item["id"]],
                 created_at=item["created_at"],
+                summary=_decode_summary(item["summary_json"]),
             )
             for item in rows
         ]
@@ -314,7 +320,8 @@ class SqliteOutboxRepository:
             rows = await (
                 await db.execute(
                     """
-                    SELECT id, job_id, anime_name, title, attempt_count
+                    SELECT id, job_id, anime_name, title, attempt_count,
+                           summary_json
                     FROM notification_outbox
                     WHERE (
                         status IN ('pending', 'retry_wait')
@@ -348,6 +355,7 @@ class SqliteOutboxRepository:
                 title=row["title"],
                 attempt_count=row["attempt_count"] + 1,
                 lease_token=tokens[row["id"]],
+                summary=_decode_summary(row["summary_json"]),
             )
             for row in rows
         ]
@@ -383,3 +391,11 @@ class SqliteOutboxRepository:
             )
             if cursor.rowcount != 1:
                 raise LostOutboxLease(f"Outbox lease lost: {item.id}")
+
+
+def _decode_summary(value: str | None) -> dict[str, Any]:
+    try:
+        payload = json.loads(value or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return payload if isinstance(payload, dict) else {}

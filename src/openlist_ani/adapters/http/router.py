@@ -95,8 +95,8 @@ async def resolve_magnet(request: ResolveMagnetRequest) -> ResolveMagnetResponse
     """Resolve a magnet URI to its real title and file list.
 
     Order of operations: ``dn=`` parameter → libtorrent metadata
-    (DHT/peers, bounded by ``metadata_timeout``).  Detects collection
-    releases via title-keyword matching so callers can refuse them.
+    (DHT/peers, bounded by ``metadata_timeout``).  The returned file list can
+    be submitted as a collection download; the worker resolves each episode.
     """
     svc = BackendApiService.get()
     return await svc.resolve_magnet(

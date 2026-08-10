@@ -35,6 +35,25 @@ _COLLECTION_PATTERNS = tuple(
     )
 )
 
+# Common unbracketed batch shapes need slightly more context than a bare
+# case-insensitive ``Batch`` token, otherwise the real title "The Bad Batch"
+# becomes a false positive.  Numeric ranges are collection evidence on their
+# own; a trailing Batch marker is accepted when preceded by a season marker.
+_COLLECTION_PATTERNS += tuple(
+    re.compile(pattern)
+    for pattern in (
+        r"(?i)\b(?:Season\s*\d{1,2}|S\d{1,2})\s+"
+        r"(?:official\s+|unofficial\s+|ultimate\s+)?Batch\b",
+        r"(?i)\bE\d{1,3}\s*[-~\u2013\u2014]\s*E?\d{1,3}\b",
+        r"(?<![0-9A-Za-z])[1-9]\d{0,2}[-~\u2013\u2014]" r"[1-9]\d{0,2}(?!\d)",
+        r"(?i)\b(?:episodes?|eps?)\s*[1-9]\d{0,2}\s*"
+        r"[-~\u2013\u2014]\s*[1-9]\d{0,2}\b",
+    )
+)
+_SEASON_SINGLE_EPISODE = re.compile(
+    r"(?i)\bSeason\s*0?\d{1,2}\s*[-\u2013\u2014]\s*" r"\d{1,3}(?!\s*[-~\u2013\u2014])"
+)
+
 
 def episode_key(metadata: ReleaseMetadata) -> EpisodeKey | None:
     if not metadata.anime_name or metadata.season is None or metadata.episode is None:
@@ -43,9 +62,47 @@ def episode_key(metadata: ReleaseMetadata) -> EpisodeKey | None:
 
 
 def title_exclusion_reason(title: str, patterns: Iterable[str]) -> str | None:
+    """Legacy combined predicate used by callers that still reject batches."""
+
+    return collection_title_reason(title) or configured_title_exclusion_reason(
+        title, patterns
+    )
+
+
+def collection_title_reason(title: str) -> str | None:
+    """Return the built-in marker that classifies a title as a collection."""
+
     for pattern in _COLLECTION_PATTERNS:
         if match := pattern.search(title):
+            if _touches_ascii_word(title, match.span()):
+                continue
+            if _overlaps_season_single_episode(title, match.span()):
+                continue
             return match.group(0)
+    return None
+
+
+def _overlaps_season_single_episode(title: str, match_span: tuple[int, int]) -> bool:
+    start, end = match_span
+    return any(
+        start < single.end() and single.start() < end
+        for single in _SEASON_SINGLE_EPISODE.finditer(title)
+    )
+
+
+def _touches_ascii_word(title: str, match_span: tuple[int, int]) -> bool:
+    """Reject numeric-range matches embedded in labels such as 10-12bit."""
+
+    _, end = match_span
+    after = title[end] if end < len(title) else ""
+    return bool(after and re.match(r"[0-9A-Za-z]", after))
+
+
+def configured_title_exclusion_reason(
+    title: str, patterns: Iterable[str]
+) -> str | None:
+    """Apply only user-configured exclusions, which override collection support."""
+
     for raw in patterns:
         if re.search(raw, title):
             return raw

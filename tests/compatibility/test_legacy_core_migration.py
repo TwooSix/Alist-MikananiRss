@@ -87,11 +87,31 @@ def test_legacy_resources_and_checkpoint_are_imported_once(tmp_path):
         assert job["step"] == "organize"
         assert json.loads(job["checkpoint_json"])["remote_id"] == "abc"
         assert json.loads(job["artifact_json"])["base_path"] == "/anime"
+        resource = connection.execute("SELECT * FROM resources").fetchone()
+        assert resource["item_key"] == "legacy-1"
+        assert resource["source_path"] == "Old 01"
+        resource_indexes = connection.execute("PRAGMA index_list(resources)").fetchall()
+        unique_columns = {
+            tuple(
+                info[2]
+                for info in connection.execute(
+                    f"PRAGMA index_info('{index[1]}')"
+                ).fetchall()
+            )
+            for index in resource_indexes
+            if index[2]
+        }
+        assert unique_columns == {("job_id", "item_key")}
+        outbox_columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(notification_outbox)")
+        }
+        assert "summary_json" in outbox_columns
         assert (
             connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[
                 0
             ]
-            == 4
+            == 5
         )
     assert len(list((tmp_path / "backups").glob("data-v1-*.db"))) == 1
 
@@ -228,7 +248,7 @@ def test_v2_database_is_upgraded_with_lease_columns(tmp_path):
             connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[
                 0
             ]
-            == 4
+            == 5
         )
         assert (
             connection.execute(
@@ -237,6 +257,76 @@ def test_v2_database_is_upgraded_with_lease_columns(tmp_path):
             ).fetchone()
             is not None
         )
+
+
+def test_v4_resources_are_safely_rebuilt_for_collection_items(tmp_path):
+    data_path = tmp_path / "data.db"
+    with closing(sqlite3.connect(data_path)) as connection:
+        connection.executescript("""
+            CREATE TABLE resources (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                url TEXT NOT NULL,
+                title TEXT UNIQUE NOT NULL,
+                anime_name TEXT,
+                season INTEGER,
+                episode INTEGER,
+                fansub TEXT,
+                quality TEXT,
+                languages TEXT,
+                version INTEGER,
+                downloaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                job_id TEXT,
+                final_path TEXT,
+                metadata_json TEXT,
+                provenance_json TEXT
+            );
+            CREATE UNIQUE INDEX idx_resources_job_id
+                ON resources(job_id) WHERE job_id IS NOT NULL;
+            CREATE TABLE schema_migrations (
+                version INTEGER PRIMARY KEY,
+                applied_at TEXT NOT NULL,
+                description TEXT NOT NULL
+            );
+            INSERT INTO schema_migrations VALUES (4, '2026-01-01', 'v4');
+            INSERT INTO resources (
+                url, title, anime_name, season, episode, job_id, final_path,
+                metadata_json, provenance_json
+            ) VALUES (
+                'magnet:old', 'Old 01', 'Old', 1, 1, 'old-job',
+                '/anime/Old 01.mkv', '{"episode":1}', '{}'
+            );
+            """)
+
+    runner = LegacyMigrationRunner(
+        data_path, tmp_path / "missing.db", tmp_path / "missing.json"
+    )
+    runner.run()
+
+    with closing(sqlite3.connect(data_path)) as connection:
+        connection.row_factory = sqlite3.Row
+        migrated = connection.execute("SELECT * FROM resources WHERE id = 1").fetchone()
+        assert migrated["title"] == "Old 01"
+        assert migrated["item_key"] == "legacy-1"
+        assert migrated["source_path"] == "/anime/Old 01.mkv"
+        assert migrated["metadata_json"] == '{"episode":1}'
+        connection.execute(
+            "INSERT INTO resources "
+            "(url, title, job_id, item_key, source_path) VALUES (?, ?, ?, ?, ?)",
+            ("magnet:new", "Old 01", "new-job", "episode-1", "01.mkv"),
+        )
+        connection.execute(
+            "INSERT INTO resources "
+            "(url, title, job_id, item_key, source_path) VALUES (?, ?, ?, ?, ?)",
+            ("magnet:new", "Old 01", "new-job", "episode-2", "02.mkv"),
+        )
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                "INSERT INTO resources "
+                "(url, title, job_id, item_key, source_path) "
+                "VALUES (?, ?, ?, ?, ?)",
+                ("magnet:new", "Old 01", "new-job", "episode-2", "again.mkv"),
+            )
+        assert connection.execute("PRAGMA quick_check").fetchone()[0] == "ok"
 
 
 def test_concurrent_database_migrations_are_serialized(tmp_path):
@@ -259,7 +349,7 @@ def test_concurrent_database_migrations_are_serialized(tmp_path):
             connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[
                 0
             ]
-            == 4
+            == 5
         )
     assert len(list((tmp_path / "backups").glob("data-v1-*.db"))) == 0
 

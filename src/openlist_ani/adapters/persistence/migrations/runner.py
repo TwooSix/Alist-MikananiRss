@@ -12,7 +12,11 @@ from typing import Iterator
 
 from openlist_ani.logger import logger
 
-from ..schema import SCHEMA_VERSION, apply_schema
+from ..schema import (
+    SCHEMA_VERSION,
+    _resources_constraints_are_v5,
+    apply_schema,
+)
 from .legacy_v1_import import import_legacy_tasks
 
 
@@ -71,7 +75,7 @@ class LegacyMigrationRunner:
                     (
                         SCHEMA_VERSION,
                         datetime.now(UTC).isoformat(),
-                        "unified durable job runtime",
+                        "collection resources and durable summary outbox",
                     ),
                 )
                 result = connection.execute("PRAGMA quick_check").fetchone()[0]
@@ -152,6 +156,8 @@ class LegacyMigrationRunner:
                     "version",
                     "downloaded_at",
                     "job_id",
+                    "item_key",
+                    "source_path",
                     "final_path",
                     "metadata_json",
                     "provenance_json",
@@ -215,6 +221,7 @@ class LegacyMigrationRunner:
                     "delivered_at",
                     "lease_token",
                     "lease_expires_at",
+                    "summary_json",
                 }
             ),
             "notification_deliveries": frozenset(
@@ -247,7 +254,7 @@ class LegacyMigrationRunner:
             "idx_title",
             "idx_anime_episode",
             "idx_resources_url",
-            "idx_resources_job_id",
+            "idx_resources_job_item",
             "idx_jobs_claim",
             "idx_jobs_download_url",
             "idx_jobs_lease",
@@ -263,7 +270,9 @@ class LegacyMigrationRunner:
                 "SELECT name FROM sqlite_master WHERE type = 'index'"
             ).fetchall()
         }
-        return required_indexes <= actual_indexes
+        return required_indexes <= actual_indexes and _resources_constraints_are_v5(
+            connection
+        )
 
     @contextmanager
     def _migration_lock(self, timeout: float = 30.0) -> Iterator[None]:

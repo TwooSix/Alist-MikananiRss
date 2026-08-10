@@ -16,8 +16,7 @@ def compile_core_settings(config: UserConfig) -> CoreSettings:
         rename_format=config.downloader.rename_format,
         rss_interval_seconds=config.rss.interval_time,
         metadata_providers=config.metadata_provider_names(),
-        downloader="openlist",
-        organizer="openlist",
+        download_backend="openlist",
         strict_filtering=config.rss.strict,
         metadata_filter=MetadataFilterSettings(
             exclude_fansub=list(config.rss.filter.exclude_fansub),

@@ -31,8 +31,7 @@ class CoreSettings:
     rename_format: str
     rss_interval_seconds: float
     metadata_providers: tuple[str, ...]
-    downloader: str = "openlist"
-    organizer: str = "openlist"
+    download_backend: str = "openlist"
     strict_filtering: bool = False
     metadata_filter: MetadataFilterSettings = field(
         default_factory=MetadataFilterSettings
