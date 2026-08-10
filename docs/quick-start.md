@@ -6,6 +6,12 @@
 2. 准备好 RSS 订阅链接（如 [Mikan Project](https://mikanani.me)）
 3. 可选：准备 AI API Key，或安装并登录 Pi / Claude Code / Codex Agent（均未配置时元数据使用本地正则 + TMDB）
 
+非 Docker 安装支持 Python 3.11、3.12 和 3.13，使用 `libtorrent>=2.0.13,<2.1`
+（当前锁定版本为 2.0.13）。Windows x64 会在这三个 Python 版本上执行兼容性测试。
+如果本机执行 `import libtorrent` 失败，请先升级 Python 和 Openlist-Ani，并参考
+[PIP 安装指南](pip-installation)中的 Windows 检查步骤；不要继续使用不受支持的
+Python 版本或旧版 `libtorrent`。
+
 非 Docker 安装不需要手工安装 Pi 或 Node.js。首次启动 Assistant 时，程序会
 自动下载当前版本锁定的官方 Pi 独立包、校验 SHA-256，并安装到持久化 runtime
 目录。已有的 Pi 或显式配置的 `executable` 会直接复用。Windows 缺少 Bash 时，

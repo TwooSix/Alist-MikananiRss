@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import secrets
 import time
 from collections.abc import Callable
 from types import SimpleNamespace
@@ -105,7 +106,7 @@ class TelegramFrontend(Frontend):
         # Track active turns per sender session so concurrent messages
         # are enqueued instead of blocking on the lock.
         self._active_turns: set[tuple[int, int]] = set()
-        self._pending_confirmations: set[tuple[int, int]] = set()
+        self._pending_confirmations: dict[tuple[int, int], str] = {}
 
     def _get_loop(self, chat_id: int, user_id: int) -> AssistantLoop:
         """Get or create the harness bridge for a Telegram chat."""
@@ -147,7 +148,7 @@ class TelegramFrontend(Frontend):
         self._app.add_handler(
             CallbackQueryHandler(
                 self._handle_confirmation,
-                pattern=r"^oani:(confirm|cancel)$",
+                pattern=r"^oani:(confirm|cancel)(?::[0-9a-f]+)?$",
             )
         )
         # Catch-all for unrecognized /commands — handles skill invocations
@@ -524,15 +525,18 @@ class TelegramFrontend(Frontend):
             escaped = _escape_mdv2(full_response)
             reply_markup = None
             if confirmation_required:
-                self._pending_confirmations.add(session_key)
+                nonce = secrets.token_hex(8)
+                self._pending_confirmations[session_key] = nonce
                 reply_markup = InlineKeyboardMarkup(
                     [
                         [
                             InlineKeyboardButton(
-                                "✅ 确认执行", callback_data="oani:confirm"
+                                "✅ 确认执行",
+                                callback_data=f"oani:confirm:{nonce}",
                             ),
                             InlineKeyboardButton(
-                                "❌ 取消", callback_data="oani:cancel"
+                                "❌ 取消",
+                                callback_data=f"oani:cancel:{nonce}",
                             ),
                         ]
                     ]
@@ -650,14 +654,19 @@ class TelegramFrontend(Frontend):
             await query.answer(_UNAUTHORIZED_MESSAGE, show_alert=True)
             return
         session_key = (query.message.chat_id, user_id)
-        if session_key not in self._pending_confirmations:
+        action_data = str(query.data or "")
+        try:
+            _, action, nonce = action_data.split(":", 2)
+        except ValueError:
+            await query.answer("该确认请求已失效。", show_alert=True)
+            return
+        if self._pending_confirmations.get(session_key) != nonce:
             await query.answer("该确认请求已失效。", show_alert=True)
             return
 
-        self._pending_confirmations.discard(session_key)
+        self._pending_confirmations.pop(session_key, None)
         await query.edit_message_reply_markup(reply_markup=None)
-        action = str(query.data or "")
-        if action == "oani:cancel":
+        if action == "cancel":
             await query.answer("已取消")
             await query.message.reply_text("已取消这次写操作。")
             return
@@ -667,7 +676,10 @@ class TelegramFrontend(Frontend):
             SimpleNamespace(message=query.message),
             "I explicitly confirm the exact pending write operation described "
             "in your previous response. Continue it now and pass confirmed=true "
-            "to the relevant Skill script.",
+            "to the relevant Skill script. If that response listed policy "
+            "overrides, preserve its exact override_policy and "
+            "acknowledged_conflicts, policy_review_token, download URL, title, "
+            "collection_hint, and Assistant confirmation ticket.",
             user_id=user_id,
         )
 
@@ -708,6 +720,9 @@ class TelegramFrontend(Frontend):
             user_id = update.message.from_user.id if update.message.from_user else 0
         session_key = (chat_id, user_id)
         loop = self._get_loop(chat_id, user_id)
+        # Any text turn supersedes the old button. A newly required
+        # confirmation will install its own nonce after this turn finishes.
+        self._pending_confirmations.pop(session_key, None)
 
         if session_key in self._active_turns:
             queued = loop.message_queue.enqueue(PendingMessage(content=message_text))
@@ -730,15 +745,34 @@ class TelegramFrontend(Frontend):
             pending_texts = [message_text]
             while pending_texts:
                 current_text = pending_texts.pop(0)
-                await self._process_single_turn(
+                self._pending_confirmations.pop(session_key, None)
+                confirmation_boundary_seq = await self._process_single_turn(
                     update,
                     loop,
                     current_text,
                     session_key=session_key,
                 )
-                pending_texts.extend(
-                    pending.content for pending in loop.message_queue.drain_prompts()
-                )
+                pending = loop.message_queue.drain_prompts()
+                if confirmation_boundary_seq is not None:
+                    stale = [
+                        item
+                        for item in pending
+                        if item.seq is None or item.seq <= confirmation_boundary_seq
+                    ]
+                    pending = [
+                        item
+                        for item in pending
+                        if item.seq is not None and item.seq > confirmation_boundary_seq
+                    ]
+                    if stale:
+                        sequence = ", ".join(
+                            f"#{item.seq}" for item in stale if item.seq is not None
+                        )
+                        await update.message.reply_text(
+                            f"排队消息 {sequence or '（未知）'} 是在确认详情展示前"
+                            "发送的，因此不会被视为同意。请阅读详情后重新发送确认。"
+                        )
+                pending_texts.extend(item.content for item in pending)
         except Exception as e:
             logger.error(f"Error processing message: {e}")
             await update.message.reply_text(f"Error: {e}")
@@ -752,7 +786,7 @@ class TelegramFrontend(Frontend):
         message_text: str,
         *,
         session_key: tuple[int, int],
-    ) -> None:
+    ) -> int | None:
         chat_id = update.message.chat_id
         turn_started_at = time.monotonic()
         logger.debug(
@@ -772,6 +806,11 @@ class TelegramFrontend(Frontend):
                 confirmation_required=confirmation_required,
                 session_key=session_key,
             )
+            confirmation_boundary_seq = (
+                max(loop.message_queue.pending_prompt_seqs(), default=0)
+                if confirmation_required
+                else None
+            )
             final_chars = sum(len(part) for part in final_parts)
             elapsed_ms = int((time.monotonic() - turn_started_at) * 1000)
             logger.info("Telegram response sent.")
@@ -785,6 +824,7 @@ class TelegramFrontend(Frontend):
             raise
         finally:
             await self._stop_typing_indicator(typing_task)
+        return confirmation_boundary_seq
 
     @staticmethod
     def _build_skill_message(
@@ -839,7 +879,7 @@ class TelegramFrontend(Frontend):
         chat_id = update.message.chat_id
         user_id = update.message.from_user.id if update.message.from_user else 0
         loop = self._get_loop(chat_id, user_id)
-        self._pending_confirmations.discard((chat_id, user_id))
+        self._pending_confirmations.pop((chat_id, user_id), None)
         loop.reset()
 
         await update.message.reply_text("New session started.")
@@ -853,7 +893,7 @@ class TelegramFrontend(Frontend):
             return
         user_id = update.message.from_user.id if update.message.from_user else 0
         loop = self._get_loop(update.message.chat_id, user_id)
-        self._pending_confirmations.discard((update.message.chat_id, user_id))
+        self._pending_confirmations.pop((update.message.chat_id, user_id), None)
         await loop.cancel()
         await update.message.reply_text("已取消当前请求并清空等待队列。")
 

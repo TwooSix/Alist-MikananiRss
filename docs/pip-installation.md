@@ -4,7 +4,8 @@
 
 ## 环境要求
 
-- **Python** ≥ 3.11
+- **Python** 3.11、3.12 或 3.13
+- **libtorrent** ≥ 2.0.13 且 < 2.1（当前锁定版本为 2.0.13）
 - **pip**（Python 包管理器）
 
 确认 Python 版本：
@@ -12,6 +13,17 @@
 ```bash
 python3 --version
 ```
+
+Windows x64 会在上述三个 Python 版本上执行兼容性测试。非 Docker 安装如果出现
+`libtorrent` 原生模块导入错误，请先升级到受支持的 Python 和最新项目版本，然后验证：
+
+```powershell
+python -m pip install --upgrade "openlist-ani" "libtorrent>=2.0.13,<2.1"
+python -c "import libtorrent as lt; print(lt.__version__)"
+```
+
+验证仍失败时，请用受支持的 Python 新建干净的虚拟环境后重新安装；不要从其他软件
+目录复制 DLL 到项目或 Python 目录。当前 CI 只验证 Windows x64，不对其他架构作兼容性承诺。
 
 ## 第一步：安装 Openlist-Ani
 

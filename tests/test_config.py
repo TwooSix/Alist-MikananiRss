@@ -52,9 +52,10 @@ def test_core_settings_select_one_bound_download_backend():
     assert settings.download_backend == "openlist"
     assert not hasattr(settings, "downloader")
     assert not hasattr(settings, "organizer")
+    invalid_settings = replace(settings, download_backend=" ")
 
     with pytest.raises(ValueError, match="A download backend is required"):
-        validate_core_settings(replace(settings, download_backend=" "))
+        validate_core_settings(invalid_settings)
 
 
 def test_torrent_to_magnet_can_be_enabled_in_rss_config():

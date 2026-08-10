@@ -237,53 +237,15 @@ class DurableOrganizationExecutor:
         retryable_errors: list[Exception] = []
 
         for plan in plans:
-            if plan.get("state") in {"completed", "failed"}:
-                continue
-            if plan.get("state") == "cleanup_pending":
-                try:
-                    await self._cleanup_failed_plan(manifest, plan)
-                except Exception as error:
-                    plan["error"] = f"Failed-item cleanup: {error}"
-                    retryable_errors.append(OrganizationCleanupPending(plan["error"]))
-                    await self._save(checkpoint, checkpoint_callback)
-                else:
-                    plan["state"] = "failed"
-                    await self._save(checkpoint, checkpoint_callback)
-                continue
-            try:
-                await self._execute_plan(
-                    job,
-                    manifest,
-                    plan,
-                    checkpoint,
-                    checkpoint_callback,
-                )
-            except Exception as error:
-                plan["attempts"] = int(plan.get("attempts", 0)) + 1
-                plan["error"] = str(error)
-                if plan["attempts"] >= self._MAX_ITEM_ATTEMPTS:
-                    # Persist the rollback intent before deleting anything from
-                    # the media library.  A crash then resumes cleanup instead
-                    # of retrying organization or losing ownership evidence.
-                    plan["state"] = "cleanup_pending"
-                    await self._save(checkpoint, checkpoint_callback)
-                    try:
-                        await self._cleanup_failed_plan(manifest, plan)
-                    except Exception as cleanup_error:
-                        plan["error"] = f"Failed-item cleanup: {cleanup_error}"
-                        retryable_errors.append(
-                            OrganizationCleanupPending(plan["error"])
-                        )
-                    else:
-                        plan["state"] = "failed"
-                else:
-                    plan["state"] = "pending"
-                    retryable_errors.append(error)
-                await self._save(checkpoint, checkpoint_callback)
-            else:
-                plan["state"] = "completed"
-                plan.pop("error", None)
-                await self._save(checkpoint, checkpoint_callback)
+            retryable_error = await self._process_plan(
+                job,
+                manifest,
+                plan,
+                checkpoint,
+                checkpoint_callback,
+            )
+            if retryable_error is not None:
+                retryable_errors.append(retryable_error)
 
         if retryable_errors:
             # Do not clean staging while any item can still be retried.
@@ -292,24 +254,133 @@ class DurableOrganizationExecutor:
                 raise first_error
             raise OrganizationError(str(first_error)) from first_error
 
-        if manifest.cleanup_root and checkpoint.get("cleanup_state") != "completed":
-            try:
-                await self._storage.remove_staging_tree(
-                    manifest.cleanup_root,
-                    job_id=job.id,
-                    base_path=str(job.artifact.get("base_path") or "/"),
-                )
-            except Exception as error:
-                checkpoint["cleanup_error"] = str(error)
-                await self._save(checkpoint, checkpoint_callback)
-                raise OrganizationCleanupPending(
-                    f"Staging cleanup is still pending: {error}"
-                ) from error
-            checkpoint["cleanup_state"] = "completed"
-            checkpoint.pop("cleanup_error", None)
-            await self._save(checkpoint, checkpoint_callback)
+        await self._cleanup_staging(job, manifest, checkpoint, checkpoint_callback)
 
         return tuple(self._result_from_plan(plan) for plan in plans)
+
+    async def _process_plan(
+        self,
+        job: DownloadJob,
+        manifest: DownloadManifest,
+        plan: dict,
+        checkpoint: dict,
+        checkpoint_callback: CheckpointCallback | None,
+    ) -> Exception | None:
+        state = plan.get("state")
+        if state in {"completed", "failed"}:
+            return None
+        if state == "cleanup_pending":
+            return await self._resume_failed_plan_cleanup(
+                manifest, plan, checkpoint, checkpoint_callback
+            )
+        return await self._attempt_plan(
+            job,
+            manifest,
+            plan,
+            checkpoint,
+            checkpoint_callback,
+        )
+
+    async def _resume_failed_plan_cleanup(
+        self,
+        manifest: DownloadManifest,
+        plan: dict,
+        checkpoint: dict,
+        checkpoint_callback: CheckpointCallback | None,
+    ) -> Exception | None:
+        try:
+            await self._cleanup_failed_plan(manifest, plan)
+        except Exception as error:
+            plan["error"] = f"Failed-item cleanup: {error}"
+            await self._save(checkpoint, checkpoint_callback)
+            return OrganizationCleanupPending(plan["error"])
+        plan["state"] = "failed"
+        await self._save(checkpoint, checkpoint_callback)
+        return None
+
+    async def _attempt_plan(
+        self,
+        job: DownloadJob,
+        manifest: DownloadManifest,
+        plan: dict,
+        checkpoint: dict,
+        checkpoint_callback: CheckpointCallback | None,
+    ) -> Exception | None:
+        try:
+            await self._execute_plan(
+                job,
+                manifest,
+                plan,
+                checkpoint,
+                checkpoint_callback,
+            )
+        except Exception as error:
+            plan["attempts"] = int(plan.get("attempts", 0)) + 1
+            plan["error"] = str(error)
+            retryable_error = await self._record_plan_failure(
+                manifest,
+                plan,
+                checkpoint,
+                checkpoint_callback,
+                error,
+            )
+            await self._save(checkpoint, checkpoint_callback)
+            return retryable_error
+
+        plan["state"] = "completed"
+        plan.pop("error", None)
+        await self._save(checkpoint, checkpoint_callback)
+        return None
+
+    async def _record_plan_failure(
+        self,
+        manifest: DownloadManifest,
+        plan: dict,
+        checkpoint: dict,
+        checkpoint_callback: CheckpointCallback | None,
+        error: Exception,
+    ) -> Exception | None:
+        if plan["attempts"] < self._MAX_ITEM_ATTEMPTS:
+            plan["state"] = "pending"
+            return error
+
+        # Persist the rollback intent before deleting anything from the media
+        # library. A crash then resumes cleanup instead of retrying organization
+        # or losing ownership evidence.
+        plan["state"] = "cleanup_pending"
+        await self._save(checkpoint, checkpoint_callback)
+        try:
+            await self._cleanup_failed_plan(manifest, plan)
+        except Exception as cleanup_error:
+            plan["error"] = f"Failed-item cleanup: {cleanup_error}"
+            return OrganizationCleanupPending(plan["error"])
+        plan["state"] = "failed"
+        return None
+
+    async def _cleanup_staging(
+        self,
+        job: DownloadJob,
+        manifest: DownloadManifest,
+        checkpoint: dict,
+        checkpoint_callback: CheckpointCallback | None,
+    ) -> None:
+        if not manifest.cleanup_root or checkpoint.get("cleanup_state") == "completed":
+            return
+        try:
+            await self._storage.remove_staging_tree(
+                manifest.cleanup_root,
+                job_id=job.id,
+                base_path=str(job.artifact.get("base_path") or "/"),
+            )
+        except Exception as error:
+            checkpoint["cleanup_error"] = str(error)
+            await self._save(checkpoint, checkpoint_callback)
+            raise OrganizationCleanupPending(
+                f"Staging cleanup is still pending: {error}"
+            ) from error
+        checkpoint["cleanup_state"] = "completed"
+        checkpoint.pop("cleanup_error", None)
+        await self._save(checkpoint, checkpoint_callback)
 
     async def _load_or_create_checkpoint(
         self,
@@ -320,47 +391,7 @@ class DurableOrganizationExecutor:
     ) -> dict:
         base_path = str(job.artifact.get("base_path") or "/")
         self._validate_manifest_requests(manifest, requests, base_path)
-        saved = job.artifact.get("organization_checkpoint")
-        if not saved:
-            # Older organizer checkpoints used this key.  Only accept v2-shaped
-            # values directly; single-asset v1 plans are upgraded below.
-            candidate = job.artifact.get("organize_plan")
-            if isinstance(candidate, dict) and candidate.get("version") == 2:
-                saved = candidate
-            elif (
-                manifest.legacy_materialized
-                and len(requests) == 1
-                and isinstance(candidate, dict)
-                and isinstance(candidate.get("files"), list)
-            ):
-                legacy_files = [
-                    {
-                        "kind": str(item.get("kind") or "subtitle"),
-                        "source_relative_path": str(item["source"]),
-                        "target_filename": str(item["target"]),
-                        "target_owned": True,
-                        "state": "pending",
-                    }
-                    for item in candidate["files"]
-                    if item.get("source") and item.get("target")
-                ]
-                if legacy_files:
-                    saved = {
-                        "version": self._CHECKPOINT_VERSION,
-                        "root_path": manifest.root_path,
-                        "plans": [
-                            {
-                                "item_key": requests[0].item_key,
-                                "target_directory_path": requests[
-                                    0
-                                ].target_directory_path,
-                                "files": legacy_files,
-                                "state": "pending",
-                                "attempts": 0,
-                            }
-                        ],
-                        "cleanup_state": "not_required",
-                    }
+        saved = self._checkpoint_from_artifact(job, manifest, requests)
         if isinstance(saved, dict) and saved.get("version") == self._CHECKPOINT_VERSION:
             if saved.get("root_path") != manifest.root_path:
                 raise OrganizationError(
@@ -369,46 +400,106 @@ class DurableOrganizationExecutor:
             self._validate_saved_checkpoint(saved, requests, manifest)
             return _copy_checkpoint(saved)
 
+        self._validate_unique_item_keys(requests)
+        plans = await self._plan_requests(manifest, requests, base_path)
+        checkpoint = {
+            "version": self._CHECKPOINT_VERSION,
+            "root_path": manifest.root_path,
+            "plans": plans,
+            "cleanup_state": "pending" if manifest.cleanup_root else "not_required",
+        }
+        # The entire plan must be durable before the first remote mutation.
+        await self._save(checkpoint, checkpoint_callback)
+        return checkpoint
+
+    def _checkpoint_from_artifact(
+        self,
+        job: DownloadJob,
+        manifest: DownloadManifest,
+        requests: tuple[OrganizationRequest, ...],
+    ) -> object:
+        saved = job.artifact.get("organization_checkpoint")
+        if saved:
+            return saved
+
+        # Older organizer checkpoints used this key. Only accept v2-shaped
+        # values directly; single-asset v1 plans are upgraded below.
+        candidate = job.artifact.get("organize_plan")
+        if isinstance(candidate, dict) and candidate.get("version") == 2:
+            return candidate
+        if not self._is_legacy_checkpoint(candidate, manifest, requests):
+            return saved
+
+        legacy_files = [
+            {
+                "kind": str(item.get("kind") or "subtitle"),
+                "source_relative_path": str(item["source"]),
+                "target_filename": str(item["target"]),
+                "target_owned": True,
+                "state": "pending",
+            }
+            for item in candidate["files"]
+            if item.get("source") and item.get("target")
+        ]
+        if not legacy_files:
+            return saved
+        return {
+            "version": self._CHECKPOINT_VERSION,
+            "root_path": manifest.root_path,
+            "plans": [
+                {
+                    "item_key": requests[0].item_key,
+                    "target_directory_path": requests[0].target_directory_path,
+                    "files": legacy_files,
+                    "state": "pending",
+                    "attempts": 0,
+                }
+            ],
+            "cleanup_state": "not_required",
+        }
+
+    @staticmethod
+    def _is_legacy_checkpoint(
+        candidate: object,
+        manifest: DownloadManifest,
+        requests: tuple[OrganizationRequest, ...],
+    ) -> bool:
+        return bool(
+            manifest.legacy_materialized
+            and len(requests) == 1
+            and isinstance(candidate, dict)
+            and isinstance(candidate.get("files"), list)
+        )
+
+    @staticmethod
+    def _validate_unique_item_keys(
+        requests: tuple[OrganizationRequest, ...],
+    ) -> None:
         keys = [request.item_key for request in requests]
         if len(keys) != len(set(keys)):
             raise OrganizationError(
                 "Organization request item_key values must be unique"
             )
 
+    async def _plan_requests(
+        self,
+        manifest: DownloadManifest,
+        requests: tuple[OrganizationRequest, ...],
+        base_path: str,
+    ) -> list[dict]:
         source_names_by_directory = _manifest_names_by_directory(manifest)
         source_sizes = _manifest_source_sizes(manifest)
         reserved_by_directory: dict[str, set[str]] = {}
         plans: list[dict] = []
         for request in requests:
             target = request.target_directory_path
-            if target not in reserved_by_directory:
-                if not (
-                    manifest.legacy_materialized
-                    and target.rstrip("/") == manifest.root_path.rstrip("/")
-                ):
-                    await self._storage.ensure_directory(base_path, target)
-                entries = await self._storage.list_directory(target)
-                reserved_by_directory[target] = {entry.name for entry in entries}
-            occupied = set(reserved_by_directory[target])
-            if manifest.legacy_materialized and target.rstrip(
-                "/"
-            ) == manifest.root_path.rstrip("/"):
-                owned_source_names = {
-                    posixpath.basename(normalize_relative_path(path))
-                    for path in (
-                        request.video_relative_path,
-                        *(sidecar.relative_path for sidecar in request.sidecars),
-                    )
-                    if not posixpath.dirname(normalize_relative_path(path))
-                }
-                occupied.difference_update(owned_source_names)
-                source_name = posixpath.basename(
-                    normalize_relative_path(request.video_relative_path)
-                )
-                if source_name not in occupied and request.target_filename in occupied:
-                    # Legacy recovery: rename may have succeeded before its
-                    # plan/checkpoint was saved.
-                    occupied.remove(request.target_filename)
+            occupied = await self._reserved_names(
+                manifest,
+                target,
+                base_path,
+                reserved_by_directory,
+            )
+            occupied = self._adjust_legacy_occupied_names(manifest, request, occupied)
             plan = self._planner.plan(
                 request,
                 occupied,
@@ -419,16 +510,58 @@ class DurableOrganizationExecutor:
             reserved_by_directory[target].update(
                 item.target_filename for item in plan.files
             )
+        return plans
 
-        checkpoint = {
-            "version": self._CHECKPOINT_VERSION,
-            "root_path": manifest.root_path,
-            "plans": plans,
-            "cleanup_state": "pending" if manifest.cleanup_root else "not_required",
+    async def _reserved_names(
+        self,
+        manifest: DownloadManifest,
+        target: str,
+        base_path: str,
+        reserved_by_directory: dict[str, set[str]],
+    ) -> set[str]:
+        if target not in reserved_by_directory:
+            if not self._is_legacy_root(manifest, target):
+                await self._storage.ensure_directory(base_path, target)
+            entries = await self._storage.list_directory(target)
+            reserved_by_directory[target] = {entry.name for entry in entries}
+        return set(reserved_by_directory[target])
+
+    @staticmethod
+    def _adjust_legacy_occupied_names(
+        manifest: DownloadManifest,
+        request: OrganizationRequest,
+        occupied: set[str],
+    ) -> set[str]:
+        if not DurableOrganizationExecutor._is_legacy_root(
+            manifest, request.target_directory_path
+        ):
+            return occupied
+
+        source_paths = (
+            request.video_relative_path,
+            *(sidecar.relative_path for sidecar in request.sidecars),
+        )
+        owned_source_names = {
+            posixpath.basename(normalized)
+            for path in source_paths
+            if not posixpath.dirname(normalized := normalize_relative_path(path))
         }
-        # The entire plan must be durable before the first remote mutation.
-        await self._save(checkpoint, checkpoint_callback)
-        return checkpoint
+        occupied.difference_update(owned_source_names)
+        source_name = posixpath.basename(
+            normalize_relative_path(request.video_relative_path)
+        )
+        if source_name not in occupied and request.target_filename in occupied:
+            # Legacy recovery: rename may have succeeded before its
+            # plan/checkpoint was saved.
+            occupied.remove(request.target_filename)
+        return occupied
+
+    @staticmethod
+    def _is_legacy_root(manifest: DownloadManifest, target: str) -> bool:
+        return bool(
+            manifest.legacy_materialized
+            and target.rstrip("/") == manifest.root_path.rstrip("/")
+        )
 
     @staticmethod
     def _validate_manifest_requests(
@@ -481,40 +614,51 @@ class DurableOrganizationExecutor:
             )
         source_sizes = _manifest_source_sizes(manifest)
         for plan in plans:
-            request = request_by_key[str(plan["item_key"])]
-            if str(plan.get("target_directory_path") or "") != str(
-                request.target_directory_path
-            ):
-                raise OrganizationError(
-                    "Organization checkpoint target directory changed"
-                )
-            expected_sources = {
-                normalize_relative_path(request.video_relative_path),
-                *(
-                    normalize_relative_path(sidecar.relative_path)
-                    for sidecar in request.sidecars
-                ),
-            }
-            actual_sources = {
-                normalize_relative_path(str(item.get("source_relative_path") or ""))
-                for item in plan.get("files", [])
-            }
-            if actual_sources != expected_sources:
-                raise OrganizationError(
-                    "Organization checkpoint source inventory changed"
-                )
-            for item in plan.get("files", []):
-                source = normalize_relative_path(
-                    str(item.get("source_relative_path") or "")
-                )
-                expected_size = source_sizes[source]
-                saved_size = item.get("expected_size")
-                if saved_size is not None and int(saved_size) != expected_size:
-                    raise OrganizationError(
-                        "Organization checkpoint source size changed"
-                    )
-                item["expected_size"] = expected_size
-                item.setdefault("target_owned", False)
+            DurableOrganizationExecutor._validate_saved_plan(
+                plan,
+                request_by_key[str(plan["item_key"])],
+                source_sizes,
+            )
+
+    @staticmethod
+    def _validate_saved_plan(
+        plan: dict,
+        request: OrganizationRequest,
+        source_sizes: dict[str, int],
+    ) -> None:
+        if str(plan.get("target_directory_path") or "") != str(
+            request.target_directory_path
+        ):
+            raise OrganizationError("Organization checkpoint target directory changed")
+        expected_sources = {
+            normalize_relative_path(request.video_relative_path),
+            *(
+                normalize_relative_path(sidecar.relative_path)
+                for sidecar in request.sidecars
+            ),
+        }
+        files = plan.get("files", [])
+        actual_sources = {
+            normalize_relative_path(str(item.get("source_relative_path") or ""))
+            for item in files
+        }
+        if actual_sources != expected_sources:
+            raise OrganizationError("Organization checkpoint source inventory changed")
+        for item in files:
+            DurableOrganizationExecutor._restore_saved_file_size(item, source_sizes)
+
+    @staticmethod
+    def _restore_saved_file_size(
+        item: dict,
+        source_sizes: dict[str, int],
+    ) -> None:
+        source = normalize_relative_path(str(item.get("source_relative_path") or ""))
+        expected_size = source_sizes[source]
+        saved_size = item.get("expected_size")
+        if saved_size is not None and int(saved_size) != expected_size:
+            raise OrganizationError("Organization checkpoint source size changed")
+        item["expected_size"] = expected_size
+        item.setdefault("target_owned", False)
 
     async def _execute_plan(
         self,
@@ -585,56 +729,72 @@ class DurableOrganizationExecutor:
 
         target_directory = str(plan["target_directory_path"])
         for file_plan in plan.get("files", []):
-            if file_plan.get("state") == "removed":
-                continue
-            if file_plan.get("state") != "completed" or not file_plan.get(
-                "target_owned"
-            ):
+            if not self._requires_failed_target_cleanup(file_plan):
                 # A pending file is still in staging (or ambiguous) and will be
                 # removed with the staging tree, never from the media library.
                 continue
+            await self._cleanup_failed_target(
+                manifest.root_path,
+                target_directory,
+                file_plan,
+            )
 
-            relative = normalize_relative_path(str(file_plan["source_relative_path"]))
-            source_parent_rel, source_name = posixpath.split(relative)
-            source_directory = (
-                self._storage.join(manifest.root_path, source_parent_rel)
-                if source_parent_rel
-                else manifest.root_path
-            )
-            target_name = str(file_plan["target_filename"])
-            source_entries = await self._storage.list_directory(source_directory)
-            target_entries = (
-                source_entries
-                if source_directory.rstrip("/") == target_directory.rstrip("/")
-                else await self._storage.list_directory(target_directory)
-            )
-            source_names = {entry.name for entry in source_entries}
-            target_by_name = {entry.name: entry for entry in target_entries}
-
-            same_file = (
-                source_directory.rstrip("/") == target_directory.rstrip("/")
-                and source_name == target_name
-            )
-            if not same_file and source_name in source_names:
-                raise OrganizationError(
-                    f"Refusing to delete ambiguous failed target: source still exists "
-                    f"for {source_name}"
-                )
-            if target_name in target_by_name:
-                target_entry = target_by_name[target_name]
-                expected_size = int(file_plan.get("verified_size", -1))
-                if expected_size < 0 or target_entry.size != expected_size:
-                    raise OrganizationError(
-                        "Refusing to delete failed target because its fingerprint "
-                        f"changed: {target_name}"
-                    )
-                await self._storage.remove_files(target_directory, (target_name,))
-            # If both source and target are absent, a prior cleanup succeeded
-            # before its checkpoint and is safe to confirm idempotently.
-            file_plan["state"] = "removed"
-            file_plan.pop("final_path", None)
         plan.pop("final_path", None)
         plan.pop("sidecar_paths", None)
+
+    @staticmethod
+    def _requires_failed_target_cleanup(file_plan: dict) -> bool:
+        return bool(
+            file_plan.get("state") == "completed" and file_plan.get("target_owned")
+        )
+
+    async def _cleanup_failed_target(
+        self,
+        root_path: str,
+        target_directory: str,
+        file_plan: dict,
+    ) -> None:
+        source_directory, source_name, target_name = self._file_locations(
+            root_path, file_plan
+        )
+        source_entries, target_entries = await self._source_and_target_entries(
+            source_directory, target_directory
+        )
+        source_names = {entry.name for entry in source_entries}
+        target_by_name = {entry.name: entry for entry in target_entries}
+
+        same_file = (
+            self._same_directory(source_directory, target_directory)
+            and source_name == target_name
+        )
+        if not same_file and source_name in source_names:
+            raise OrganizationError(
+                f"Refusing to delete ambiguous failed target: source still exists "
+                f"for {source_name}"
+            )
+        if target_name in target_by_name:
+            self._validate_cleanup_fingerprint(
+                target_name, target_by_name[target_name], file_plan
+            )
+            await self._storage.remove_files(target_directory, (target_name,))
+
+        # If both source and target are absent, a prior cleanup succeeded before
+        # its checkpoint and is safe to confirm idempotently.
+        file_plan["state"] = "removed"
+        file_plan.pop("final_path", None)
+
+    @staticmethod
+    def _validate_cleanup_fingerprint(
+        target_name: str,
+        target_entry: StorageEntry,
+        file_plan: dict,
+    ) -> None:
+        expected_size = int(file_plan.get("verified_size", -1))
+        if expected_size < 0 or target_entry.size != expected_size:
+            raise OrganizationError(
+                "Refusing to delete failed target because its fingerprint "
+                f"changed: {target_name}"
+            )
 
     async def _execute_file(
         self,
@@ -642,6 +802,62 @@ class DurableOrganizationExecutor:
         target_directory: str,
         file_plan: dict,
     ) -> str:
+        source_directory, source_name, target_name = self._file_locations(
+            root_path, file_plan
+        )
+        if not target_name or "/" in target_name or "\\" in target_name:
+            raise OrganizationError(f"Unsafe target filename: {target_name!r}")
+
+        source_entries, target_entries = await self._source_and_target_entries(
+            source_directory, target_directory
+        )
+        source_names = {entry.name for entry in source_entries}
+        target_names = {entry.name for entry in target_entries}
+        if source_name in source_names:
+            self._verified_size(source_entries, source_name, file_plan, "source")
+
+        if self._same_directory(source_directory, target_directory):
+            return await self._execute_same_directory_file(
+                target_directory,
+                source_name,
+                target_name,
+                source_names,
+                file_plan,
+            )
+
+        recovered_target = self._recover_existing_target(
+            source_directory,
+            source_name,
+            target_name,
+            source_names,
+            target_entries,
+            file_plan,
+        )
+        if recovered_target:
+            return self._storage.join(target_directory, target_name)
+        if target_name in target_names:
+            raise OrganizationError(
+                f"Organization source and target both exist: {source_name} -> {target_name}"
+            )
+
+        current_name = await self._prepare_staged_name(
+            source_directory,
+            source_name,
+            target_name,
+            source_names,
+        )
+        return await self._move_or_reconcile(
+            source_directory,
+            target_directory,
+            current_name,
+            file_plan,
+        )
+
+    def _file_locations(
+        self,
+        root_path: str,
+        file_plan: dict,
+    ) -> tuple[str, str, str]:
         relative = normalize_relative_path(str(file_plan["source_relative_path"]))
         source_parent_rel, source_name = posixpath.split(relative)
         source_directory = (
@@ -649,52 +865,85 @@ class DurableOrganizationExecutor:
             if source_parent_rel
             else root_path
         )
-        target_name = str(file_plan["target_filename"])
-        if not target_name or "/" in target_name or "\\" in target_name:
-            raise OrganizationError(f"Unsafe target filename: {target_name!r}")
+        return source_directory, source_name, str(file_plan["target_filename"])
 
+    async def _source_and_target_entries(
+        self,
+        source_directory: str,
+        target_directory: str,
+    ) -> tuple[tuple[StorageEntry, ...], tuple[StorageEntry, ...]]:
         source_entries = await self._storage.list_directory(source_directory)
         target_entries = (
             source_entries
-            if source_directory.rstrip("/") == target_directory.rstrip("/")
+            if self._same_directory(source_directory, target_directory)
             else await self._storage.list_directory(target_directory)
         )
-        source_names = {entry.name for entry in source_entries}
+        return source_entries, target_entries
+
+    @staticmethod
+    def _same_directory(first: str, second: str) -> bool:
+        return first.rstrip("/") == second.rstrip("/")
+
+    async def _execute_same_directory_file(
+        self,
+        directory: str,
+        source_name: str,
+        target_name: str,
+        source_names: set[str],
+        file_plan: dict,
+    ) -> str:
+        await self._reconcile_same_directory(
+            directory, source_name, target_name, source_names
+        )
+        refreshed = await self._storage.list_directory(directory)
+        self._verified_size(refreshed, target_name, file_plan, "target")
+        return self._storage.join(directory, target_name)
+
+    def _recover_existing_target(
+        self,
+        source_directory: str,
+        source_name: str,
+        target_name: str,
+        source_names: set[str],
+        target_entries: tuple[StorageEntry, ...],
+        file_plan: dict,
+    ) -> bool:
+        if source_name in source_names or target_name in source_names:
+            return False
         target_names = {entry.name for entry in target_entries}
-        if source_name in source_names:
-            self._verified_size(source_entries, source_name, file_plan, "source")
-
-        if source_directory.rstrip("/") == target_directory.rstrip("/"):
-            await self._reconcile_same_directory(
-                source_directory, source_name, target_name, source_names
-            )
-            refreshed = await self._storage.list_directory(target_directory)
-            self._verified_size(refreshed, target_name, file_plan, "target")
-            return self._storage.join(target_directory, target_name)
-
-        if source_name not in source_names and target_name not in source_names:
-            if target_name in target_names:
-                self._verified_size(target_entries, target_name, file_plan, "target")
-                return self._storage.join(target_directory, target_name)
-            raise OrganizationError(
-                f"Organization source is missing: {source_directory}/{source_name}"
-            )
         if target_name in target_names:
-            raise OrganizationError(
-                f"Organization source and target both exist: {source_name} -> {target_name}"
-            )
+            self._verified_size(target_entries, target_name, file_plan, "target")
+            return True
+        raise OrganizationError(
+            f"Organization source is missing: {source_directory}/{source_name}"
+        )
 
-        current_name = source_name
-        if source_name != target_name:
-            if source_name in source_names:
-                if target_name in source_names:
-                    raise OrganizationError(
-                        f"Cannot rename source because target exists in staging: {target_name}"
-                    )
-                await self._storage.rename(
-                    self._storage.join(source_directory, source_name), target_name
+    async def _prepare_staged_name(
+        self,
+        source_directory: str,
+        source_name: str,
+        target_name: str,
+        source_names: set[str],
+    ) -> str:
+        if source_name == target_name:
+            return source_name
+        if source_name in source_names:
+            if target_name in source_names:
+                raise OrganizationError(
+                    f"Cannot rename source because target exists in staging: {target_name}"
                 )
-            current_name = target_name
+            await self._storage.rename(
+                self._storage.join(source_directory, source_name), target_name
+            )
+        return target_name
+
+    async def _move_or_reconcile(
+        self,
+        source_directory: str,
+        target_directory: str,
+        current_name: str,
+        file_plan: dict,
+    ) -> str:
 
         # Reconcile a rename/move that succeeded before its checkpoint.
         source_entries = await self._storage.list_directory(source_directory)

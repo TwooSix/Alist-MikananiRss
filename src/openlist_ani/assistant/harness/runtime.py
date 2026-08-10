@@ -16,6 +16,9 @@ from collections.abc import AsyncGenerator
 from pathlib import Path
 
 from openlist_ani.adapters.configuration.models import AISourceConfig
+from openlist_ani.assistant.builtin_skills.runtime.confirmation import (
+    ConfirmationTurnState,
+)
 from openlist_ani.assistant.contracts import EventType, LoopEvent
 
 from .adapters import AgentAdapter, SessionSpec, get_agent_adapter
@@ -37,7 +40,10 @@ _CONFIRMATION_MESSAGE = "等待你确认后再执行写操作。"
 _CANCELLED_EVENT = "oani.cancelled"
 
 
-def _harness_environment(config_path: Path) -> dict[str, str]:
+def _harness_environment(
+    config_path: Path,
+    confirmation_state: ConfirmationTurnState | None = None,
+) -> dict[str, str]:
     """Build the environment inherited by harnesses and Skill scripts.
 
     Agent shells run packaged Skill scripts from their Skill directories. Those
@@ -50,6 +56,8 @@ def _harness_environment(config_path: Path) -> dict[str, str]:
     environment = os.environ.copy()
     environment["CONFIG_PATH"] = str(config_path)
     environment["OPENLIST_ANI_FILE_LOGGING"] = "0"
+    if confirmation_state is not None:
+        confirmation_state.apply_environment(environment)
     return environment
 
 
@@ -77,6 +85,9 @@ class PiRPCSession(HarnessSession):
         self._config_path = spec.config_path.resolve()
         self._temporary = tempfile.TemporaryDirectory(prefix="oani-pi-session-")
         self._working_dir = Path(self._temporary.name)
+        self._confirmation_state = ConfirmationTurnState(
+            self._working_dir / "confirmation-state.json"
+        )
         self._process: asyncio.subprocess.Process | None = None
         self._stderr_task: asyncio.Task | None = None
         self._stderr_tail: list[str] = []
@@ -89,6 +100,7 @@ class PiRPCSession(HarnessSession):
     async def stream(self, prompt: str) -> AsyncGenerator[LoopEvent, None]:
         async with self._lock:
             self._cancelled = False
+            self._confirmation_state.begin_turn()
             await self._ensure_started()
             if not self._session_announced:
                 self._session_announced = True
@@ -135,6 +147,7 @@ class PiRPCSession(HarnessSession):
 
     async def reset(self) -> None:
         self._session_announced = False
+        self._confirmation_state.reset()
         if self._process is None or self._process.returncode is not None:
             return
         async with self._lock:
@@ -202,7 +215,7 @@ class PiRPCSession(HarnessSession):
             command.append("--approve")
         command.extend(self._adapter.session_arguments(self._spec))
 
-        environment = _harness_environment(self._config_path)
+        environment = _harness_environment(self._config_path, self._confirmation_state)
         environment["PI_SKIP_VERSION_CHECK"] = "1"
         if sys.platform == "win32":
             # Skill CLIs emit JSON through Pi's shell pipe. Keep the byte
@@ -334,6 +347,9 @@ class _CommandAgentSession(HarnessSession):
             prefix=f"oani-{adapter.name}-session-"
         )
         self._working_dir = Path(self._temporary.name)
+        self._confirmation_state = ConfirmationTurnState(
+            self._working_dir / "confirmation-state.json"
+        )
         self._current_process: asyncio.subprocess.Process | None = None
         self._session_announced = False
         self._cancelled = False
@@ -350,7 +366,7 @@ class _CommandAgentSession(HarnessSession):
         self._temporary.cleanup()
 
     async def _run_process(self, command: list[str], prompt: str) -> str:
-        environment = _harness_environment(self._config_path)
+        environment = _harness_environment(self._config_path, self._confirmation_state)
         try:
             process = await asyncio.create_subprocess_exec(
                 *command,
@@ -391,7 +407,7 @@ class _CommandAgentSession(HarnessSession):
         self, command: list[str], prompt: str
     ) -> AsyncGenerator[dict, None]:
         """Yield a command harness's JSONL output while the turn is running."""
-        environment = _harness_environment(self._config_path)
+        environment = _harness_environment(self._config_path, self._confirmation_state)
         try:
             process = await asyncio.create_subprocess_exec(
                 *command,
@@ -476,6 +492,7 @@ class ClaudeCodeSession(_CommandAgentSession):
         self._started = False
 
     async def stream(self, prompt: str) -> AsyncGenerator[LoopEvent, None]:
+        self._confirmation_state.begin_turn()
         for event in self._start_events():
             yield event
         await self._adapter.ensure_native_skills(self._spec)
@@ -526,6 +543,7 @@ class ClaudeCodeSession(_CommandAgentSession):
 
     async def reset(self) -> None:
         await self.cancel()
+        self._confirmation_state.reset()
         self._session_id = str(uuid.uuid4())
         self._started = False
         self._session_announced = False
@@ -538,6 +556,7 @@ class CodexSession(_CommandAgentSession):
         self._thread_id: str | None = None
 
     async def stream(self, prompt: str) -> AsyncGenerator[LoopEvent, None]:
+        self._confirmation_state.begin_turn()
         for event in self._start_events():
             yield event
         await self._adapter.ensure_native_skills(self._spec)
@@ -595,6 +614,7 @@ class CodexSession(_CommandAgentSession):
 
     async def reset(self) -> None:
         await self.cancel()
+        self._confirmation_state.reset()
         self._thread_id = None
         self._session_announced = False
 
@@ -818,10 +838,10 @@ def _script_path_from_command(command: str) -> Path | None:
 
 
 _SENSITIVE_KEY_RE = re.compile(
-    r"(?i)(api[_-]?key|authorization|cookie|password|secret|token)"
+    r"(?i)(api[_-]?key|authorization|cookie|password|secret|token|ticket)"
 )
 _ASSIGNMENT_SECRET_RE = re.compile(
-    r"(?i)((?:api[_-]?key|authorization|cookie|password|secret|token)\s*[=:]\s*)"
+    r"(?i)((?:api[_-]?key|authorization|cookie|password|secret|token|ticket)\s*[=:]\s*)"
     r"(?:\"[^\"]*\"|'[^']*'|[^\s;&|]+)"
 )
 _URL_QUERY_RE = re.compile(r"(https?://[^\s?'\"]+)\?[^\s'\"]+")

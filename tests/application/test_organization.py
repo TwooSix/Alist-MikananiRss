@@ -301,8 +301,10 @@ async def test_target_directory_must_be_a_strict_child_of_base_path():
         target_filename="escaped.mkv",
         metadata=MetadataDocument(),
     )
+    job = _job()
+    requests = (request,)
 
     with pytest.raises(OrganizationError, match="Unsafe organization target"):
-        await executor.organize(_job(), manifest, (request,))
+        await executor.organize(job, manifest, requests)
 
     assert "/outside" not in storage.directories

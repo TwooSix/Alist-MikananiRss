@@ -28,6 +28,23 @@ def _bencode(value):
     raise TypeError(type(value))
 
 
+def test_resolve_result_preserves_legacy_positional_arguments():
+    files = [resolver.TorrentFile(name="Show.mkv", size=123)]
+
+    result = resolver.ResolveResult(
+        True,
+        "Resolved",
+        "Show",
+        "metadata",
+        1,
+        files,
+    )
+
+    assert result.file_count == 1
+    assert result.files == files
+    assert result.error_code is None
+
+
 @pytest.mark.asyncio
 async def test_invalid_magnet_is_rejected():
     result = await resolver.resolve_magnet("not a magnet")
@@ -37,11 +54,19 @@ async def test_invalid_magnet_is_rejected():
 
 
 @pytest.mark.asyncio
-async def test_magnet_display_name_is_used_without_fetching_metadata(monkeypatch):
+async def test_magnet_display_name_is_kept_while_file_metadata_is_inspected(
+    monkeypatch,
+):
     monkeypatch.setattr(
         resolver,
         "_fetch_metadata_blocking",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError()),
+        lambda *_args, **_kwargs: (
+            "Different metadata title",
+            [
+                resolver.TorrentFile(name="Episode 01.mkv", size=100),
+                resolver.TorrentFile(name="Episode 02.mkv", size=101),
+            ],
+        ),
     )
     magnet = (
         "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"
@@ -53,6 +78,50 @@ async def test_magnet_display_name_is_used_without_fetching_metadata(monkeypatch
     assert result.success is True
     assert result.title == "My Show - 01 [1080p]"
     assert result.source == "dn"
+    assert result.file_count == 2
+    assert [item.name for item in result.files] == [
+        "Episode 01.mkv",
+        "Episode 02.mkv",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_magnet_display_name_survives_metadata_timeout_with_incomplete_code(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        resolver, "_fetch_metadata_blocking", lambda *_args, **_kwargs: (None, [])
+    )
+    magnet = (
+        "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"
+        "&dn=My%20Show%20-%2001%20%5B1080p%5D"
+    )
+
+    result = await resolver.resolve_magnet(magnet, metadata_timeout=2)
+
+    assert result.success is True
+    assert result.title == "My Show - 01 [1080p]"
+    assert result.source == "dn"
+    assert result.error_code == "metadata_timeout"
+    assert result.file_count is None
+    assert "collection inspection is incomplete" in result.message
+
+
+@pytest.mark.asyncio
+async def test_missing_file_list_is_reported_as_incomplete_inspection(monkeypatch):
+    monkeypatch.setattr(
+        resolver,
+        "_fetch_metadata_blocking",
+        lambda *_args, **_kwargs: ("My Show", []),
+    )
+    magnet = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"
+
+    result = await resolver.resolve_magnet(magnet, metadata_timeout=2)
+
+    assert result.success is True
+    assert result.title == "My Show"
+    assert result.error_code == "file_list_unavailable"
+    assert "collection inspection is incomplete" in result.message
 
 
 @pytest.mark.asyncio
@@ -84,7 +153,84 @@ async def test_missing_magnet_metadata_returns_a_failure(monkeypatch):
     result = await resolver.resolve_magnet(magnet, metadata_timeout=2)
 
     assert result.success is False
-    assert result.message
+    assert result.error_code == "metadata_timeout"
+    assert "timed out after 2s" in result.message
+
+
+@pytest.mark.asyncio
+async def test_unavailable_libtorrent_is_not_reported_as_timeout(monkeypatch):
+    def unavailable(*_args, **_kwargs):
+        raise resolver.LibtorrentUnavailableError("native import failed")
+
+    monkeypatch.setattr(resolver, "_fetch_metadata_blocking", unavailable)
+    magnet = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"
+
+    result = await resolver.resolve_magnet(magnet, metadata_timeout=2)
+
+    assert result.success is False
+    assert result.error_code == "libtorrent_unavailable"
+    assert "No tracker, DHT, or peer lookup was attempted" in result.message
+    assert "timed out" not in result.message
+
+
+@pytest.mark.asyncio
+async def test_dn_title_survives_unavailable_libtorrent_as_incomplete_inspection(
+    monkeypatch,
+):
+    def unavailable(*_args, **_kwargs):
+        raise resolver.LibtorrentUnavailableError("native import failed")
+
+    monkeypatch.setattr(resolver, "_fetch_metadata_blocking", unavailable)
+    magnet = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&dn=My%20Show"
+
+    result = await resolver.resolve_magnet(magnet, metadata_timeout=2)
+
+    assert result.success is True
+    assert result.title == "My Show"
+    assert result.error_code == "libtorrent_unavailable"
+    assert "collection inspection is incomplete" in result.message
+    assert "timed out" not in result.message
+
+
+def test_libtorrent_runtime_imports_and_parses_valid_torrent():
+    version = resolver.libtorrent_runtime_version()
+    numeric_version = tuple(int(part) for part in version.split(".")[:3])
+    assert numeric_version >= (2, 0, 13)
+
+    libtorrent = resolver._load_libtorrent()
+    blob = _bencode(
+        {
+            b"info": {
+                b"length": 123,
+                b"name": b"Show - 01.mkv",
+                b"piece length": 16384,
+                b"pieces": b"a" * 20,
+            }
+        }
+    )
+
+    torrent_info = libtorrent.torrent_info(blob)
+
+    assert torrent_info.name() == "Show - 01.mkv"
+    assert torrent_info.num_files() == 1
+    assert torrent_info.total_size() == 123
+    assert resolver._libtorrent_files(torrent_info) == [
+        resolver.TorrentFile(name="Show - 01.mkv", size=123)
+    ]
+
+    session = libtorrent.session(
+        {
+            "enable_dht": False,
+            "enable_lsd": False,
+            "enable_upnp": False,
+            "enable_natpmp": False,
+        }
+    )
+    params = libtorrent.parse_magnet_uri(
+        "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"
+    )
+    assert session is not None
+    assert params is not None
 
 
 class FakeTorrentMetadataClient:
@@ -129,6 +275,19 @@ def test_torrent_blob_is_converted_using_exact_info_hash():
     assert f"xt=urn:btih:{expected_hash}" in magnet
     assert "dn=Show%20-%2001.mkv" in magnet
     assert "tr=https:%2F%2Ftracker.example%2Fannounce" in magnet
+
+
+def test_libtorrent_conversion_preserves_display_name():
+    info = {
+        b"length": 123,
+        b"name": "动画 - 01.mkv".encode(),
+        b"piece length": 16384,
+        b"pieces": b"a" * 20,
+    }
+
+    magnet = resolver._torrent_blob_to_magnet(_bencode({b"info": info}))
+
+    assert "dn=%e5%8a%a8%e7%94%bb%20-%2001.mkv" in magnet.lower()
 
 
 def test_v2_and_hybrid_torrent_hashes_follow_magnet_specification():

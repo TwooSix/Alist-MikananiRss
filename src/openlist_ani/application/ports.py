@@ -211,7 +211,11 @@ class JobRepository(Protocol):
     async def recover_interrupted(self) -> int: ...
 
     async def add_candidate(
-        self, candidate: ReleaseCandidate
+        self,
+        candidate: ReleaseCandidate,
+        *,
+        initial_artifact: dict[str, Any] | None = None,
+        initial_metadata: MetadataDocument | None = None,
     ) -> DownloadJob | None: ...
 
     async def claim(self, step: JobStep, limit: int) -> list[DownloadJob]: ...
@@ -229,6 +233,10 @@ class JobRepository(Protocol):
     async def skip(self, job: DownloadJob, reason: str) -> None: ...
 
     async def get(self, job_id: str) -> DownloadJob | None: ...
+
+    async def find_history(
+        self, download_url: str, title: str
+    ) -> list[DownloadJob]: ...
 
     async def list_visible(self) -> list[DownloadJob]: ...
 

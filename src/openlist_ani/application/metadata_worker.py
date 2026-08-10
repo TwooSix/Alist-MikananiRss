@@ -12,7 +12,14 @@ from openlist_ani.application.ports import (
 )
 from openlist_ani.application.lease import run_with_job_heartbeat
 from openlist_ani.application.metadata_pipeline import MetadataPipelineResolver
-from openlist_ani.application.settings import CoreSettings
+from openlist_ani.application.manual_policy import (
+    manual_policy_acknowledges,
+    manual_policy_is_approved,
+    manual_partial_collection_retry_from_artifact,
+    matching_metadata_policy_keys,
+    matching_title_policy_keys,
+)
+from openlist_ani.application.settings import CoreSettings, PrioritySettings
 from openlist_ani.domain import (
     DownloadJob,
     JobStep,
@@ -23,11 +30,9 @@ from openlist_ani.domain.naming import ReleaseFilenamePlanner
 from openlist_ani.domain.policies import (
     best_indices,
     collection_title_reason,
-    configured_title_exclusion_reason,
     dominated_by_records,
     episode_key,
     is_version_upgrade,
-    metadata_exclusion_reason,
     priority_levels,
 )
 from openlist_ani.logger import logger
@@ -82,7 +87,10 @@ class MetadataWorker:
 
     async def _process_batch(self, jobs: list[DownloadJob]) -> None:
         collection_jobs = [
-            job for job in jobs if collection_title_reason(job.candidate.title)
+            job
+            for job in jobs
+            if job.artifact.get("collection_hint")
+            or collection_title_reason(job.candidate.title)
         ]
         regular_jobs = [job for job in jobs if job not in collection_jobs]
         if collection_jobs:
@@ -120,47 +128,86 @@ class MetadataWorker:
         job_ids = {job.id for job in jobs}
         active = await self._jobs.list_active()
         reserved = {item.candidate.title for item in active if item.id not in job_ids}
+        selected, rejected = self._classify_collection_jobs(jobs, existing, reserved)
+        transformed, transform_errors = await self._transform_candidates(selected)
+        for job in jobs:
+            await self._persist_collection_result(
+                job,
+                rejected.get(job.id),
+                transformed.get(job.id),
+                transform_errors.get(job.id),
+            )
+
+    def _classify_collection_jobs(
+        self,
+        jobs: list[DownloadJob],
+        existing: set[str],
+        reserved: set[str],
+    ) -> tuple[list[DownloadJob], dict[str, str]]:
         selected: list[DownloadJob] = []
         rejected: dict[str, str] = {}
         batch_titles: set[str] = set()
         for job in jobs:
             title = job.candidate.title
-            if configured_title_exclusion_reason(
+            title_conflicts = matching_title_policy_keys(
                 title, self._settings.metadata_filter.exclude_patterns
+            )
+            if title_conflicts and not manual_policy_acknowledges(job, title_conflicts):
+                rejected[job.id] = _policy_rejection_reason(job)
+            elif (
+                title in existing
+                and not manual_partial_collection_retry_from_artifact(job.artifact)
             ):
-                rejected[job.id] = "release_policy"
-            elif title in existing:
                 rejected[job.id] = "already_downloaded"
             elif title in reserved or title in batch_titles:
                 rejected[job.id] = "duplicate_active_title"
             else:
                 selected.append(job)
                 batch_titles.add(title)
+        return selected, rejected
 
-        transformed, transform_errors = await self._transform_candidates(selected)
-        for job in jobs:
-            if reason := rejected.get(job.id):
-                await self._jobs.skip(job, reason)
-                continue
-            if error := transform_errors.get(job.id):
-                message = f"candidate transform failed: {error}"
-                if job.attempt_count >= 3:
-                    await self._jobs.fail(job, message)
-                else:
-                    await self._jobs.reschedule(
-                        job, message, _metadata_retry_delay(job.attempt_count)
-                    )
-                continue
-            job.candidate = transformed.get(job.id, job.candidate)
-            job.artifact.update(
-                {
-                    "base_path": self._settings.download_path,
-                    "collection_hint": True,
-                }
+    async def _persist_collection_result(
+        self,
+        job: DownloadJob,
+        rejection: str | None,
+        transformed: ReleaseCandidate | None,
+        transform_error: Exception | None,
+    ) -> None:
+        if rejection:
+            await self._persist_collection_rejection(job, rejection)
+            return
+        if transform_error:
+            await self._persist_collection_transform_error(job, transform_error)
+            return
+        job.candidate = transformed or job.candidate
+        job.artifact.update(
+            {
+                "base_path": self._settings.download_path,
+                "collection_hint": True,
+            }
+        )
+        job.advance(JobStep.DOWNLOAD)
+        await self._jobs.save(job)
+        self._download_available.set()
+
+    async def _persist_collection_rejection(
+        self, job: DownloadJob, reason: str
+    ) -> None:
+        if manual_policy_is_approved(job) and reason != "release_policy":
+            await self._jobs.fail(job, reason)
+        else:
+            await self._jobs.skip(job, reason)
+
+    async def _persist_collection_transform_error(
+        self, job: DownloadJob, error: Exception
+    ) -> None:
+        message = f"candidate transform failed: {error}"
+        if job.attempt_count >= 3:
+            await self._jobs.fail(job, message)
+        else:
+            await self._jobs.reschedule(
+                job, message, _metadata_retry_delay(job.attempt_count)
             )
-            job.advance(JobStep.DOWNLOAD)
-            await self._jobs.save(job)
-            self._download_available.set()
 
     async def _enrich(
         self,
@@ -298,17 +345,15 @@ class MetadataWorker:
         ):
             return "duplicate_active_title"
         metadata_filter = self._settings.metadata_filter
-        if configured_title_exclusion_reason(
-            job.candidate.title, metadata_filter.exclude_patterns
-        ):
-            return "release_policy"
-        metadata_rejected = metadata_exclusion_reason(
-            job.metadata.values,
-            fansubs=metadata_filter.exclude_fansub,
-            qualities=metadata_filter.exclude_quality,
-            languages=metadata_filter.exclude_languages,
+        conflicts = (
+            *matching_title_policy_keys(
+                job.candidate.title, metadata_filter.exclude_patterns
+            ),
+            *matching_metadata_policy_keys(job.metadata.values, metadata_filter),
         )
-        return "release_policy" if metadata_rejected else ""
+        if conflicts and not manual_policy_acknowledges(job, conflicts):
+            return _policy_rejection_reason(job)
+        return ""
 
     async def _persist_policy_results(
         self,
@@ -320,7 +365,10 @@ class MetadataWorker:
     ) -> None:
         for job in ready:
             if reason := rejected.get(job.id):
-                await self._jobs.skip(job, reason)
+                if manual_policy_is_approved(job) and reason != "release_policy":
+                    await self._jobs.fail(job, reason)
+                else:
+                    await self._jobs.skip(job, reason)
             elif error := transform_errors.get(job.id):
                 message = f"candidate transform failed: {error}"
                 if job.attempt_count >= 3:
@@ -378,7 +426,11 @@ class MetadataWorker:
         active: list[DownloadJob],
         rejected: dict[str, str],
     ) -> None:
-        groups = _group_jobs(eligible)
+        override_key = ("priority:dominated",)
+        overrides = [
+            job for job in eligible if manual_policy_acknowledges(job, override_key)
+        ]
+        groups = _group_jobs([job for job in eligible if job not in overrides])
         keys = [key for key in groups if key is not None]
         records = await self._library.find_releases_by_episodes(keys)
         active_records = _active_records(active)
@@ -387,38 +439,7 @@ class MetadataWorker:
             if key is None:
                 continue
             known = [*records.get(key, []), *active_records.get(key, [])]
-            remaining: list[DownloadJob] = []
-            for job in jobs:
-                if dominated_by_records(
-                    job.metadata.values,
-                    known,
-                    field_order=settings.field_order,
-                    fansubs=settings.fansub,
-                    qualities=settings.quality,
-                    languages=settings.languages,
-                ):
-                    rejected[job.id] = "release_policy"
-                else:
-                    remaining.append(job)
-            non_upgrades = [
-                job
-                for job in remaining
-                if not is_version_upgrade(job.metadata.values, known)
-            ]
-            levels = [
-                priority_levels(
-                    job.metadata.values,
-                    field_order=settings.field_order,
-                    fansubs=settings.fansub,
-                    qualities=settings.quality,
-                    languages=settings.languages,
-                )
-                for job in non_upgrades
-            ]
-            keep = best_indices(levels)
-            for index, job in enumerate(non_upgrades):
-                if index not in keep:
-                    rejected[job.id] = "release_policy"
+            _apply_priority_group(jobs, known, settings, rejected)
 
     async def _apply_strict_policy(
         self,
@@ -426,12 +447,28 @@ class MetadataWorker:
         active: list[DownloadJob],
         rejected: dict[str, str],
     ) -> None:
-        candidates = [job for job in eligible if job.id not in rejected]
+        override_key = ("strict:rename-stem-conflict",)
+        overrides = [
+            job
+            for job in eligible
+            if job.id not in rejected and manual_policy_acknowledges(job, override_key)
+        ]
+        candidates = [
+            job for job in eligible if job.id not in rejected and job not in overrides
+        ]
         groups = _group_jobs(candidates)
         keys = [key for key in groups if key is not None]
         records = await self._library.find_releases_by_episodes(keys)
         planner = ReleaseFilenamePlanner(self._settings.rename_format)
         active_by_key = _active_stems(active, planner)
+        for job in overrides:
+            if (key := episode_key(job.metadata.values)) is not None:
+                active_by_key[key].append(
+                    (
+                        planner.stem(job.metadata.values, include_version=False),
+                        job.metadata.values.version or 1,
+                    )
+                )
         for key, jobs in groups.items():
             if key is None:
                 continue
@@ -456,6 +493,14 @@ def _metadata_retry_delay(attempt: int) -> float:
     return (60.0, 300.0, 900.0, 21600.0)[min(max(attempt - 1, 0), 3)]
 
 
+def _policy_rejection_reason(job: DownloadJob) -> str:
+    return (
+        "manual_policy_confirmation_required"
+        if manual_policy_is_approved(job)
+        else "release_policy"
+    )
+
+
 def _group_jobs(
     jobs: list[DownloadJob],
 ) -> dict[tuple[str, int, int] | None, list[DownloadJob]]:
@@ -463,6 +508,63 @@ def _group_jobs(
     for job in jobs:
         grouped[episode_key(job.metadata.values)].append(job)
     return grouped
+
+
+def _apply_priority_group(
+    jobs: list[DownloadJob],
+    known: list[dict],
+    settings: PrioritySettings,
+    rejected: dict[str, str],
+) -> None:
+    remaining = _reject_dominated_priority_jobs(jobs, known, settings, rejected)
+    non_upgrades = [
+        job for job in remaining if not is_version_upgrade(job.metadata.values, known)
+    ]
+    _reject_lower_priority_jobs(non_upgrades, settings, rejected)
+
+
+def _reject_dominated_priority_jobs(
+    jobs: list[DownloadJob],
+    known: list[dict],
+    settings: PrioritySettings,
+    rejected: dict[str, str],
+) -> list[DownloadJob]:
+    remaining: list[DownloadJob] = []
+    for job in jobs:
+        dominated = dominated_by_records(
+            job.metadata.values,
+            known,
+            field_order=settings.field_order,
+            fansubs=settings.fansub,
+            qualities=settings.quality,
+            languages=settings.languages,
+        )
+        if dominated:
+            rejected[job.id] = _policy_rejection_reason(job)
+        else:
+            remaining.append(job)
+    return remaining
+
+
+def _reject_lower_priority_jobs(
+    jobs: list[DownloadJob],
+    settings: PrioritySettings,
+    rejected: dict[str, str],
+) -> None:
+    levels = [
+        priority_levels(
+            job.metadata.values,
+            field_order=settings.field_order,
+            fansubs=settings.fansub,
+            qualities=settings.quality,
+            languages=settings.languages,
+        )
+        for job in jobs
+    ]
+    keep = best_indices(levels)
+    for index, job in enumerate(jobs):
+        if index not in keep:
+            rejected[job.id] = _policy_rejection_reason(job)
 
 
 def _active_stems(
@@ -497,15 +599,15 @@ def _apply_strict_group(
         stem = planner.stem(job.metadata.values, include_version=False)
         version = job.metadata.values.version or 1
         if _stem_is_reserved(stem, version, db_stems + active_stems):
-            rejected[job.id] = "release_policy"
+            rejected[job.id] = _policy_rejection_reason(job)
             continue
         current = winners.get(stem)
         if current is None or version > (current.metadata.values.version or 1):
             if current is not None:
-                rejected[current.id] = "release_policy"
+                rejected[current.id] = _policy_rejection_reason(current)
             winners[stem] = job
         else:
-            rejected[job.id] = "release_policy"
+            rejected[job.id] = _policy_rejection_reason(job)
 
 
 def _stem_is_reserved(stem: str, version: int, existing: list[tuple[str, int]]) -> bool:

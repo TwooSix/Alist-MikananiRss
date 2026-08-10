@@ -24,6 +24,7 @@ from .task_snapshot_cache import OpenListTaskSnapshotCache
 
 OPENLIST_TEMP_ROOT_DIRECTORY_NAME = ".oani-download-tmp"
 OPENLIST_WORKFLOW_STATE_KEY = "workflow_state"
+_NO_TEMP_PATH = "No temp_path available"
 
 
 class OpenListWorkflowState(StrEnum):
@@ -270,7 +271,7 @@ class OpenListDownloadWorkflow:
     async def _inventory_files(self, task: OpenListWorkflowContext) -> None:
         temp_path = task.downloader_data.get("temp_path")
         if not temp_path:
-            raise DownloadBackendError("No temp_path available")
+            raise DownloadBackendError(_NO_TEMP_PATH)
         inventory = await self._file_detector.inventory(temp_path)
         if not inventory:
             raise DownloadBackendError("Could not inventory downloaded files")
@@ -479,7 +480,7 @@ class OpenListDownloadWorkflow:
     async def _detect_file(self, task: OpenListWorkflowContext) -> None:
         temp_path = task.downloader_data.get("temp_path")
         if not temp_path:
-            raise DownloadBackendError("No temp_path available")
+            raise DownloadBackendError(_NO_TEMP_PATH)
 
         detected = await self._file_detector.detect(temp_path)
         if not detected:
@@ -523,7 +524,7 @@ class OpenListDownloadWorkflow:
         if not downloaded_filename:
             raise DownloadBackendError("No downloaded filename available")
         if not temp_path:
-            raise DownloadBackendError("No temp_path available")
+            raise DownloadBackendError(_NO_TEMP_PATH)
         if "/" not in downloaded_filename:
             return downloaded_filename, downloaded_filename, temp_path
         sub_dir, bare_filename = downloaded_filename.rsplit("/", 1)

@@ -24,6 +24,52 @@ class CreateDownloadRequest(BaseModel):
 
     download_url: str = Field(..., description="Download URL (magnet/torrent link)")
     title: str = Field(..., description="Release title for identification")
+    collection_hint: bool = Field(
+        False,
+        description="Resolved metadata indicates multiple video files",
+    )
+    override_policy: bool = Field(
+        False,
+        description="Proceed after the user explicitly confirms policy conflicts",
+    )
+    acknowledged_conflicts: list[str] = Field(
+        default_factory=list,
+        description="Exact conflict keys shown to and confirmed by the user",
+    )
+    policy_review_token: str | None = Field(
+        None,
+        description="Opaque token binding confirmation to the reviewed request",
+    )
+
+
+class DownloadPreflightRequest(BaseModel):
+    """Read-only policy review for a manual download."""
+
+    download_url: str = Field(..., description="Download URL (magnet/torrent link)")
+    title: str = Field(..., description="Canonical release title")
+    collection_hint: bool = Field(
+        False,
+        description="Resolved metadata indicates multiple video files",
+    )
+
+
+class PolicyConflictResponse(BaseModel):
+    """One overridable automatic policy conflict."""
+
+    key: str
+    code: str
+    reason: str
+    matched: str = ""
+    details: dict = Field(default_factory=dict)
+
+
+class DownloadPreflightResponse(BaseModel):
+    success: bool
+    message: str
+    confirmation_required: bool = False
+    policy_conflicts: list[PolicyConflictResponse] = Field(default_factory=list)
+    policy_warnings: list[str] = Field(default_factory=list)
+    policy_review_token: str | None = None
 
 
 class DownloadItemResponse(BaseModel):
@@ -77,6 +123,10 @@ class CreateDownloadResponse(BaseModel):
     success: bool
     message: str
     task: DownloadTaskResponse | None = None
+    confirmation_required: bool = False
+    policy_conflicts: list[PolicyConflictResponse] = Field(default_factory=list)
+    policy_warnings: list[str] = Field(default_factory=list)
+    policy_review_token: str | None = None
 
 
 class RestartResponse(BaseModel):
@@ -156,6 +206,14 @@ class ResolveMagnetResponse(BaseModel):
         default=None,
         description="Where the title came from: 'dn' | 'metadata' | None",
     )
+    error_code: str | None = Field(
+        default=None,
+        description=(
+            "Stable failure or incomplete-inspection category such as "
+            "'libtorrent_unavailable' or 'metadata_timeout'. It may accompany "
+            "success when a dn= title was preserved without a file list."
+        ),
+    )
     file_count: int | None = None
     files: list[ResolveMagnetFile] = Field(default_factory=list)
 
@@ -183,5 +241,6 @@ class ResolveTorrentResponse(BaseModel):
         default=None,
         description="Where the title came from: 'torrent_file' | None",
     )
+    error_code: str | None = None
     file_count: int | None = None
     files: list[ResolveMagnetFile] = Field(default_factory=list)

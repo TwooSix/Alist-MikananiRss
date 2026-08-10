@@ -26,6 +26,8 @@ class TorrentToMagnetCandidateTransformer:
         # HTTP is deliberately accepted because torrent publishers often expose
         # metadata on HTTP-only endpoints; the downloaded bytes are size-limited
         # and validated as bencode before their protocol hash is computed.
+        # Release sites may intentionally publish plain HTTP torrent links;
+        # preserving the publisher URL is required for compatibility.
         if not download_url.lower().startswith(("http://", "https://")):  # NOSONAR
             return candidate
 

@@ -10,6 +10,9 @@ from typing import Any
 import pytest
 
 from openlist_ani.application.download_worker import DownloadWorkerPool
+from openlist_ani.application.manual_policy import (
+    MANUAL_PARTIAL_COLLECTION_RETRY_KEY,
+)
 from openlist_ani.application.organization import OrganizationCleanupPending
 from openlist_ani.application.ports import (
     DownloadBackendBundle,
@@ -955,6 +958,161 @@ async def test_all_policy_rejections_cleanup_then_mark_parent_skipped():
         for item in regular
     )
     assert not notification.is_set()
+
+
+@pytest.mark.asyncio
+async def test_approved_manual_collection_bypasses_child_rss_policies():
+    manifest = DownloadManifest(
+        root_path="/staging/job-collection",
+        files=(
+            DownloadedFile("blocked/Example S01E01.mkv", 100),
+            DownloadedFile("blocked/Example S01E02.mkv", 101),
+            DownloadedFile("SP/Example SP01.mkv", 20),
+        ),
+        cleanup_root="/staging/job-collection",
+    )
+    bundle, _, organizer = _bundle(manifest)
+    jobs = FakeJobRepository()
+    worker, notification = _worker(
+        jobs=jobs,
+        backends=FakeBackendResolver(bundle),
+        resolver=RecordingMetadataResolver(),
+        settings=_settings(exclude_patterns=[r"(?:^|/)blocked/"]),
+    )
+    job = _job()
+    job.candidate = ReleaseCandidate.create(
+        source_name="manual",
+        source_url="api",
+        title=job.candidate.title,
+        download_url=job.candidate.download_url,
+    )
+    job.artifact["manual_policy_review"] = {
+        "approved": True,
+        "override_policy": True,
+        "acknowledged_conflicts": ["collection:automatic-release-policy"],
+    }
+
+    await worker._process(job, worker_id=1)
+
+    assert len(organizer.calls[0].requests) == 2
+    assert not jobs.skipped
+    assert jobs.completed
+    assert notification.is_set()
+    states = {
+        item["source_path"]: (item["state"], item.get("error"))
+        for item in job.artifact["resolved_items"]
+    }
+    assert states["blocked/Example S01E01.mkv"][0] == "ready"
+    assert states["blocked/Example S01E02.mkv"][0] == "ready"
+    assert states["SP/Example SP01.mkv"] == ("skipped", "not_main_episode")
+
+
+@pytest.mark.asyncio
+async def test_partial_manual_retry_skips_only_previously_completed_episode():
+    manifest = DownloadManifest(
+        root_path="/staging/job-collection",
+        files=(
+            DownloadedFile("Example S01E01.mkv", 100),
+            DownloadedFile("Example S01E02.mkv", 101),
+        ),
+        cleanup_root="/staging/job-collection",
+    )
+    bundle, _, organizer = _bundle(manifest)
+    jobs = FakeJobRepository()
+    worker, notification = _worker(
+        jobs=jobs,
+        backends=FakeBackendResolver(bundle),
+        resolver=RecordingMetadataResolver(),
+    )
+    job = _job()
+    job.candidate = ReleaseCandidate.create(
+        source_name="manual",
+        source_url="api",
+        title=job.candidate.title,
+        download_url=job.candidate.download_url,
+        guid="manual-partial-retry:test",
+    )
+    job.artifact.update(
+        {
+            "manual_policy_review": {
+                "approved": True,
+                "override_policy": True,
+                "acknowledged_conflicts": ["collection:automatic-release-policy"],
+            },
+            MANUAL_PARTIAL_COLLECTION_RETRY_KEY: {
+                "source_job_ids": ["prior-partial-job"],
+                "completed_item_keys": [],
+                "completed_episode_keys": [
+                    {"anime_name": "Example", "season": 1, "episode": 1}
+                ],
+            },
+        }
+    )
+
+    await worker._process(job, worker_id=1)
+
+    assert len(organizer.calls) == 1
+    assert [
+        request.metadata.values.episode for request in organizer.calls[0].requests
+    ] == [2]
+    assert jobs.completed
+    resources, summary = jobs.completed[0]
+    assert [resource.metadata.values.episode for resource in resources] == [2]
+    states = {
+        item["episode"]: (item["state"], item.get("error")) for item in summary["items"]
+    }
+    assert states == {
+        1: ("skipped", "already_downloaded"),
+        2: ("completed", None),
+    }
+    assert notification.is_set()
+
+
+@pytest.mark.asyncio
+async def test_reviewed_manual_collection_requires_blanket_ack_for_child_policy():
+    manifest = DownloadManifest(
+        root_path="/staging/job-collection",
+        files=(
+            DownloadedFile("blocked/Example S01E01.mkv", 100),
+            DownloadedFile("blocked/Example S01E02.mkv", 101),
+        ),
+        cleanup_root="/staging/job-collection",
+    )
+    bundle, _, organizer = _bundle(manifest)
+    jobs = FakeJobRepository()
+    worker, notification = _worker(
+        jobs=jobs,
+        backends=FakeBackendResolver(bundle),
+        resolver=RecordingMetadataResolver(),
+        settings=_settings(exclude_patterns=[r"(?:^|/)blocked/"]),
+    )
+    job = _job()
+    job.candidate = ReleaseCandidate.create(
+        source_name="manual",
+        source_url="api",
+        title="Title that was not classified as a collection",
+        download_url=job.candidate.download_url,
+    )
+    job.artifact["manual_policy_review"] = {
+        "approved": True,
+        "override_policy": False,
+        "acknowledged_conflicts": [],
+    }
+
+    await worker._process(job, worker_id=1)
+
+    assert organizer.calls[0].requests == ()
+    assert not jobs.skipped
+    assert jobs.failed == [
+        "Manual policy confirmation is required for collection contents"
+    ]
+    assert not jobs.completed
+    assert not notification.is_set()
+    assert all(
+        item["state"] == "failed"
+        and item["error"] == "manual_policy_confirmation_required"
+        for item in job.artifact["resolved_items"]
+    )
 
 
 @pytest.mark.asyncio

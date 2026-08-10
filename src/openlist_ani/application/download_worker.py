@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import PurePosixPath
 from typing import Any
 
 from openlist_ani.application.collection import (
+    CollectionVideo,
     child_release_title,
     collection_parent_probe,
     collection_videos,
@@ -17,6 +18,12 @@ from openlist_ani.application.collection import (
 )
 from openlist_ani.application.lease import run_with_job_heartbeat
 from openlist_ani.application.metadata_pipeline import MetadataPipelineResolver
+from openlist_ani.application.manual_policy import (
+    COLLECTION_POLICY_CONFLICT_KEY,
+    manual_policy_acknowledges,
+    manual_policy_is_approved,
+    manual_partial_collection_retry_from_artifact,
+)
 from openlist_ani.application.organization import OrganizationCleanupPending
 from openlist_ani.application.ports import (
     CompletedResource,
@@ -115,10 +122,7 @@ class DownloadWorkerPool:
 
     async def _process(self, job: DownloadJob, worker_id: int) -> None:
         try:
-            if terminal_error := job.artifact.get("terminal_cleanup_pending"):
-                await self._cleanup_terminal_staging(job)
-                job.artifact.pop("terminal_cleanup_pending", None)
-                await self._jobs.fail(job, str(terminal_error))
+            if await self._finish_terminal_cleanup(job):
                 return
             while job.status not in {
                 JobStatus.COMPLETED,
@@ -126,19 +130,8 @@ class DownloadWorkerPool:
                 JobStatus.FAILED,
                 JobStatus.CANCELLED,
             }:
-                if job.step == JobStep.DOWNLOAD:
-                    await self._download(job)
-                    continue
-                if job.step == JobStep.RESOLVE_FILES:
-                    await self._resolve_files(job)
-                    continue
-                if job.step == JobStep.ORGANIZE:
-                    await self._organize(job)
-                    continue
-                if job.step == JobStep.FINALIZE:
-                    await self._finalize(job, worker_id)
+                if await self._run_job_step(job, worker_id):
                     return
-                raise RuntimeError(f"Unsupported download job step: {job.step}")
         except asyncio.CancelledError:
             raise
         except UnknownDownloadBackend as error:
@@ -150,38 +143,66 @@ class DownloadWorkerPool:
             # Per-item and parent-context attempt counts are persisted
             # independently.  They decide when metadata is terminal, so this
             # retry must not be cut short by the parent job's generic cap.
-            await self._jobs.reschedule(
-                job, str(error), _download_retry_delay(job.attempt_count)
-            )
-            self._work_available.set()
+            await self._reschedule_download_work(job, str(error))
         except OrganizationCleanupPending as error:
-            await self._jobs.reschedule(
-                job, str(error), _download_retry_delay(job.attempt_count)
-            )
-            self._work_available.set()
+            await self._reschedule_download_work(job, str(error))
         except Exception as error:
-            if job.attempt_count >= 3:
-                if job.step in {JobStep.DOWNLOAD, JobStep.RESOLVE_FILES}:
-                    job.artifact["terminal_cleanup_pending"] = str(error)
-                    await self._jobs.save(job)
-                    try:
-                        await self._cleanup_terminal_staging(job)
-                    except Exception as cleanup_error:
-                        await self._jobs.reschedule(
-                            job,
-                            f"Terminal staging cleanup is pending: {cleanup_error}",
-                            _download_retry_delay(job.attempt_count),
-                        )
-                        self._work_available.set()
-                        return
-                    job.artifact.pop("terminal_cleanup_pending", None)
-                await self._jobs.fail(job, str(error))
-                logger.error(f"Download job failed: job_id={job.id}; error={error}")
-            else:
-                await self._jobs.reschedule(
-                    job, str(error), _download_retry_delay(job.attempt_count)
-                )
-                self._work_available.set()
+            await self._handle_processing_failure(job, error)
+
+    async def _finish_terminal_cleanup(self, job: DownloadJob) -> bool:
+        terminal_error = job.artifact.get("terminal_cleanup_pending")
+        if not terminal_error:
+            return False
+        await self._cleanup_terminal_staging(job)
+        job.artifact.pop("terminal_cleanup_pending", None)
+        await self._jobs.fail(job, str(terminal_error))
+        return True
+
+    async def _run_job_step(self, job: DownloadJob, worker_id: int) -> bool:
+        if job.step == JobStep.DOWNLOAD:
+            await self._download(job)
+        elif job.step == JobStep.RESOLVE_FILES:
+            await self._resolve_files(job)
+        elif job.step == JobStep.ORGANIZE:
+            await self._organize(job)
+        elif job.step == JobStep.FINALIZE:
+            await self._finalize(job, worker_id)
+            return True
+        else:
+            raise RuntimeError(f"Unsupported download job step: {job.step}")
+        return False
+
+    async def _reschedule_download_work(self, job: DownloadJob, error: str) -> None:
+        await self._jobs.reschedule(
+            job, error, _download_retry_delay(job.attempt_count)
+        )
+        self._work_available.set()
+
+    async def _handle_processing_failure(
+        self, job: DownloadJob, error: Exception
+    ) -> None:
+        if job.attempt_count < 3:
+            await self._reschedule_download_work(job, str(error))
+            return
+        if job.step in {JobStep.DOWNLOAD, JobStep.RESOLVE_FILES}:
+            cleanup_pending = await self._try_terminal_cleanup(job, error)
+            if cleanup_pending:
+                return
+        await self._jobs.fail(job, str(error))
+        logger.error(f"Download job failed: job_id={job.id}; error={error}")
+
+    async def _try_terminal_cleanup(self, job: DownloadJob, error: Exception) -> bool:
+        job.artifact["terminal_cleanup_pending"] = str(error)
+        await self._jobs.save(job)
+        try:
+            await self._cleanup_terminal_staging(job)
+        except Exception as cleanup_error:
+            await self._reschedule_download_work(
+                job, f"Terminal staging cleanup is pending: {cleanup_error}"
+            )
+            return True
+        job.artifact.pop("terminal_cleanup_pending", None)
+        return False
 
     def _bundle(self, job: DownloadJob) -> DownloadBackendBundle:
         try:
@@ -314,105 +335,31 @@ class DownloadWorkerPool:
     async def _resolve_collection_items(
         self,
         job: DownloadJob,
-        videos,
+        videos: tuple[CollectionVideo, ...],
     ) -> list[dict[str, Any]]:
-        previous = {
-            str(item.get("item_key")): dict(item)
-            for item in job.artifact.get("resolved_items", [])
-            if item.get("item_key")
-        }
-        items: list[dict[str, Any]] = []
-        for video in videos:
-            item = previous.get(video.item_key)
-            if item is None:
-                main_feature = (
-                    is_main_feature_path(video.relative_path)
-                    and explicit_path_season(video.relative_path) != 0
-                )
-                item = {
-                    "item_key": video.item_key,
-                    "source_path": video.relative_path,
-                    "state": "pending" if main_feature else "skipped",
-                    "error": None if main_feature else "not_main_episode",
-                    "attempt_count": 0,
-                }
-            items.append(item)
-
+        items = _restore_collection_items(job, videos)
         unresolved = [item for item in items if item.get("state") == "pending"]
-        if not unresolved:
-            return items
-
-        context = await self._collection_context(job)
-        candidates: list[ReleaseCandidate] = []
-        documents: list[MetadataDocument] = []
-        attempts: list[int] = []
-        for item in unresolved:
-            relative_path = str(item["source_path"])
-            document = MetadataDocument.from_dict(item.get("metadata"))
-            season = explicit_path_season(relative_path)
-            if season is not None:
-                document.apply(
-                    MetadataPatch(
-                        source="collection_path",
-                        values=ReleaseMetadata(season=season),
-                        priority=40,
-                        provided_fields=frozenset({"season"}),
-                    )
-                )
-            item["attempt_count"] = int(item.get("attempt_count") or 0) + 1
-            attempts.append(item["attempt_count"])
-            candidates.append(
-                ReleaseCandidate.create(
-                    source_name=f"{job.candidate.source_name}:collection-file",
-                    source_url=job.candidate.source_url,
-                    title=child_release_title(relative_path, context),
-                    download_url=job.candidate.download_url,
-                    guid=f"{job.id}:{relative_path}",
-                )
+        if unresolved:
+            context = await self._collection_context(job)
+            candidates, documents, attempts = _collection_resolution_inputs(
+                job, unresolved, context
             )
-            documents.append(document)
-
-        # Persist incremented per-item attempts even when a provider raises for
-        # the whole batch.  This keeps retries bounded and guarantees that the
-        # organizer eventually gets a chance to clean the staging namespace.
-        job.artifact["resolved_items"] = items
-        await self._jobs.save(job)
-        try:
-            resolutions = await self._metadata_resolver.resolve_many(
-                candidates,
-                documents,
-                attempts,
-                fallbacks=[context] * len(candidates),
-            )
-        except Exception as error:
-            for item, document in zip(unresolved, documents):
-                item["metadata"] = document.to_dict()
-                item["error"] = f"metadata provider failed: {error}"
-                item["state"] = (
-                    "pending" if int(item["attempt_count"]) < 3 else "failed"
+            # Persist incremented per-item attempts even when a provider raises
+            # for the whole batch. This keeps retries bounded and guarantees
+            # that the organizer can eventually clean the staging namespace.
+            job.artifact["resolved_items"] = items
+            await self._jobs.save(job)
+            try:
+                resolutions = await self._metadata_resolver.resolve_many(
+                    candidates,
+                    documents,
+                    attempts,
+                    fallbacks=[context] * len(candidates),
                 )
-            return items
-        for item, resolution in zip(unresolved, resolutions):
-            item["metadata"] = resolution.document.to_dict()
-            values = resolution.document.values
-            if resolution.retryable_error:
-                item["state"] = (
-                    "pending" if int(item["attempt_count"]) < 3 else "failed"
-                )
-                item["error"] = resolution.retryable_error
-            elif _main_metadata_complete(values):
-                item["state"] = "ready"
-                item["error"] = None
-            elif values.season == 0 or values.episode == 0:
-                item["state"] = "skipped"
-                item["error"] = "not_main_episode"
+            except Exception as error:
+                _record_collection_resolution_failure(unresolved, documents, error)
             else:
-                item["state"] = "failed"
-                item["error"] = (
-                    resolution.retryable_error
-                    or resolution.permanent_error
-                    or "metadata_incomplete"
-                )
+                _apply_collection_resolutions(unresolved, resolutions)
         return items
 
     async def _collection_context(self, job: DownloadJob) -> ReleaseMetadata:
@@ -486,6 +433,20 @@ class DownloadWorkerPool:
     async def _apply_collection_policies(
         self, job: DownloadJob, items: list[dict[str, Any]]
     ) -> None:
+        _apply_partial_collection_retry_exclusions(job, items)
+        if manual_policy_acknowledges(job, (COLLECTION_POLICY_CONFLICT_KEY,)):
+            return
+        confirmation_required = manual_policy_is_approved(job)
+        self._apply_collection_metadata_filters(items, confirmation_required)
+        await self._apply_collection_selection_policies(
+            job, items, confirmation_required
+        )
+        if confirmation_required:
+            _fail_collection_for_policy_confirmation(items)
+
+    def _apply_collection_metadata_filters(
+        self, items: list[dict[str, Any]], confirmation_required: bool
+    ) -> None:
         metadata_filter = self._settings.metadata_filter
         for item in items:
             if item.get("state") != "ready":
@@ -499,57 +460,74 @@ class DownloadWorkerPool:
                 qualities=metadata_filter.exclude_quality,
                 languages=metadata_filter.exclude_languages,
             ):
-                item["state"] = "skipped"
-                item["error"] = "release_policy"
+                _reject_policy_item(item, confirmation_required)
 
+    async def _apply_collection_selection_policies(
+        self,
+        job: DownloadJob,
+        items: list[dict[str, Any]],
+        confirmation_required: bool,
+    ) -> None:
         grouped = _group_ready_items(items)
         keys = list(grouped)
         records = await self._library.find_releases_by_episodes(keys)
         active_records = await self._active_collection_records(job.id)
-        priority = self._settings.priority
         for key, group in grouped.items():
             known = [*records.get(key, []), *active_records.get(key, [])]
-            remaining: list[dict[str, Any]] = []
-            for item in group:
-                metadata = _item_metadata(item)
-                if dominated_by_records(
-                    metadata,
-                    known,
-                    field_order=priority.field_order,
-                    fansubs=priority.fansub,
-                    qualities=priority.quality,
-                    languages=priority.languages,
-                ):
-                    _skip_item(item)
-                else:
-                    remaining.append(item)
+            self._apply_collection_group_policies(
+                key, group, known, confirmation_required
+            )
 
-            non_upgrades = [
-                item
-                for item in remaining
-                if not is_version_upgrade(_item_metadata(item), known)
-            ]
-            levels = [
-                priority_levels(
-                    _item_metadata(item),
-                    field_order=priority.field_order,
-                    fansubs=priority.fansub,
-                    qualities=priority.quality,
-                    languages=priority.languages,
-                )
-                for item in non_upgrades
-            ]
-            keep = best_indices(levels)
-            for index, item in enumerate(non_upgrades):
-                if index not in keep:
-                    _skip_item(item)
+    def _apply_collection_group_policies(
+        self,
+        key: tuple[str, int, int],
+        group: list[dict[str, Any]],
+        known: list[dict[str, Any]],
+        confirmation_required: bool,
+    ) -> None:
+        priority = self._settings.priority
+        remaining: list[dict[str, Any]] = []
+        for item in group:
+            metadata = _item_metadata(item)
+            if dominated_by_records(
+                metadata,
+                known,
+                field_order=priority.field_order,
+                fansubs=priority.fansub,
+                qualities=priority.quality,
+                languages=priority.languages,
+            ):
+                _reject_policy_item(item, confirmation_required)
+            else:
+                remaining.append(item)
 
-            if self._settings.strict_filtering:
-                self._apply_strict_collection_group(
-                    key,
-                    [item for item in remaining if item["state"] == "ready"],
-                    known,
-                )
+        non_upgrades = [
+            item
+            for item in remaining
+            if not is_version_upgrade(_item_metadata(item), known)
+        ]
+        levels = [
+            priority_levels(
+                _item_metadata(item),
+                field_order=priority.field_order,
+                fansubs=priority.fansub,
+                qualities=priority.quality,
+                languages=priority.languages,
+            )
+            for item in non_upgrades
+        ]
+        keep = best_indices(levels)
+        for index, item in enumerate(non_upgrades):
+            if index not in keep:
+                _reject_policy_item(item, confirmation_required)
+
+        if self._settings.strict_filtering:
+            self._apply_strict_collection_group(
+                key,
+                [item for item in remaining if item["state"] == "ready"],
+                known,
+                confirmation_required=confirmation_required,
+            )
 
     async def _active_collection_records(
         self, current_job_id: str
@@ -574,6 +552,8 @@ class DownloadWorkerPool:
         key: tuple[str, int, int],
         items: list[dict[str, Any]],
         known: list[dict[str, Any]],
+        *,
+        confirmation_required: bool = False,
     ) -> None:
         occupied: dict[str, int] = {}
         for record in known:
@@ -589,7 +569,7 @@ class DownloadWorkerPool:
             stem = self._filename_planner.stem(metadata, include_version=False)
             version = metadata.version or 1
             if version <= occupied.get(stem, 0):
-                _skip_item(item)
+                _reject_policy_item(item, confirmation_required)
                 continue
             current = winners.get(stem)
             if current is None:
@@ -597,10 +577,10 @@ class DownloadWorkerPool:
                 continue
             current_version = _item_metadata(current).version or 1
             if version > current_version:
-                _skip_item(current)
+                _reject_policy_item(current, confirmation_required)
                 winners[stem] = item
             else:
-                _skip_item(item)
+                _reject_policy_item(item, confirmation_required)
 
     def _build_organization_requests(
         self,
@@ -760,7 +740,14 @@ class DownloadWorkerPool:
             )
             return
 
-        reason = "No regular episode from the download could be organized"
+        reason = (
+            "Manual policy confirmation is required for collection contents"
+            if any(
+                item.get("error") == "manual_policy_confirmation_required"
+                for item in resolved.values()
+            )
+            else "No regular episode from the download could be organized"
+        )
         if _all_policy_skipped(resolved):
             await self._jobs.skip(job, "release_policy")
         else:
@@ -865,6 +852,117 @@ def _ready_single_item(video, metadata: MetadataDocument) -> dict[str, Any]:
     }
 
 
+def _restore_collection_items(
+    job: DownloadJob, videos: tuple[CollectionVideo, ...]
+) -> list[dict[str, Any]]:
+    previous = {
+        str(item.get("item_key")): dict(item)
+        for item in job.artifact.get("resolved_items", [])
+        if item.get("item_key")
+    }
+    return [
+        (
+            previous[video.item_key]
+            if video.item_key in previous
+            else _new_collection_item(video)
+        )
+        for video in videos
+    ]
+
+
+def _new_collection_item(video: CollectionVideo) -> dict[str, Any]:
+    main_feature = (
+        is_main_feature_path(video.relative_path)
+        and explicit_path_season(video.relative_path) != 0
+    )
+    return {
+        "item_key": video.item_key,
+        "source_path": video.relative_path,
+        "state": "pending" if main_feature else "skipped",
+        "error": None if main_feature else "not_main_episode",
+        "attempt_count": 0,
+    }
+
+
+def _collection_resolution_inputs(
+    job: DownloadJob,
+    unresolved: list[dict[str, Any]],
+    context: ReleaseMetadata,
+) -> tuple[list[ReleaseCandidate], list[MetadataDocument], list[int]]:
+    candidates: list[ReleaseCandidate] = []
+    documents: list[MetadataDocument] = []
+    attempts: list[int] = []
+    for item in unresolved:
+        relative_path = str(item["source_path"])
+        document = MetadataDocument.from_dict(item.get("metadata"))
+        _apply_collection_path_season(document, relative_path)
+        attempt = int(item.get("attempt_count") or 0) + 1
+        item["attempt_count"] = attempt
+        attempts.append(attempt)
+        candidates.append(
+            ReleaseCandidate.create(
+                source_name=f"{job.candidate.source_name}:collection-file",
+                source_url=job.candidate.source_url,
+                title=child_release_title(relative_path, context),
+                download_url=job.candidate.download_url,
+                guid=f"{job.id}:{relative_path}",
+            )
+        )
+        documents.append(document)
+    return candidates, documents, attempts
+
+
+def _apply_collection_path_season(
+    document: MetadataDocument, relative_path: str
+) -> None:
+    season = explicit_path_season(relative_path)
+    if season is None:
+        return
+    document.apply(
+        MetadataPatch(
+            source="collection_path",
+            values=ReleaseMetadata(season=season),
+            priority=40,
+            provided_fields=frozenset({"season"}),
+        )
+    )
+
+
+def _record_collection_resolution_failure(
+    unresolved: list[dict[str, Any]],
+    documents: list[MetadataDocument],
+    error: Exception,
+) -> None:
+    for item, document in zip(unresolved, documents):
+        item["metadata"] = document.to_dict()
+        item["error"] = f"metadata provider failed: {error}"
+        item["state"] = "pending" if int(item["attempt_count"]) < 3 else "failed"
+
+
+def _apply_collection_resolutions(
+    unresolved: list[dict[str, Any]], resolutions: list[Any]
+) -> None:
+    for item, resolution in zip(unresolved, resolutions):
+        item["metadata"] = resolution.document.to_dict()
+        values = resolution.document.values
+        if resolution.retryable_error:
+            item["state"] = "pending" if int(item["attempt_count"]) < 3 else "failed"
+            item["error"] = resolution.retryable_error
+        elif _main_metadata_complete(values):
+            item["state"] = "ready"
+            item["error"] = None
+        elif values.season == 0 or values.episode == 0:
+            item["state"] = "skipped"
+            item["error"] = "not_main_episode"
+        else:
+            item["state"] = "failed"
+            item["error"] = (
+                resolution.retryable_error
+                or resolution.permanent_error
+                or "metadata_incomplete"
+            )
+
+
 def _is_collection_job(job: DownloadJob) -> bool:
     if job.artifact.get("collection_hint"):
         return True
@@ -913,6 +1011,45 @@ def _item_metadata(item: dict[str, Any]) -> ReleaseMetadata:
 def _skip_item(item: dict[str, Any]) -> None:
     item["state"] = "skipped"
     item["error"] = "release_policy"
+
+
+def _reject_policy_item(item: dict[str, Any], confirmation_required: bool) -> None:
+    if confirmation_required:
+        item["state"] = "failed"
+        item["error"] = "manual_policy_confirmation_required"
+    else:
+        _skip_item(item)
+
+
+def _fail_collection_for_policy_confirmation(items: list[dict[str, Any]]) -> None:
+    if not any(
+        item.get("error") == "manual_policy_confirmation_required" for item in items
+    ):
+        return
+    # A collection discovered only after download did not receive the blanket
+    # acknowledgement during preflight. Avoid a partial, silent selection and
+    # require a fresh confirmation that covers the collection scope.
+    for item in items:
+        if item.get("state") == "ready":
+            _reject_policy_item(item, True)
+
+
+def _apply_partial_collection_retry_exclusions(
+    job: DownloadJob, items: list[dict[str, Any]]
+) -> None:
+    retry = manual_partial_collection_retry_from_artifact(job.artifact)
+    if retry is None:
+        return
+    completed_items = set(retry.completed_item_keys)
+    completed_episodes = set(retry.completed_episode_keys)
+    for item in items:
+        if item.get("state") != "ready":
+            continue
+        key = episode_key(_item_metadata(item))
+        item_key = str(item.get("item_key") or "")
+        if key in completed_episodes or (key is None and item_key in completed_items):
+            item["state"] = "skipped"
+            item["error"] = "already_downloaded"
 
 
 def _metadata_record(metadata: ReleaseMetadata) -> dict[str, Any]:
@@ -1039,36 +1176,17 @@ def _completion_summary(
         key=lambda pair: str(pair[1].get("source_path", "")).casefold(),
     ):
         result = by_key.get(key)
-        state = result.state if result is not None else str(item.get("state"))
-        error = (
-            result.error if result is not None and result.error else item.get("error")
-        )
-        metadata = MetadataDocument.from_dict(item.get("metadata")).values
-        entry = {
-            "item_key": key,
-            "source_path": item.get("source_path"),
-            "state": state,
-            "final_path": result.final_path if result else None,
-            "error": error,
-            "anime_name": metadata.anime_name,
-            "season": metadata.season,
-            "episode": metadata.episode,
-        }
+        entry, metadata = _completion_summary_item(key, item, result)
         items.append(entry)
-        if state == "completed":
-            kept_sources.add(str(item.get("source_path")))
-            kept_sources.update(
-                str(sidecar.get("relative_path"))
-                for sidecar in item.get("sidecars", [])
-            )
-            successful_episodes.append(
-                f"{metadata.anime_name or 'Unknown'} "
-                f"S{metadata.season or 0:02d}E{metadata.episode or 0:02d}"
-            )
+        if entry["state"] != "completed":
+            continue
+        kept_sources.update(_completed_item_sources(item))
+        successful_episodes.append(_successful_episode_label(metadata))
 
-    success_count = sum(item["state"] == "completed" for item in items)
-    skipped_count = sum(item["state"] == "skipped" for item in items)
-    failed_count = sum(item["state"] == "failed" for item in items)
+    state_counts = Counter(item["state"] for item in items)
+    success_count = state_counts["completed"]
+    skipped_count = state_counts["skipped"]
+    failed_count = state_counts["failed"]
     deleted_count = max(0, len(manifest.files) - len(kept_sources))
     warning_count = skipped_count + failed_count
     return {
@@ -1081,6 +1199,43 @@ def _completion_summary(
         "successful_episodes": successful_episodes,
         "items": items,
     }
+
+
+def _completion_summary_item(
+    key: str,
+    item: dict[str, Any],
+    result: OrganizationResult | None,
+) -> tuple[dict[str, Any], ReleaseMetadata]:
+    state = result.state if result is not None else str(item.get("state"))
+    error = result.error if result is not None and result.error else item.get("error")
+    metadata = MetadataDocument.from_dict(item.get("metadata")).values
+    return (
+        {
+            "item_key": key,
+            "source_path": item.get("source_path"),
+            "state": state,
+            "final_path": result.final_path if result else None,
+            "error": error,
+            "anime_name": metadata.anime_name,
+            "season": metadata.season,
+            "episode": metadata.episode,
+        },
+        metadata,
+    )
+
+
+def _completed_item_sources(item: dict[str, Any]) -> set[str]:
+    return {
+        str(item.get("source_path")),
+        *(str(sidecar.get("relative_path")) for sidecar in item.get("sidecars", [])),
+    }
+
+
+def _successful_episode_label(metadata: ReleaseMetadata) -> str:
+    return (
+        f"{metadata.anime_name or 'Unknown'} "
+        f"S{metadata.season or 0:02d}E{metadata.episode or 0:02d}"
+    )
 
 
 def _all_policy_skipped(resolved: dict[str, dict[str, Any]]) -> bool:

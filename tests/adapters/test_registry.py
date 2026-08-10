@@ -89,15 +89,14 @@ def test_download_backend_registration_rejects_cross_backend_pairing_atomically(
     message: str,
 ):
     registry = AdapterRegistry()
+    bundle = _bundle(
+        "openlist",
+        downloader_name=downloader_name,
+        organizer_name=organizer_name,
+    )
 
     with pytest.raises(ValueError, match=message):
-        registry.register_download_backend(
-            _bundle(
-                "openlist",
-                downloader_name=downloader_name,
-                organizer_name=organizer_name,
-            )
-        )
+        registry.register_download_backend(bundle)
 
     assert registry.download_backends == {}
 
@@ -114,8 +113,9 @@ def test_download_backend_duplicate_does_not_replace_registered_bundle():
         )
     )
 
+    duplicate = _bundle("OPENLIST")
     with pytest.raises(ValueError, match="already registered"):
-        registry.register_download_backend(_bundle("OPENLIST"))
+        registry.register_download_backend(duplicate)
 
     bundle = registry.download_backend("openlist")
     assert bundle.downloader is first_downloader

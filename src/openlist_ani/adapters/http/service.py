@@ -6,14 +6,30 @@ from typing import Any
 from openlist_ani.application.service import DownloadView, ReleaseView
 
 from .schemas import (
+    CreateDownloadResponse,
     DownloadItemResponse,
+    DownloadPreflightResponse,
     DownloadTaskResponse,
     ParseRSSEntry,
     ParseRSSResponse,
+    PolicyConflictResponse,
     ResolveMagnetFile,
     ResolveMagnetResponse,
     ResolveTorrentResponse,
 )
+
+
+def _build_policy_conflicts(conflicts) -> list[PolicyConflictResponse]:
+    return [
+        PolicyConflictResponse(
+            key=item.key,
+            code=item.code,
+            reason=item.reason,
+            matched=item.matched,
+            details=dict(item.details),
+        )
+        for item in conflicts
+    ]
 
 
 def _build_task_response(task: DownloadView) -> DownloadTaskResponse:
@@ -72,6 +88,7 @@ def _build_magnet_response(result) -> ResolveMagnetResponse:
         message=result.message,
         title=result.title,
         source=result.source,
+        error_code=result.error_code,
         file_count=result.file_count,
         files=[ResolveMagnetFile(name=f.name, size=f.size) for f in result.files],
     )
@@ -103,12 +120,47 @@ class BackendApiService:
         self,
         download_url: str,
         title: str,
-    ) -> tuple[bool, str, DownloadTaskResponse | None]:
-        outcome = await self._application_service.create_download(download_url, title)
-        return (
-            outcome.success,
-            outcome.message,
-            _build_task_response(outcome.task) if outcome.task else None,
+        *,
+        collection_hint: bool = False,
+        override_policy: bool = False,
+        acknowledged_conflicts: tuple[str, ...] = (),
+        policy_review_token: str | None = None,
+    ) -> CreateDownloadResponse:
+        outcome = await self._application_service.create_download(
+            download_url,
+            title,
+            collection_hint=collection_hint,
+            override_policy=override_policy,
+            acknowledged_conflicts=acknowledged_conflicts,
+            policy_review_token=policy_review_token,
+        )
+        return CreateDownloadResponse(
+            success=outcome.success,
+            message=outcome.message,
+            task=_build_task_response(outcome.task) if outcome.task else None,
+            confirmation_required=outcome.confirmation_required,
+            policy_conflicts=_build_policy_conflicts(outcome.policy_conflicts),
+            policy_warnings=list(outcome.policy_warnings),
+            policy_review_token=outcome.policy_review_token,
+        )
+
+    async def preflight_download(
+        self,
+        download_url: str,
+        title: str,
+        *,
+        collection_hint: bool = False,
+    ) -> DownloadPreflightResponse:
+        outcome = await self._application_service.preflight_download(
+            download_url, title, collection_hint=collection_hint
+        )
+        return DownloadPreflightResponse(
+            success=outcome.success,
+            message=outcome.message,
+            confirmation_required=outcome.confirmation_required,
+            policy_conflicts=_build_policy_conflicts(outcome.policy_conflicts),
+            policy_warnings=list(outcome.policy_warnings),
+            policy_review_token=outcome.policy_review_token,
         )
 
     async def list_downloads(self) -> list[DownloadTaskResponse]:

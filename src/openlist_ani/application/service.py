@@ -2,11 +2,23 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
+import secrets
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
 from openlist_ani.application.ports import JobRepository, LibraryRepository
+from openlist_ani.application.manual_policy import (
+    MANUAL_PARTIAL_COLLECTION_RETRY_KEY,
+    ManualDownloadPolicyInspector,
+    ManualPartialCollectionRetry,
+    ManualPolicyConflict,
+    ManualPolicyReview,
+    find_manual_partial_collection_retry,
+)
 from openlist_ani.application.settings import CoreSettings
 from openlist_ani.domain import (
     DownloadJob,
@@ -23,6 +35,20 @@ class CreateDownloadOutcome:
     success: bool
     message: str
     task: DownloadView | None = None
+    confirmation_required: bool = False
+    policy_conflicts: tuple[ManualPolicyConflict, ...] = ()
+    policy_warnings: tuple[str, ...] = ()
+    policy_review_token: str | None = None
+
+
+@dataclass(frozen=True)
+class DownloadPreflightOutcome:
+    success: bool
+    message: str
+    confirmation_required: bool = False
+    policy_conflicts: tuple[ManualPolicyConflict, ...] = ()
+    policy_warnings: tuple[str, ...] = ()
+    policy_review_token: str | None = None
 
 
 @dataclass(frozen=True)
@@ -91,6 +117,7 @@ class CoreApplicationService:
         resolve_magnet_func: Callable[..., Awaitable[Any]],
         resolve_torrent_func: Callable[..., Awaitable[Any]],
         health_provider: Callable[[], dict[str, Any]],
+        manual_policy_inspector: ManualDownloadPolicyInspector,
     ) -> None:
         self._jobs = jobs
         self._library = library
@@ -102,6 +129,8 @@ class CoreApplicationService:
         self._resolve_magnet = resolve_magnet_func
         self._resolve_torrent = resolve_torrent_func
         self._health_provider = health_provider
+        self._manual_policy_inspector = manual_policy_inspector
+        self._manual_policy_review_secret = secrets.token_bytes(32)
 
     def health(self) -> dict[str, Any]:
         return self._health_provider()
@@ -115,31 +144,254 @@ class CoreApplicationService:
         updated = list(self._config.rss.urls)
         return True, f"RSS URL added successfully: {url}", updated
 
-    async def create_download(
-        self, download_url: str, title: str
-    ) -> CreateDownloadOutcome:
-        if await self._library.is_downloaded(title):
-            return CreateDownloadOutcome(False, f"Already downloaded: {title}")
-        for active in await self._jobs.list_active():
-            if active.candidate.download_url == download_url:
-                return CreateDownloadOutcome(False, f"Already downloading: {title}")
-
-        candidate = ReleaseCandidate.create(
-            source_name="manual",
-            source_url="api",
-            title=title,
-            download_url=download_url,
+    async def preflight_download(
+        self,
+        download_url: str,
+        title: str,
+        *,
+        collection_hint: bool = False,
+    ) -> DownloadPreflightOutcome:
+        partial_retry = await self._find_partial_collection_retry(download_url, title)
+        if blocker := await self._manual_submission_blocker(
+            download_url,
+            title,
+            allow_downloaded_title=partial_retry is not None,
+        ):
+            return DownloadPreflightOutcome(False, blocker)
+        effective_collection_hint = collection_hint or partial_retry is not None
+        review = await self._inspect_manual_policy(
+            download_url, title, collection_hint=effective_collection_hint
         )
-        job = await self._jobs.add_candidate(candidate)
+        if review.conflicts:
+            return DownloadPreflightOutcome(
+                True,
+                "Manual download requires confirmation for automatic policy conflicts.",
+                confirmation_required=True,
+                policy_conflicts=review.conflicts,
+                policy_warnings=review.warnings,
+                policy_review_token=self._issue_manual_policy_review_token(
+                    download_url,
+                    title,
+                    collection_hint=effective_collection_hint,
+                    conflict_keys=review.conflict_keys,
+                ),
+            )
+        return DownloadPreflightOutcome(
+            True,
+            "Manual download passed automatic policy review.",
+            policy_warnings=review.warnings,
+        )
+
+    async def create_download(
+        self,
+        download_url: str,
+        title: str,
+        *,
+        collection_hint: bool = False,
+        override_policy: bool = False,
+        acknowledged_conflicts: tuple[str, ...] = (),
+        policy_review_token: str | None = None,
+    ) -> CreateDownloadOutcome:
+        partial_retry = await self._find_partial_collection_retry(download_url, title)
+        if blocker := await self._manual_submission_blocker(
+            download_url,
+            title,
+            allow_downloaded_title=partial_retry is not None,
+        ):
+            return CreateDownloadOutcome(False, blocker)
+
+        effective_collection_hint = collection_hint or partial_retry is not None
+        review = await self._inspect_manual_policy(
+            download_url, title, collection_hint=effective_collection_hint
+        )
+        current_conflicts = set(review.conflict_keys)
+        if confirmation_error := self._policy_confirmation_error(
+            download_url=download_url,
+            title=title,
+            collection_hint=effective_collection_hint,
+            review=review,
+            current_conflicts=current_conflicts,
+            override_policy=override_policy,
+            acknowledged_conflicts=set(acknowledged_conflicts),
+            policy_review_token=policy_review_token,
+        ):
+            return confirmation_error
+
+        candidate = _manual_candidate(download_url, title, partial_retry=partial_retry)
+        job = await self._jobs.add_candidate(
+            candidate,
+            initial_artifact=_manual_job_artifact(
+                review,
+                current_conflicts=current_conflicts,
+                collection_hint=effective_collection_hint,
+                partial_retry=partial_retry,
+            ),
+            initial_metadata=review.metadata,
+        )
         if job is None:
             return CreateDownloadOutcome(False, f"Already submitted: {title}")
         self._metadata_available.set()
         logger.info(f"Download job created: job_id={job.id}; title={title}")
         return CreateDownloadOutcome(
             True,
-            f"Download started: {title}",
+            f"Manual download queued: {title}",
             _job_to_view(job, self._settings.download_path),
+            policy_conflicts=review.conflicts,
+            policy_warnings=review.warnings,
         )
+
+    async def _manual_submission_blocker(
+        self,
+        download_url: str,
+        title: str,
+        *,
+        allow_downloaded_title: bool = False,
+    ) -> str | None:
+        if not allow_downloaded_title and await self._library.is_downloaded(title):
+            return f"Already downloaded: {title}"
+        for active in await self._jobs.list_active():
+            if active.candidate.download_url == download_url:
+                return f"Already downloading: {title}"
+            if active.candidate.title == title:
+                return f"A download with this title is already active: {title}"
+        return None
+
+    async def _find_partial_collection_retry(
+        self, download_url: str, title: str
+    ) -> ManualPartialCollectionRetry | None:
+        history = await self._jobs.find_history(download_url, title)
+        return find_manual_partial_collection_retry(history, download_url, title)
+
+    def _policy_confirmation_error(
+        self,
+        *,
+        download_url: str,
+        title: str,
+        collection_hint: bool,
+        review: ManualPolicyReview,
+        current_conflicts: set[str],
+        override_policy: bool,
+        acknowledged_conflicts: set[str],
+        policy_review_token: str | None,
+    ) -> CreateDownloadOutcome | None:
+        attempted = bool(
+            override_policy or acknowledged_conflicts or policy_review_token
+        )
+        if current_conflicts and not attempted:
+            return self._policy_confirmation_outcome(
+                "Manual download requires policy confirmation.",
+                download_url=download_url,
+                title=title,
+                collection_hint=collection_hint,
+                review=review,
+            )
+        valid = self._policy_confirmation_token_is_valid(
+            download_url=download_url,
+            title=title,
+            collection_hint=collection_hint,
+            override_policy=override_policy,
+            acknowledged_conflicts=acknowledged_conflicts,
+            policy_review_token=policy_review_token,
+        )
+        conflicts_changed = not current_conflicts.issubset(acknowledged_conflicts)
+        if not conflicts_changed and (not attempted or valid):
+            return None
+        message = (
+            "Policy review context changed; run preflight and confirm again."
+            if attempted and not valid
+            else "Policy conflicts changed; review and confirm the current rules."
+        )
+        return self._policy_confirmation_outcome(
+            message,
+            download_url=download_url,
+            title=title,
+            collection_hint=collection_hint,
+            review=review,
+        )
+
+    def _policy_confirmation_token_is_valid(
+        self,
+        *,
+        download_url: str,
+        title: str,
+        collection_hint: bool,
+        override_policy: bool,
+        acknowledged_conflicts: set[str],
+        policy_review_token: str | None,
+    ) -> bool:
+        if not override_policy or not acknowledged_conflicts or not policy_review_token:
+            return False
+        expected = self._issue_manual_policy_review_token(
+            download_url,
+            title,
+            collection_hint=collection_hint,
+            conflict_keys=tuple(acknowledged_conflicts),
+        )
+        return hmac.compare_digest(policy_review_token, expected)
+
+    def _policy_confirmation_outcome(
+        self,
+        message: str,
+        *,
+        download_url: str,
+        title: str,
+        collection_hint: bool,
+        review: ManualPolicyReview,
+    ) -> CreateDownloadOutcome:
+        conflict_keys = review.conflict_keys
+        return CreateDownloadOutcome(
+            False,
+            message,
+            confirmation_required=bool(conflict_keys),
+            policy_conflicts=review.conflicts,
+            policy_warnings=review.warnings,
+            policy_review_token=(
+                self._issue_manual_policy_review_token(
+                    download_url,
+                    title,
+                    collection_hint=collection_hint,
+                    conflict_keys=conflict_keys,
+                )
+                if conflict_keys
+                else None
+            ),
+        )
+
+    async def _inspect_manual_policy(
+        self,
+        download_url: str,
+        title: str,
+        *,
+        collection_hint: bool = False,
+    ) -> ManualPolicyReview:
+        return await self._manual_policy_inspector.inspect(
+            download_url, title, collection_hint=collection_hint
+        )
+
+    def _issue_manual_policy_review_token(
+        self,
+        download_url: str,
+        title: str,
+        *,
+        collection_hint: bool,
+        conflict_keys: tuple[str, ...],
+    ) -> str:
+        """Bind one confirmation to the exact reviewed request and conflict set."""
+
+        payload = json.dumps(
+            {
+                "download_url": download_url,
+                "title": title,
+                "collection_hint": collection_hint,
+                "conflict_keys": sorted(set(conflict_keys)),
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode()
+        return hmac.new(
+            self._manual_policy_review_secret, payload, hashlib.sha256
+        ).hexdigest()
 
     async def list_downloads(self) -> list[DownloadView]:
         return [
@@ -184,6 +436,49 @@ class CoreApplicationService:
 
     async def resolve_torrent(self, url: str) -> Any:
         return await self._resolve_torrent(url)
+
+
+def _manual_candidate(
+    download_url: str,
+    title: str,
+    *,
+    partial_retry: ManualPartialCollectionRetry | None,
+) -> ReleaseCandidate:
+    return ReleaseCandidate.create(
+        source_name="manual",
+        source_url="api",
+        title=title,
+        download_url=download_url,
+        guid=(
+            f"manual-partial-retry:{secrets.token_hex(16)}"
+            if partial_retry is not None
+            else None
+        ),
+    )
+
+
+def _manual_job_artifact(
+    review: ManualPolicyReview,
+    *,
+    current_conflicts: set[str],
+    collection_hint: bool,
+    partial_retry: ManualPartialCollectionRetry | None,
+) -> dict[str, Any]:
+    artifact: dict[str, Any] = {
+        "manual_policy_review": {
+            "approved": True,
+            "override_policy": bool(current_conflicts),
+            "acknowledged_conflicts": sorted(current_conflicts),
+            "conflicts": [item.to_dict() for item in review.conflicts],
+            "warnings": list(review.warnings),
+            "scope": "rss_filter_priority_strict",
+        }
+    }
+    if collection_hint:
+        artifact["collection_hint"] = True
+    if partial_retry is not None:
+        artifact[MANUAL_PARTIAL_COLLECTION_RETRY_KEY] = partial_retry.to_dict()
+    return artifact
 
 
 def _job_to_view(job: DownloadJob, default_base_path: str) -> DownloadView:
@@ -315,69 +610,115 @@ def _download_item_views(job: DownloadJob) -> tuple[DownloadItemView, ...]:
         _mapping_list(summary.get("items")) if isinstance(summary, dict) else []
     )
 
+    order, merged, organization_keys = _merge_download_item_sources(
+        resolved_items,
+        organization_results,
+    )
+    _merge_download_summary_items(
+        summary_items,
+        order=order,
+        merged=merged,
+        organization_keys=organization_keys,
+    )
+    views = [_download_item_view(key, merged[key]) for key in order]
+
+    # Old single-file jobs have no item records. Expose their completed artifact as
+    # one compatibility item without changing any of the legacy response fields.
+    if not views and (legacy_view := _legacy_download_item_view(job)) is not None:
+        views.append(legacy_view)
+    return tuple(views)
+
+
+def _merge_download_item_sources(
+    resolved_items: list[dict[str, Any]],
+    organization_results: list[dict[str, Any]],
+) -> tuple[list[str], dict[str, dict[str, Any]], set[str]]:
     order: list[str] = []
     merged: dict[str, dict[str, Any]] = {}
     organization_keys: set[str] = set()
-    for source in (resolved_items, organization_results):
-        for index, item in enumerate(source):
-            key = str(item.get("item_key") or item.get("source_path") or index)
-            if source is organization_results:
+    sources = ((resolved_items, False), (organization_results, True))
+    for items, is_organization_result in sources:
+        for index, item in enumerate(items):
+            key = _download_item_key(item, index)
+            if is_organization_result:
                 organization_keys.add(key)
             if key not in merged:
                 order.append(key)
                 merged[key] = {"item_key": key}
             merged[key].update(item)
+    return order, merged, organization_keys
+
+
+def _merge_download_summary_items(
+    summary_items: list[dict[str, Any]],
+    *,
+    order: list[str],
+    merged: dict[str, dict[str, Any]],
+    organization_keys: set[str],
+) -> None:
     for index, item in enumerate(summary_items):
-        key = str(item.get("item_key") or item.get("source_path") or index)
+        key = _download_item_key(item, index)
         if key not in merged:
             order.append(key)
             merged[key] = {"item_key": key, **item}
             continue
         for name, value in item.items():
-            if (
-                name not in merged[key]
-                or merged[key][name] is None
-                or (name == "state" and key not in organization_keys)
+            if _summary_value_should_replace(
+                name,
+                existing=merged[key].get(name),
+                has_existing=name in merged[key],
+                has_organization_result=key in organization_keys,
             ):
                 merged[key][name] = value
 
-    views: list[DownloadItemView] = []
-    for key in order:
-        item = merged[key]
-        values = _metadata_values(item.get("metadata"))
-        views.append(
-            DownloadItemView(
-                item_key=key,
-                state=str(item.get("state") or "pending"),
-                source_path=_optional_string(
-                    item.get("source_path") or item.get("video_relative_path")
-                ),
-                final_path=_optional_string(item.get("final_path")),
-                error=_optional_string(item.get("error")),
-                anime_name=_optional_string(
-                    item.get("anime_name") or values.get("anime_name")
-                ),
-                season=_optional_int(item.get("season", values.get("season"))),
-                episode=_optional_int(item.get("episode", values.get("episode"))),
-            )
-        )
 
-    # Old single-file jobs have no item records. Expose their completed artifact as
-    # one compatibility item without changing any of the legacy response fields.
-    if not views and job.output_path:
-        source_path = job.artifact.get("filename")
-        views.append(
-            DownloadItemView(
-                item_key="legacy-single-resource",
-                state="completed",
-                source_path=_optional_string(source_path),
-                final_path=job.output_path,
-                anime_name=job.metadata.values.anime_name,
-                season=job.metadata.values.season,
-                episode=job.metadata.values.episode,
-            )
-        )
-    return tuple(views)
+def _download_item_key(item: dict[str, Any], index: int) -> str:
+    return str(item.get("item_key") or item.get("source_path") or index)
+
+
+def _summary_value_should_replace(
+    name: str,
+    *,
+    existing: Any,
+    has_existing: bool,
+    has_organization_result: bool,
+) -> bool:
+    return (
+        not has_existing
+        or existing is None
+        or (name == "state" and not has_organization_result)
+    )
+
+
+def _download_item_view(key: str, item: dict[str, Any]) -> DownloadItemView:
+    values = _metadata_values(item.get("metadata"))
+    return DownloadItemView(
+        item_key=key,
+        state=str(item.get("state") or "pending"),
+        source_path=_optional_string(
+            item.get("source_path") or item.get("video_relative_path")
+        ),
+        final_path=_optional_string(item.get("final_path")),
+        error=_optional_string(item.get("error")),
+        anime_name=_optional_string(item.get("anime_name") or values.get("anime_name")),
+        season=_optional_int(item.get("season", values.get("season"))),
+        episode=_optional_int(item.get("episode", values.get("episode"))),
+    )
+
+
+def _legacy_download_item_view(job: DownloadJob) -> DownloadItemView | None:
+    if not job.output_path:
+        return None
+    source_path = job.artifact.get("filename")
+    return DownloadItemView(
+        item_key="legacy-single-resource",
+        state="completed",
+        source_path=_optional_string(source_path),
+        final_path=job.output_path,
+        anime_name=job.metadata.values.anime_name,
+        season=job.metadata.values.season,
+        episode=job.metadata.values.episode,
+    )
 
 
 def _download_final_paths(

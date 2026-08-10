@@ -105,21 +105,14 @@ class OpenListFileDetector:
         stable_scans = 0
         logger.debug(f"Inventorying downloaded files in {temp_path}")
         while True:
-            try:
-                collected = await self._collect_leaf_files(temp_path, "")
-            except _IncompleteInventorySnapshot as exc:
+            snapshot = await self._inventory_snapshot(temp_path)
+            if snapshot is None:
                 previous_snapshot = None
                 stable_scans = 0
-                logger.debug(f"Discarding incomplete inventory for {temp_path}: {exc}")
             else:
-                collected.sort(key=lambda item: item.relative_path.casefold())
-                snapshot = tuple(collected)
-                if snapshot and snapshot == previous_snapshot:
-                    stable_scans += 1
-                elif snapshot:
-                    stable_scans = 1
-                else:
-                    stable_scans = 0
+                stable_scans = self._updated_stable_scan_count(
+                    snapshot, previous_snapshot, stable_scans
+                )
                 if stable_scans >= 3:
                     logger.debug(
                         f"Inventoried {len(snapshot)} stable downloaded file(s) "
@@ -134,6 +127,30 @@ class OpenListFileDetector:
                 )
                 return ()
             await self._sleep(10)
+
+    async def _inventory_snapshot(
+        self,
+        temp_path: str,
+    ) -> tuple[InventoryFile, ...] | None:
+        try:
+            collected = await self._collect_leaf_files(temp_path, "")
+        except _IncompleteInventorySnapshot as exc:
+            logger.debug(f"Discarding incomplete inventory for {temp_path}: {exc}")
+            return None
+        collected.sort(key=lambda item: item.relative_path.casefold())
+        return tuple(collected)
+
+    @staticmethod
+    def _updated_stable_scan_count(
+        snapshot: tuple[InventoryFile, ...],
+        previous_snapshot: tuple[InventoryFile, ...] | None,
+        stable_scans: int,
+    ) -> int:
+        if not snapshot:
+            return 0
+        if snapshot == previous_snapshot:
+            return stable_scans + 1
+        return 1
 
     async def _collect_leaf_files(
         self,

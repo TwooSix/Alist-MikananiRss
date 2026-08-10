@@ -45,13 +45,13 @@ _COLLECTION_PATTERNS += tuple(
         r"(?i)\b(?:Season\s*\d{1,2}|S\d{1,2})\s+"
         r"(?:official\s+|unofficial\s+|ultimate\s+)?Batch\b",
         r"(?i)\bE\d{1,3}\s*[-~\u2013\u2014]\s*E?\d{1,3}\b",
-        r"(?<![0-9A-Za-z])[1-9]\d{0,2}[-~\u2013\u2014]" r"[1-9]\d{0,2}(?!\d)",
+        r"(?<![0-9A-Za-z])[1-9]\d{0,2}[-~\u2013\u2014][1-9]\d{0,2}(?!\d)",
         r"(?i)\b(?:episodes?|eps?)\s*[1-9]\d{0,2}\s*"
         r"[-~\u2013\u2014]\s*[1-9]\d{0,2}\b",
     )
 )
 _SEASON_SINGLE_EPISODE = re.compile(
-    r"(?i)\bSeason\s*0?\d{1,2}\s*[-\u2013\u2014]\s*" r"\d{1,3}(?!\s*[-~\u2013\u2014])"
+    r"(?i)\bSeason\s*0?\d{1,2}\s*[-\u2013\u2014]\s*\d{1,3}(?!\s*[-~\u2013\u2014])"
 )
 
 

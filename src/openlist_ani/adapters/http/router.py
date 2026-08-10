@@ -13,6 +13,8 @@ from .schemas import (
     AddRSSResponse,
     CreateDownloadRequest,
     CreateDownloadResponse,
+    DownloadPreflightRequest,
+    DownloadPreflightResponse,
     DownloadListResponse,
     DownloadTaskResponse,
     ParseRSSRequest,
@@ -50,11 +52,28 @@ async def add_rss_url(request: AddRSSRequest) -> AddRSSResponse:
 async def create_download(request: CreateDownloadRequest) -> CreateDownloadResponse:
     """Create a new download task."""
     svc = BackendApiService.get()
-    success, message, task = await svc.create_download(
+    return await svc.create_download(
         download_url=request.download_url,
         title=request.title,
+        collection_hint=request.collection_hint,
+        override_policy=request.override_policy,
+        acknowledged_conflicts=tuple(request.acknowledged_conflicts),
+        policy_review_token=request.policy_review_token,
     )
-    return CreateDownloadResponse(success=success, message=message, task=task)
+
+
+@router.post("/downloads/preflight")
+async def preflight_download(
+    request: DownloadPreflightRequest,
+) -> DownloadPreflightResponse:
+    """Inspect manual-download policy conflicts without creating a task."""
+
+    svc = BackendApiService.get()
+    return await svc.preflight_download(
+        request.download_url,
+        request.title,
+        collection_hint=request.collection_hint,
+    )
 
 
 @router.get("/downloads")
@@ -94,9 +113,10 @@ async def parse_rss(request: ParseRSSRequest) -> ParseRSSResponse:
 async def resolve_magnet(request: ResolveMagnetRequest) -> ResolveMagnetResponse:
     """Resolve a magnet URI to its real title and file list.
 
-    Order of operations: ``dn=`` parameter → libtorrent metadata
-    (DHT/peers, bounded by ``metadata_timeout``).  The returned file list can
-    be submitted as a collection download; the worker resolves each episode.
+    A usable ``dn=`` supplies the title, while libtorrent metadata is still
+    inspected within ``metadata_timeout`` so callers can identify collections
+    before download. The returned file list can be submitted as a collection
+    download; the worker resolves each episode.
     """
     svc = BackendApiService.get()
     return await svc.resolve_magnet(

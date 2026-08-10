@@ -5,7 +5,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from openlist_ani.assistant.contracts import EventType, LoopEvent, MessageQueue
+from openlist_ani.assistant.contracts import (
+    EventType,
+    LoopEvent,
+    MessageQueue,
+    PendingMessage,
+)
 from openlist_ani.assistant.frontend.messaging import MessagingFrontend
 from openlist_ani.assistant.frontend.telegram import TelegramFrontend
 from openlist_ani.integrations.messaging.models import InboundMessage, OutboundTarget
@@ -33,6 +38,19 @@ class FakeLoop:
 
     def status(self) -> str:
         return "idle"
+
+
+class ConfirmationWithEarlyQueueLoop(FakeLoop):
+    def __init__(self) -> None:
+        super().__init__("Review this policy conflict, then confirm.")
+        self.inputs: list[str] = []
+
+    async def process(self, user_text: str, **_kwargs):
+        self.process_count += 1
+        self.inputs.append(user_text)
+        self.message_queue.enqueue(PendingMessage(content="confirm"))
+        yield LoopEvent(type=EventType.CONFIRMATION_REQUIRED)
+        yield LoopEvent(type=EventType.DONE, text=self.response)
 
 
 class FakeMessenger:
@@ -143,6 +161,42 @@ async def test_group_users_receive_isolated_agent_sessions():
 
 
 @pytest.mark.asyncio
+async def test_message_queued_before_policy_prompt_is_not_treated_as_confirmation():
+    messenger = FakeMessenger()
+    loop = ConfirmationWithEarlyQueueLoop()
+    frontend = MessagingFrontend(
+        platform="wechat",
+        messenger=messenger,
+        loop=loop,
+        allowed_users=["user-1"],
+    )
+
+    await frontend.handle_inbound(_message("download this collection"))
+
+    assert loop.inputs == ["download this collection"]
+    assert any("不会被视为同意" in text for _, text in messenger.sent)
+
+
+@pytest.mark.asyncio
+async def test_telegram_message_queued_before_prompt_is_not_confirmation():
+    loop = ConfirmationWithEarlyQueueLoop()
+    frontend = TelegramFrontend(
+        loop=loop,
+        bot_token="token",
+        allowed_users=[1],
+    )
+    message = FakeTelegramMessage("download this collection")
+
+    await frontend._process_user_turn(
+        SimpleNamespace(message=message),
+        "download this collection",
+    )
+
+    assert loop.inputs == ["download this collection"]
+    assert any("不会被视为同意" in text for text in message.replies)
+
+
+@pytest.mark.asyncio
 async def test_cancelled_confirmation_cannot_execute_a_write():
     frontend = TelegramFrontend(
         loop=FakeLoop(),
@@ -159,13 +213,14 @@ async def test_cancelled_confirmation_cannot_execute_a_write():
         confirmation_required=True,
         session_key=session_key,
     )
+    nonce = frontend._pending_confirmations[session_key]
 
     class Query:
-        data = "oani:cancel"
         from_user = SimpleNamespace(id=1)
 
         def __init__(self):
             self.message = message
+            self.data = f"oani:cancel:{nonce}"
 
         async def answer(self, text, **kwargs):
             pass
@@ -180,3 +235,56 @@ async def test_cancelled_confirmation_cannot_execute_a_write():
 
     assert session_key not in frontend._pending_confirmations
     assert message.replies[-1] == "已取消这次写操作。"
+
+
+@pytest.mark.asyncio
+async def test_old_telegram_confirmation_button_cannot_confirm_a_new_request():
+    frontend = TelegramFrontend(
+        loop=FakeLoop(),
+        bot_token="token",
+        allowed_users=[1],
+    )
+    message = FakeTelegramMessage("request")
+    status = SimpleNamespace(delete=lambda: asyncio.sleep(0))
+    session_key = (123, 1)
+    update = SimpleNamespace(message=message)
+    await frontend._send_final_result(
+        update,
+        status,
+        ["Confirm first request"],
+        confirmation_required=True,
+        session_key=session_key,
+    )
+    old_nonce = frontend._pending_confirmations[session_key]
+    await frontend._send_final_result(
+        update,
+        status,
+        ["Confirm second request"],
+        confirmation_required=True,
+        session_key=session_key,
+    )
+    current_nonce = frontend._pending_confirmations[session_key]
+    assert current_nonce != old_nonce
+
+    class Query:
+        data = f"oani:confirm:{old_nonce}"
+        from_user = SimpleNamespace(id=1)
+
+        def __init__(self):
+            self.message = message
+            self.answers: list[tuple[str, dict]] = []
+
+        async def answer(self, text, **kwargs):
+            self.answers.append((text, kwargs))
+
+        async def edit_message_reply_markup(self, **kwargs):
+            raise AssertionError("stale confirmation must not edit the current prompt")
+
+    query = Query()
+    await frontend._handle_confirmation(
+        SimpleNamespace(callback_query=query),
+        SimpleNamespace(),
+    )
+
+    assert frontend._pending_confirmations[session_key] == current_nonce
+    assert query.answers == [("该确认请求已失效。", {"show_alert": True})]

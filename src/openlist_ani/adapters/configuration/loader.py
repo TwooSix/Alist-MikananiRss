@@ -133,7 +133,9 @@ class ConfigManager:
         legacy = self.data.openlist
         if (
             legacy.token
-            or legacy.url != "http://localhost:5244"
+            # This is a literal comparison with the legacy local default, not
+            # an outbound clear-text request or a production endpoint.
+            or legacy.url != "http://localhost:5244"  # NOSONAR
             or legacy.offline_download_tool != "qBittorrent"
         ):
             return legacy

@@ -60,7 +60,8 @@ async def run(
 
     lines += [
         "",
-        "Next: pick entries, check duplicates, ask for confirmation, then run "
+        "Next: pick entries, check duplicates, run preflight_download.py for each "
+        "candidate, ask for confirmation including any policy conflicts, then run "
         "create_download.py for each confirmed item. Pass the canonical title "
         "verbatim and do not modify it.",
     ]

@@ -162,16 +162,35 @@ class MessagingFrontend(Frontend):
             pending_texts = [text]
             while pending_texts:
                 current_text = pending_texts.pop(0)
-                await self._process_single_turn(
+                confirmation_boundary_seq = await self._process_single_turn(
                     message,
                     loop,
                     current_text,
                     session_key=session_key,
                     turn_started_at=turn_started_at,
                 )
-                pending_texts.extend(
-                    pending.content for pending in loop.message_queue.drain_prompts()
-                )
+                pending = loop.message_queue.drain_prompts()
+                if confirmation_boundary_seq is not None:
+                    stale = [
+                        item
+                        for item in pending
+                        if item.seq is None or item.seq <= confirmation_boundary_seq
+                    ]
+                    pending = [
+                        item
+                        for item in pending
+                        if item.seq is not None and item.seq > confirmation_boundary_seq
+                    ]
+                    if stale:
+                        sequence = ", ".join(
+                            f"#{item.seq}" for item in stale if item.seq is not None
+                        )
+                        await self._messenger.send_text(
+                            message.target.chat_id,
+                            f"排队消息 {sequence or '（未知）'} 是在确认详情展示前"
+                            "发送的，因此不会被视为同意。请阅读详情后重新发送确认。",
+                        )
+                pending_texts.extend(item.content for item in pending)
         except Exception as exc:  # noqa: BLE001
             logger.error(f"{self.platform} frontend failed: {exc}")
             await self._messenger.send_text(message.target.chat_id, f"Error: {exc}")
@@ -186,12 +205,15 @@ class MessagingFrontend(Frontend):
         *,
         session_key: str,
         turn_started_at: float,
-    ) -> None:
+    ) -> int | None:
         final_text = ""
         error_text = ""
+        confirmation_required = False
         narration_parts: list[str] = []
         progress_messages: set[str] = set()
         async for event in loop.process(text):
+            if event.type == EventType.CONFIRMATION_REQUIRED:
+                confirmation_required = True
             final_text, error_text = await self._consume_turn_event(
                 event,
                 chat_id=message.target.chat_id,
@@ -207,12 +229,18 @@ class MessagingFrontend(Frontend):
             text=response,
             template="green",
         )
+        confirmation_boundary_seq = (
+            max(loop.message_queue.pending_prompt_seqs(), default=0)
+            if confirmation_required
+            else None
+        )
         logger.info(f"{self.platform} response sent.")
         logger.debug(
             f"{self.platform} turn finished: session_key={session_key}, "
             f"chat_id={message.target.chat_id}, final_chars={len(response)}, "
             f"elapsed_ms={int((time.monotonic() - turn_started_at) * 1000)}"
         )
+        return confirmation_boundary_seq
 
     async def _consume_turn_event(
         self,

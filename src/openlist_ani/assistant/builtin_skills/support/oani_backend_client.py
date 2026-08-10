@@ -52,12 +52,42 @@ class BackendClient:
         self,
         download_url: str,
         title: str,
+        *,
+        collection_hint: bool = False,
+        override_policy: bool = False,
+        acknowledged_conflicts: list[str] | None = None,
+        policy_review_token: str | None = None,
     ) -> dict[str, Any]:
         logger.debug(f"BackendClient: Creating download: {title}")
         return await self._request(
             "POST",
             "/api/downloads",
-            json={"download_url": download_url, "title": title},
+            json={
+                "download_url": download_url,
+                "title": title,
+                "collection_hint": collection_hint,
+                "override_policy": override_policy,
+                "acknowledged_conflicts": list(acknowledged_conflicts or []),
+                "policy_review_token": policy_review_token,
+            },
+        )
+
+    async def preflight_download(
+        self,
+        download_url: str,
+        title: str,
+        *,
+        collection_hint: bool = False,
+    ) -> dict[str, Any]:
+        logger.debug(f"BackendClient: Reviewing manual download policy: {title}")
+        return await self._request(
+            "POST",
+            "/api/downloads/preflight",
+            json={
+                "download_url": download_url,
+                "title": title,
+                "collection_hint": collection_hint,
+            },
         )
 
     async def list_downloads(self) -> dict[str, Any]:

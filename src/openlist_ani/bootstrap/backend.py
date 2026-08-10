@@ -66,13 +66,16 @@ from openlist_ani.application.download_worker import DownloadWorkerPool
 from openlist_ani.application.feed_scheduler import FeedScheduler
 from openlist_ani.application.metadata_worker import MetadataWorker
 from openlist_ani.application.metadata_pipeline import MetadataPipelineResolver
+from openlist_ani.application.manual_policy import ManualDownloadPolicyInspector
 from openlist_ani.application.notification_worker import NotificationWorker
 from openlist_ani.application.ports import DownloadBackendBundle
 from openlist_ani.application.service import CoreApplicationService
 from openlist_ani.application.settings import CoreSettings
 from openlist_ani.bootstrap.runtime import AppRuntime
 from openlist_ani.adapters.torrent import (
+    LibtorrentUnavailableError,
     TorrentToMagnetCandidateTransformer,
+    libtorrent_runtime_version,
     resolve_magnet,
     resolve_torrent,
 )
@@ -99,6 +102,7 @@ class _RuntimeAssembly:
 
 async def run() -> None:
     config, core_settings = _load_runtime_config()
+    _log_libtorrent_runtime()
     await asyncio.to_thread(LegacyMigrationRunner().run)
     assembly = await _compose_runtime(config, core_settings)
 
@@ -114,6 +118,19 @@ async def run() -> None:
             raise
     finally:
         await assembly.runtime.stop()
+
+
+def _log_libtorrent_runtime() -> None:
+    """Expose native dependency failures at startup instead of first use."""
+    try:
+        version = libtorrent_runtime_version()
+    except LibtorrentUnavailableError as error:
+        logger.warning(
+            "Magnet metadata resolution is unavailable; other backend features "
+            f"will continue to run. {error}"
+        )
+    else:
+        logger.info(f"libtorrent runtime available: version={version}")
 
 
 def _load_runtime_config() -> tuple[object, CoreSettings]:
@@ -213,6 +230,12 @@ async def _create_runtime_assembly(
     )
     metadata_providers = registry.metadata_pipeline(core_settings.metadata_providers)
     metadata_resolver = MetadataPipelineResolver(metadata_providers)
+    manual_policy_inspector = ManualDownloadPolicyInspector(
+        jobs=jobs,
+        library=library,
+        metadata_resolver=metadata_resolver,
+        settings=core_settings,
+    )
     metadata_worker = MetadataWorker(
         jobs=jobs,
         library=library,
@@ -261,6 +284,7 @@ async def _create_runtime_assembly(
         resolve_magnet_func=resolve_magnet,
         resolve_torrent_func=resolve_torrent,
         health_provider=runtime.health,
+        manual_policy_inspector=manual_policy_inspector,
     )
     return _RuntimeAssembly(
         runtime=runtime,

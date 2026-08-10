@@ -7,6 +7,10 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from openlist_ani.application.manual_policy import (
+    collection_summary_has_retryable_gaps,
+    manual_partial_collection_retry_from_artifact,
+)
 from openlist_ani.application.ports import CompletedResource
 from openlist_ani.domain import (
     DownloadJob,
@@ -50,21 +54,63 @@ class SqliteJobRepository:
             )
             return max(0, cursor.rowcount)
 
-    async def add_candidate(self, candidate: ReleaseCandidate) -> DownloadJob | None:
+    async def add_candidate(
+        self,
+        candidate: ReleaseCandidate,
+        *,
+        initial_artifact: dict[str, Any] | None = None,
+        initial_metadata: MetadataDocument | None = None,
+    ) -> DownloadJob | None:
         job = DownloadJob(
             id=str(uuid.uuid4()),
             candidate=candidate,
             downloader_name=self._downloader_name,
+            artifact=dict(initial_artifact or {}),
+            metadata=initial_metadata or MetadataDocument(),
         )
         async with self._database.operation(write=True) as db:
-            duplicate = await (
-                await db.execute(
-                    "SELECT 1 FROM jobs WHERE source_key = ? OR download_url = ? "
-                    "LIMIT 1",
-                    (candidate.source_key, candidate.download_url),
+            if candidate.source_name == "manual":
+                duplicate_rows = await (
+                    await db.execute(
+                        "SELECT * FROM jobs WHERE source_key = ? OR download_url = ? "
+                        "OR (title = ? AND status NOT IN "
+                        "('completed', 'skipped', 'failed', 'cancelled'))",
+                        (
+                            candidate.source_key,
+                            candidate.download_url,
+                            candidate.title,
+                        ),
+                    )
+                ).fetchall()
+            else:
+                duplicate_rows = await (
+                    await db.execute(
+                        "SELECT * FROM jobs WHERE source_key = ? OR download_url = ?",
+                        (candidate.source_key, candidate.download_url),
+                    )
+                ).fetchall()
+            retry = manual_partial_collection_retry_from_artifact(initial_artifact)
+            if retry is not None:
+                duplicate_rows = [
+                    row
+                    for row in duplicate_rows
+                    if not _is_partial_collection_retry_source(
+                        row, set(retry.source_job_ids)
+                    )
+                ]
+            if duplicate_rows:
+                if len(duplicate_rows) != 1:
+                    return None
+                revived = _revive_policy_block_as_manual(
+                    duplicate_rows[0],
+                    candidate,
+                    initial_artifact=initial_artifact,
+                    initial_metadata=initial_metadata,
+                    downloader_name=self._downloader_name,
                 )
-            ).fetchone()
-            if duplicate:
+                if revived is not None:
+                    if await self._replace_revived_job(db, revived):
+                        return revived
                 return None
             await db.execute(
                 """
@@ -89,13 +135,56 @@ class SqliteJobRepository:
                     job.downloader_name,
                     job.checkpoint_version,
                     "{}",
-                    "{}",
+                    _json(job.artifact),
                     0,
                     job.created_at,
                     job.updated_at,
                 ),
             )
         return job
+
+    @staticmethod
+    async def _replace_revived_job(db, job: DownloadJob) -> bool:
+        """Atomically replace a policy block with an approved manual retry."""
+
+        cursor = await db.execute(
+            """
+            UPDATE jobs SET
+                source_key = ?, source_name = ?, source_url = ?, title = ?,
+                download_url = ?, candidate_json = ?, metadata_json = ?,
+                status = 'pending', step = 'metadata', downloader_name = ?,
+                checkpoint_version = ?, checkpoint_json = '{}', artifact_json = ?,
+                attempt_count = 0, next_attempt_at = NULL, last_error = NULL,
+                output_path = NULL, created_at = ?, updated_at = ?, started_at = NULL,
+                completed_at = NULL, lease_token = NULL, lease_expires_at = NULL
+            WHERE id = ? AND (
+                (status = 'skipped' AND last_error = 'release_policy')
+                OR (
+                    status = 'failed'
+                    AND last_error IN (
+                        'manual_policy_confirmation_required',
+                        'Manual policy confirmation is required for collection contents'
+                    )
+                )
+            )
+            """,
+            (
+                job.candidate.source_key,
+                job.candidate.source_name,
+                job.candidate.source_url,
+                job.candidate.title,
+                job.candidate.download_url,
+                _json(_candidate_to_dict(job.candidate)),
+                _json(job.metadata.to_dict()),
+                job.downloader_name,
+                job.checkpoint_version,
+                _json(job.artifact),
+                job.created_at,
+                job.updated_at,
+                job.id,
+            ),
+        )
+        return cursor.rowcount == 1
 
     async def claim(self, step: JobStep, limit: int) -> list[DownloadJob]:
         return await self._claim_steps((step,), limit)
@@ -231,6 +320,17 @@ class SqliteJobRepository:
                 await db.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
             ).fetchone()
         return _row_to_job(row) if row else None
+
+    async def find_history(self, download_url: str, title: str) -> list[DownloadJob]:
+        async with self._database.operation() as db:
+            rows = await (
+                await db.execute(
+                    "SELECT * FROM jobs WHERE download_url = ? OR title = ? "
+                    "ORDER BY created_at, id",
+                    (download_url, title),
+                )
+            ).fetchall()
+        return [_row_to_job(row) for row in rows]
 
     async def list_visible(self) -> list[DownloadJob]:
         async with self._database.operation() as db:
@@ -597,6 +697,71 @@ def _row_to_job(row) -> DownloadJob:
         lease_token=row["lease_token"],
         lease_expires_at=row["lease_expires_at"],
     )
+
+
+def _revive_policy_block_as_manual(
+    row,
+    candidate: ReleaseCandidate,
+    *,
+    initial_artifact: dict[str, Any] | None,
+    initial_metadata: MetadataDocument | None,
+    downloader_name: str,
+) -> DownloadJob | None:
+    """Build an approved manual retry for a prior automatic policy block."""
+
+    review = (initial_artifact or {}).get("manual_policy_review")
+    if not isinstance(review, dict) or review.get("approved") is not True:
+        return None
+    if candidate.source_name != "manual":
+        return None
+    legacy_skip = (
+        row["status"] == JobStatus.SKIPPED.value
+        and row["last_error"] == "release_policy"
+    )
+    confirmation_failure = row["status"] == JobStatus.FAILED.value and row[
+        "last_error"
+    ] in {
+        "manual_policy_confirmation_required",
+        "Manual policy confirmation is required for collection contents",
+    }
+    if not legacy_skip and not confirmation_failure:
+        return None
+    if confirmation_failure:
+        acknowledged = review.get("acknowledged_conflicts")
+        if (
+            review.get("override_policy") is not True
+            or not isinstance(acknowledged, list)
+            or not any(isinstance(item, str) and item for item in acknowledged)
+        ):
+            return None
+        if (
+            row["last_error"]
+            == "Manual policy confirmation is required for collection contents"
+            and "collection:automatic-release-policy" not in acknowledged
+        ):
+            return None
+    revived_at = utc_now()
+    return DownloadJob(
+        id=row["id"],
+        candidate=candidate,
+        downloader_name=downloader_name,
+        artifact=dict(initial_artifact or {}),
+        metadata=initial_metadata or MetadataDocument(),
+        created_at=revived_at,
+        updated_at=revived_at,
+    )
+
+
+def _is_partial_collection_retry_source(row, source_job_ids: set[str]) -> bool:
+    """Allow a new job past only the completed partial parents it references."""
+
+    if row["id"] not in source_job_ids or row["status"] != JobStatus.COMPLETED.value:
+        return False
+    try:
+        artifact = json.loads(row["artifact_json"] or "{}")
+    except (TypeError, ValueError):
+        return False
+    return collection_summary_has_retryable_gaps(artifact.get("summary"))
 
 
 def _validate_and_sort_resources(

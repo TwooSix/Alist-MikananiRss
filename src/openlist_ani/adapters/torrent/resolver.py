@@ -2,11 +2,12 @@
 
 Two-stage flow:
 
-1. Parse the ``dn=`` parameter from the magnet URI.  This is instant and
-   covers most well-formed magnets.
-2. If ``dn`` is empty / equals the info-hash, fetch the torrent metadata
-   via libtorrent (DHT + trackers).  Wrapped in :func:`asyncio.to_thread`
-   so the async router stays non-blocking.
+1. Parse the ``dn=`` parameter from the magnet URI for a trustworthy title.
+2. Fetch torrent metadata within the caller's budget even when ``dn`` exists,
+   because the file list is required to detect collections before download.
+   The fetch is wrapped in :func:`asyncio.to_thread` so the async router stays
+   non-blocking.  A usable ``dn`` still preserves title resolution when file
+   inspection times out or the native runtime is unavailable.
 
 """
 
@@ -43,7 +44,9 @@ class ResolveResult:
     """Outcome of :func:`resolve_magnet`.
 
     ``title`` is ``None`` only when both ``dn`` and metadata fetch fail.
-    Callers must NOT fabricate one — they should ask the user instead.
+    Callers must NOT fabricate one — they should ask the user instead. A
+    successful result may still carry ``error_code`` when ``dn`` preserved the
+    title but file/collection inspection was incomplete.
     """
 
     success: bool
@@ -52,6 +55,32 @@ class ResolveResult:
     source: str | None = None  # "dn" | "metadata" | None
     file_count: int | None = None
     files: list[TorrentFile] = field(default_factory=list)
+    error_code: str | None = None
+
+
+class LibtorrentUnavailableError(RuntimeError):
+    """Raised when the native libtorrent runtime cannot be imported."""
+
+
+def _load_libtorrent():
+    """Import libtorrent or raise an actionable, platform-neutral error."""
+    try:
+        import libtorrent as lt  # type: ignore[import-not-found]
+    except Exception as error:  # pragma: no cover - platform dependent
+        raise LibtorrentUnavailableError(
+            "libtorrent could not be loaded. Reinstall the locked project "
+            "dependencies; Windows requires libtorrent 2.0.13 or newer. "
+            f"Original import error: {error}"
+        ) from error
+    return lt
+
+
+def libtorrent_runtime_version() -> str:
+    """Return the loaded native runtime version or raise a clear error."""
+    lt = _load_libtorrent()
+    return str(
+        getattr(lt, "__version__", None) or getattr(lt, "version", None) or "unknown"
+    )
 
 
 # ── Magnet ``dn`` extraction ─────────────────────────────────────────
@@ -173,7 +202,7 @@ def _wait_for_metadata(session, handle, deadline: float) -> bool:  # noqa: ANN00
     return handle.status().has_metadata
 
 
-def _torrent_files(ti) -> list[TorrentFile]:  # noqa: ANN001 - dynamic
+def _libtorrent_files(ti) -> list[TorrentFile]:  # noqa: ANN001 - dynamic
     """Enumerate the file list of a libtorrent ``torrent_info``."""
     files: list[TorrentFile] = []
     try:
@@ -196,8 +225,9 @@ def _fetch_metadata_blocking(
     """Block until libtorrent fetches metadata or ``deadline_secs`` elapses.
 
     Runs entirely on the calling thread (callers wrap this with
-    :func:`asyncio.to_thread`).  Returns ``(name, files)`` on success,
-    ``(None, [])`` on timeout / error.
+    :func:`asyncio.to_thread`).  Returns ``(name, files)`` on success and
+    ``(None, [])`` only on a genuine metadata timeout.  An unavailable native
+    runtime is raised separately so callers never misreport it as a timeout.
 
     Implementation notes:
         - DHT bootstrap routers are added explicitly; without them a cold
@@ -214,11 +244,7 @@ def _fetch_metadata_blocking(
           ``has_metadata``; this returns within milliseconds of arrival
           rather than up to one poll-interval late.
     """
-    try:
-        import libtorrent as lt  # type: ignore[import-not-found]
-    except Exception as e:  # pragma: no cover - environment dependent
-        logger.warning(f"libtorrent not available: {e}")
-        return None, []
+    lt = _load_libtorrent()
 
     import time
 
@@ -236,8 +262,15 @@ def _fetch_metadata_blocking(
                 return None, []
             ti = handle.torrent_file()
             if ti is None:
-                return None, []
-            return ti.name() or None, _torrent_files(ti)
+                raise RuntimeError(
+                    "libtorrent reported metadata but returned no torrent info"
+                )
+            name = ti.name()
+            if not name:
+                raise RuntimeError(
+                    "libtorrent returned torrent metadata without a name"
+                )
+            return name, _libtorrent_files(ti)
         finally:
             try:
                 session.remove_torrent(handle)
@@ -276,28 +309,59 @@ class MagnetResolver:
             return ResolveResult(
                 success=False,
                 message="Invalid magnet URI (expected 'magnet:?xt=urn:btih:...').",
+                error_code="invalid_magnet",
             )
 
         dn_title = _extract_dn(magnet)
-        if dn_title:
-            return ResolveResult(
-                success=True,
-                message="Resolved title from magnet 'dn=' parameter.",
-                title=dn_title,
-                source="dn",
-            )
 
         logger.debug(
-            f"Fetching torrent metadata via libtorrent (budget={metadata_timeout}s)..."
+            "Fetching torrent metadata via libtorrent for title/file inspection "
+            f"(budget={metadata_timeout}s)..."
         )
         try:
             name, files = await self._metadata_client.fetch_magnet_metadata(
                 magnet, metadata_timeout
             )
-        except Exception as e:
-            logger.warning(f"libtorrent metadata fetch failed: {e}")
+        except LibtorrentUnavailableError as error:
+            logger.error(f"Magnet metadata resolver unavailable: {error}")
+            if dn_title:
+                return ResolveResult(
+                    success=True,
+                    error_code="libtorrent_unavailable",
+                    message=(
+                        "Resolved title from magnet 'dn=', but collection inspection "
+                        "is incomplete because the libtorrent runtime could not be "
+                        "loaded. No tracker, DHT, or peer lookup was attempted."
+                    ),
+                    title=dn_title,
+                    source="dn",
+                )
             return ResolveResult(
                 success=False,
+                error_code="libtorrent_unavailable",
+                message=(
+                    "Magnet metadata resolution is unavailable because the "
+                    "libtorrent runtime could not be loaded. No tracker, DHT, "
+                    "or peer lookup was attempted. Reinstall the locked project "
+                    "dependencies, or use a .torrent URL / magnet with dn=."
+                ),
+            )
+        except Exception as e:
+            logger.warning(f"libtorrent metadata fetch failed: {e}")
+            if dn_title:
+                return ResolveResult(
+                    success=True,
+                    error_code="metadata_fetch_failed",
+                    message=(
+                        "Resolved title from magnet 'dn=', but collection inspection "
+                        f"is incomplete because metadata fetching failed: {e}."
+                    ),
+                    title=dn_title,
+                    source="dn",
+                )
+            return ResolveResult(
+                success=False,
+                error_code="metadata_fetch_failed",
                 message=(
                     f"Failed to fetch torrent metadata: {e}. "
                     "Provide a .torrent file or supply the title manually."
@@ -305,8 +369,21 @@ class MagnetResolver:
             )
 
         if not name:
+            if dn_title:
+                return ResolveResult(
+                    success=True,
+                    error_code="metadata_timeout",
+                    message=(
+                        "Resolved title from magnet 'dn=', but collection inspection "
+                        f"is incomplete because metadata fetching timed out after "
+                        f"{metadata_timeout:.0f}s."
+                    ),
+                    title=dn_title,
+                    source="dn",
+                )
             return ResolveResult(
                 success=False,
+                error_code="metadata_timeout",
                 message=(
                     f"Metadata fetch timed out after {metadata_timeout:.0f}s "
                     "and magnet has no usable 'dn=' parameter. Ask the user "
@@ -314,11 +391,27 @@ class MagnetResolver:
                 ),
             )
 
+        if not files:
+            return ResolveResult(
+                success=True,
+                error_code="file_list_unavailable",
+                message=(
+                    "Resolved the magnet title, but collection inspection is "
+                    "incomplete because torrent metadata returned no usable file list."
+                ),
+                title=dn_title or name,
+                source="dn" if dn_title else "metadata",
+            )
+
         return ResolveResult(
             success=True,
-            message="Resolved title from torrent metadata.",
-            title=name,
-            source="metadata",
+            message=(
+                "Resolved title from magnet 'dn=' and inspected torrent metadata."
+                if dn_title
+                else "Resolved title from torrent metadata."
+            ),
+            title=dn_title or name,
+            source="dn" if dn_title else "metadata",
             file_count=len(files),
             files=files,
         )
@@ -388,7 +481,7 @@ def _parse_torrent_blob(blob: bytes) -> tuple[str | None, list[TorrentFile]]:
         import libtorrent as lt  # type: ignore[import-not-found]
 
         ti = lt.torrent_info(blob)
-        return ti.name() or None, _torrent_files(ti)
+        return ti.name() or None, _libtorrent_files(ti)
     except Exception as error:  # pragma: no cover - environment dependent
         logger.warning(
             f"libtorrent torrent parsing unavailable; using bounded bencode "
@@ -520,14 +613,14 @@ def _parse_torrent_blob_python(blob: bytes) -> tuple[str | None, list[TorrentFil
     title = _torrent_name(info)
     if not title:
         raise ValueError("torrent has no usable name")
-    return title, _torrent_files(info, title)
+    return title, _bencoded_torrent_files(info, title)
 
 
 def _torrent_name(info: dict[bytes, object]) -> str:
     return _text(info.get(_TORRENT_NAME_UTF8_KEY) or info.get(_TORRENT_NAME_KEY))
 
 
-def _torrent_files(info: dict[bytes, object], title: str) -> list[TorrentFile]:
+def _bencoded_torrent_files(info: dict[bytes, object], title: str) -> list[TorrentFile]:
     raw_files = info.get(b"files")
     if not isinstance(raw_files, list):
         size = info.get(b"length")
@@ -676,10 +769,10 @@ def _torrent_blob_to_magnet(blob: bytes) -> str:
         return _torrent_blob_to_magnet_python(blob)
 
     try:
-        if load_torrent_buffer := getattr(lt, "load_torrent_buffer", None):
-            torrent = load_torrent_buffer(blob)
-        else:  # libtorrent 2.0 Python wheels may expose only torrent_info
-            torrent = lt.torrent_info(blob)
+        # ``load_torrent_buffer`` returns ``add_torrent_params`` in libtorrent
+        # 2.0.13 and loses the display name when passed to ``make_magnet_uri``.
+        # ``torrent_info`` preserves both the exact info-hash and ``dn=``.
+        torrent = lt.torrent_info(blob)
         magnet = lt.make_magnet_uri(torrent)
     except Exception as error:
         raise ValueError(f"libtorrent rejected the torrent file: {error}") from error
@@ -715,6 +808,7 @@ class TorrentFileResolver:
             return ResolveResult(
                 success=False,
                 message=("Invalid torrent URL (expected 'http(s)://.../*.torrent')."),
+                error_code="invalid_torrent_url",
             )
 
         blob, err = await _download_torrent_bytes(url)
@@ -722,20 +816,39 @@ class TorrentFileResolver:
             return ResolveResult(
                 success=False,
                 message=(
-                    f"Failed to download .torrent: {err}. "
-                    "Supply the title manually or pick a working URL."
+                    f"Failed to download .torrent: {err}. Pick a working URL; "
+                    "supplying a title cannot repair the failed download."
                 ),
+                error_code="torrent_download_failed",
             )
 
-        name, files = await self._metadata_client.parse_torrent_blob(blob)
+        try:
+            name, files = await self._metadata_client.parse_torrent_blob(blob)
+        except LibtorrentUnavailableError as error:
+            return ResolveResult(
+                success=False,
+                message=(
+                    "Torrent parsing is unavailable because the libtorrent runtime "
+                    f"could not be loaded: {error}"
+                ),
+                error_code="libtorrent_unavailable",
+            )
+        except Exception as error:
+            logger.warning(f"Torrent metadata parsing failed: {error}")
+            return ResolveResult(
+                success=False,
+                message=f"Failed to parse the downloaded .torrent file: {error}",
+                error_code="torrent_parse_failed",
+            )
         if not name:
             return ResolveResult(
                 success=False,
                 message=(
                     "Downloaded the .torrent file but could not parse a "
-                    "name from it. Ask the user for the release title; "
-                    "do NOT fabricate one."
+                    "usable name and file list from it. Ask for a valid .torrent "
+                    "file or magnet link; supplying a title cannot repair the file."
                 ),
+                error_code="torrent_parse_failed",
             )
 
         return ResolveResult(

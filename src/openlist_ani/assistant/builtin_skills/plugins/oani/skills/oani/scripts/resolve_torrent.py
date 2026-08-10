@@ -7,6 +7,9 @@ can feed the result into the same downstream pipeline (library
 duplicate check → user confirmation → create_download).
 """
 
+from pathlib import PurePosixPath
+
+from openlist_ani.application.collection import VIDEO_EXTENSIONS
 from openlist_ani.assistant.builtin_skills.support.oani_backend_client import (
     BackendClient,
 )
@@ -39,13 +42,40 @@ async def run(
     title = data.get("title")
     source = data.get("source") or "?"
     file_count = data.get("file_count")
+    files = data.get("files") or []
+    video_count = sum(
+        PurePosixPath(str(item.get("name") or "")).suffix.lower() in VIDEO_EXTENSIONS
+        for item in files
+        if isinstance(item, dict)
+    )
+    collection_hint = video_count > 1
     msg = data.get("message", "")
+    error_code = data.get("error_code")
 
     if not success:
-        return (
-            f"Failed to resolve torrent file: {msg}\n"
-            "Ask the user for the resource title — do NOT fabricate one."
-        )
+        if error_code == "invalid_torrent_url":
+            guidance = (
+                "Ask the user for a valid HTTP(S) .torrent URL. A title cannot "
+                "repair an invalid URL."
+            )
+        elif error_code == "torrent_download_failed":
+            guidance = (
+                "Ask for a reachable .torrent URL or an attached torrent source. "
+                "A title cannot repair the failed download."
+            )
+        elif error_code == "libtorrent_unavailable":
+            guidance = (
+                "This is a backend dependency problem. Report it and do not ask "
+                "the user for a title as a workaround."
+            )
+        elif error_code == "torrent_parse_failed":
+            guidance = (
+                "Ask for a valid .torrent file or magnet link. Supplying a title "
+                "does not make an invalid torrent parseable."
+            )
+        else:
+            guidance = "Report the resolver error as-is; do NOT fabricate a title."
+        return f"Failed to resolve torrent file: {msg}\n" + guidance
 
     lines = [
         f"Title: {title}",
@@ -53,11 +83,20 @@ async def run(
     ]
     if file_count is not None:
         lines.append(f"Files: {file_count}")
+    if files:
+        lines.extend(
+            [
+                f"Video files: {video_count}",
+                f"Collection hint: {str(collection_hint).lower()}",
+            ]
+        )
 
     lines += [
         "",
-        "Next: check the library with query_library.py, ask for explicit "
-        "confirmation, then run create_download.py with the torrent URL and title. "
+        "Next: check the library with query_library.py, run "
+        "preflight_download.py, ask for explicit confirmation including any "
+        "policy conflicts, then run create_download.py with the torrent URL and title. "
+        "Pass the exact Collection hint value to both scripts. "
         "Pass the title verbatim — it is used by the backend to rename "
         "the file. Do NOT modify or fabricate it.",
     ]

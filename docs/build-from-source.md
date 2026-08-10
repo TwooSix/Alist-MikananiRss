@@ -4,7 +4,8 @@
 
 ## 环境要求
 
-- **Python** ≥ 3.11
+- **Python** 3.11、3.12 或 3.13
+- **libtorrent** ≥ 2.0.13 且 < 2.1（当前锁定版本为 2.0.13）
 - **Git**
 - **uv**（Python 包管理器，推荐）
 
@@ -64,6 +65,17 @@ Assistant 的默认 Pi harness 无需 Node.js/npm。首次启动时会自动下�
 项目锁定的官方独立包；已有 Pi 或 source 中显式配置的 `executable` 会优先复用。
 Windows 缺少 Bash 时会同时准备固定版本和校验值的官方 PortableGit，仅放在项目
 runtime 目录中，不修改系统安装或全局 PATH。
+
+Windows x64 会在 Python 3.11、3.12 和 3.13 上验证锁定依赖及 `libtorrent` 原生导入。
+源码环境出现导入错误时，请先更新到最新 Release，并用受支持的 Python 重新同步依赖：
+
+```powershell
+uv sync --no-dev --frozen
+uv run python -c "import libtorrent as lt; print(lt.__version__)"
+```
+
+如果仍然失败，请用受支持的 Python 新建干净的虚拟环境后再同步；不要从其他软件目录
+复制 DLL。当前 CI 只验证 Windows x64，不对其他架构作兼容性承诺。
 
 ## 第四步：创建配置文件
 

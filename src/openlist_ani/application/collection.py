@@ -33,9 +33,9 @@ _EXTRA_DIRECTORY = re.compile(
     r"trailers?|samples?|specials?|extras?|bonuses?)"
     r"(?:[\s._-]+(?:collection|disc|bonus|extras?))?$"
 )
-_TRAILING_DIRECTORY_TAG = re.compile(r"\s+(?:\[[^\]]+\]|【[^】]+】|\([^()]+\))\s*$")
+_TRAILING_DIRECTORY_TAG = re.compile(r"\s++(?:\[[^\]]++\]|【[^】]++】|\([^()]++\))$")
 _CJK_EXTRA_TOKEN = re.compile(
-    r"特典|映像特典|花絮|预告|預告|宣传片|宣傳片|片头|片尾|片頭|片尾"
+    r"特典|映像特典|花絮|预告|預告|宣传片|宣傳片|片头|片尾|片頭"
 )
 _SEASON_SEGMENT = re.compile(
     r"(?i)(?:^|[^a-z0-9])(?:season\s*|s)(?P<season>\d{1,2})(?:$|[^a-z0-9])"
@@ -50,9 +50,10 @@ _SPARSE_EPISODE_TEXT = re.compile(
     r"chs|cht|jpn|eng))*)$"
 )
 _COMPACT_EPISODE_TAG = re.compile(
-    r"(?i)^(?:e|ep(?:isode)?)?\s*(?P<episode>\d{1,3})" r"(?:\s*(?P<version>v\d+))?$"
+    r"(?i)^(?:e|ep(?:isode)?)?\s*(?P<episode>\d{1,3})(?:\s*(?P<version>v\d+))?$"
 )
 _SEASON_TITLE_TOKEN = re.compile(r"(?i)\b(?:season\s*|s)\d{1,2}\b(?!\s*e\d)")
+_FIRST_EPISODE_REPLACEMENT = r" - \g<first>"
 _COLLECTION_RANGE_REPLACEMENTS = (
     (
         re.compile(r"(?i)\b(S\d{1,2}E\d{1,3})\s*[-~–—～]\s*E?\d{1,3}\b"),
@@ -64,17 +65,17 @@ _COLLECTION_RANGE_REPLACEMENTS = (
     ),
     (
         re.compile(r"(?i)\bE(?P<first>0?\d{1,3})\s*[-~–—～]\s*E?0?\d{1,3}\b"),
-        r" - \g<first>",
+        _FIRST_EPISODE_REPLACEMENT,
     ),
     (
         re.compile(r"[\[【]\s*(?P<first>0?\d{1,3})\s*[-~–—～]\s*0?\d{1,3}\s*[\]】]"),
-        r" - \g<first>",
+        _FIRST_EPISODE_REPLACEMENT,
     ),
     (
         re.compile(
             r"(?<![A-Za-z0-9])(?P<first>0?\d{1,3})\s*[-~–—～]\s*0?\d{1,3}(?!\d)"
         ),
-        r" - \g<first>",
+        _FIRST_EPISODE_REPLACEMENT,
     ),
 )
 _COLLECTION_WORDS = re.compile(
@@ -313,9 +314,9 @@ def _looks_like_full_release(stem: str, anime_name: str) -> bool:
     )
 
 
-def _sparse_episode_parts(stem: str) -> tuple[str, str] | None:
-    """Return leading group tags and a canonical episode-plus-metadata suffix."""
-
+def _leading_bracket_episode(
+    stem: str,
+) -> tuple[int, list[str], tuple[str, str] | None]:
     cursor = 0
     tags: list[str] = []
     while cursor < len(stem):
@@ -332,9 +333,19 @@ def _sparse_episode_parts(stem: str) -> tuple[str, str] | None:
             episode_text = f"{compact.group('episode')}{version}"
             if tail:
                 episode_text = f"{episode_text} {tail}"
-            return " ".join(tags), episode_text
+            return match.end(), tags, (" ".join(tags), episode_text)
         tags.append(match.group(0))
         cursor = match.end()
+
+    return cursor, tags, None
+
+
+def _sparse_episode_parts(stem: str) -> tuple[str, str] | None:
+    """Return leading group tags and a canonical episode-plus-metadata suffix."""
+
+    cursor, tags, bracket_episode = _leading_bracket_episode(stem)
+    if bracket_episode is not None:
+        return bracket_episode
 
     body = stem[cursor:].strip()
     bracket_suffix = " ".join(match.group(0) for match in _BRACKET_TAG.finditer(body))
