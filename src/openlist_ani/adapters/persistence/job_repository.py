@@ -714,32 +714,12 @@ def _revive_policy_block_as_manual(
         return None
     if candidate.source_name != "manual":
         return None
-    legacy_skip = (
-        row["status"] == JobStatus.SKIPPED.value
-        and row["last_error"] == "release_policy"
-    )
-    confirmation_failure = row["status"] == JobStatus.FAILED.value and row[
-        "last_error"
-    ] in {
-        "manual_policy_confirmation_required",
-        "Manual policy confirmation is required for collection contents",
-    }
+    legacy_skip = _is_legacy_policy_skip(row)
+    confirmation_failure = _is_manual_confirmation_failure(row)
     if not legacy_skip and not confirmation_failure:
         return None
-    if confirmation_failure:
-        acknowledged = review.get("acknowledged_conflicts")
-        if (
-            review.get("override_policy") is not True
-            or not isinstance(acknowledged, list)
-            or not any(isinstance(item, str) and item for item in acknowledged)
-        ):
-            return None
-        if (
-            row["last_error"]
-            == "Manual policy confirmation is required for collection contents"
-            and "collection:automatic-release-policy" not in acknowledged
-        ):
-            return None
+    if confirmation_failure and not _manual_confirmation_is_acknowledged(row, review):
+        return None
     revived_at = utc_now()
     return DownloadJob(
         id=row["id"],
@@ -749,6 +729,38 @@ def _revive_policy_block_as_manual(
         metadata=initial_metadata or MetadataDocument(),
         created_at=revived_at,
         updated_at=revived_at,
+    )
+
+
+def _is_legacy_policy_skip(row) -> bool:
+    return (
+        row["status"] == JobStatus.SKIPPED.value
+        and row["last_error"] == "release_policy"
+    )
+
+
+def _is_manual_confirmation_failure(row) -> bool:
+    return row["status"] == JobStatus.FAILED.value and row["last_error"] in {
+        "manual_policy_confirmation_required",
+        "Manual policy confirmation is required for collection contents",
+    }
+
+
+def _manual_confirmation_is_acknowledged(row, review: dict[str, Any]) -> bool:
+    acknowledged = review.get("acknowledged_conflicts")
+    if (
+        review.get("override_policy") is not True
+        or not isinstance(acknowledged, list)
+        or not any(isinstance(item, str) and item for item in acknowledged)
+    ):
+        return False
+    requires_collection_acknowledgement = (
+        row["last_error"]
+        == "Manual policy confirmation is required for collection contents"
+    )
+    return (
+        not requires_collection_acknowledgement
+        or "collection:automatic-release-policy" in acknowledged
     )
 
 

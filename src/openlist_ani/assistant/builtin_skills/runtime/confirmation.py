@@ -12,6 +12,7 @@ import json
 import os
 import re
 import secrets
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -171,7 +172,7 @@ def _active_state() -> tuple[Path, dict[str, Any]]:
             "Assistant confirmation context is unavailable. Run this write "
             "through an active OpenList-Ani Assistant session."
         )
-    path = Path(raw_path)
+    path = _validated_state_path(raw_path)
     state = _read_state(path)
     if not state.get("session_id") or int(state.get("turn") or 0) <= 0:
         raise RuntimeError(
@@ -179,6 +180,23 @@ def _active_state() -> tuple[Path, dict[str, Any]]:
             "turn and run preflight_download.py again."
         )
     return path, state
+
+
+def _validated_state_path(raw_path: str) -> Path:
+    path = Path(raw_path).resolve()
+    temporary_root = Path(tempfile.gettempdir()).resolve()
+    try:
+        path.relative_to(temporary_root)
+    except ValueError as error:
+        raise RuntimeError(
+            "Assistant confirmation context must stay inside the system "
+            "temporary directory."
+        ) from error
+    if path.name != "confirmation-state.json" or not path.parent.name.startswith(
+        "oani-"
+    ):
+        raise RuntimeError("Assistant confirmation context path is invalid.")
+    return path
 
 
 def _request_binding(
@@ -217,19 +235,28 @@ def _ticket_path(state_path: Path, ticket: str) -> Path | None:
 def _read_state(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError):
         return {}
     return value if isinstance(value, dict) else {}
 
 
 def _write_state(path: Path, state: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.{secrets.token_hex(6)}.tmp")
-    temporary.write_text(
-        json.dumps(state, ensure_ascii=False, separators=(",", ":")),
+    serialized = json.dumps(state, ensure_ascii=False, separators=(",", ":"))
+    with tempfile.NamedTemporaryFile(  # NOSONAR - path is validated under temp.
+        mode="w",
         encoding="utf-8",
-    )
-    os.replace(temporary, path)
+        dir=path.parent,
+        prefix=".confirmation-",
+        suffix=".tmp",
+        delete=False,
+    ) as stream:
+        stream.write(serialized)
+        temporary = Path(stream.name)
+    try:
+        os.replace(temporary, path)  # NOSONAR - both paths are temp-root constrained.
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 __all__ = [

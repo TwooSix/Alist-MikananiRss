@@ -29,10 +29,26 @@ def _backend_client(**methods):
 
 @pytest.fixture(autouse=True)
 def confirmation_state(tmp_path, monkeypatch) -> ConfirmationTurnState:
-    state = ConfirmationTurnState(tmp_path / "confirmation-state.json")
+    state = ConfirmationTurnState(
+        tmp_path / "oani-test-session" / "confirmation-state.json"
+    )
     monkeypatch.setenv(CONFIRMATION_STATE_ENV, str(state.path))
     state.begin_turn()
     return state
+
+
+def test_confirmation_context_rejects_untrusted_state_path(tmp_path, monkeypatch):
+    state = ConfirmationTurnState(tmp_path / "untrusted" / "confirmation-state.json")
+    state.begin_turn()
+    monkeypatch.setenv(CONFIRMATION_STATE_ENV, str(state.path))
+
+    with pytest.raises(RuntimeError, match="context path is invalid"):
+        issue_download_confirmation_ticket(
+            download_url="magnet:?xt=urn:btih:" + "a" * 40,
+            title="Example",
+            collection_hint=False,
+            override_policy=False,
+        )
 
 
 @pytest.mark.asyncio

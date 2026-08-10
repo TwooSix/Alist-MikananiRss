@@ -295,6 +295,113 @@ class LibtorrentMetadataClient:
         return await asyncio.to_thread(_parse_torrent_blob, blob)
 
 
+def _libtorrent_unavailable_result(dn_title: str | None) -> ResolveResult:
+    if dn_title:
+        return ResolveResult(
+            success=True,
+            error_code="libtorrent_unavailable",
+            message=(
+                "Resolved title from magnet 'dn=', but collection inspection "
+                "is incomplete because the libtorrent runtime could not be "
+                "loaded. No tracker, DHT, or peer lookup was attempted."
+            ),
+            title=dn_title,
+            source="dn",
+        )
+    return ResolveResult(
+        success=False,
+        error_code="libtorrent_unavailable",
+        message=(
+            "Magnet metadata resolution is unavailable because the "
+            "libtorrent runtime could not be loaded. No tracker, DHT, "
+            "or peer lookup was attempted. Reinstall the locked project "
+            "dependencies, or use a .torrent URL / magnet with dn=."
+        ),
+    )
+
+
+def _metadata_fetch_failed_result(
+    dn_title: str | None, error: Exception
+) -> ResolveResult:
+    if dn_title:
+        return ResolveResult(
+            success=True,
+            error_code="metadata_fetch_failed",
+            message=(
+                "Resolved title from magnet 'dn=', but collection inspection "
+                f"is incomplete because metadata fetching failed: {error}."
+            ),
+            title=dn_title,
+            source="dn",
+        )
+    return ResolveResult(
+        success=False,
+        error_code="metadata_fetch_failed",
+        message=(
+            f"Failed to fetch torrent metadata: {error}. "
+            "Provide a .torrent file or supply the title manually."
+        ),
+    )
+
+
+def _metadata_timeout_result(
+    dn_title: str | None, metadata_timeout: float
+) -> ResolveResult:
+    if dn_title:
+        return ResolveResult(
+            success=True,
+            error_code="metadata_timeout",
+            message=(
+                "Resolved title from magnet 'dn=', but collection inspection "
+                f"is incomplete because metadata fetching timed out after "
+                f"{metadata_timeout:.0f}s."
+            ),
+            title=dn_title,
+            source="dn",
+        )
+    return ResolveResult(
+        success=False,
+        error_code="metadata_timeout",
+        message=(
+            f"Metadata fetch timed out after {metadata_timeout:.0f}s "
+            "and magnet has no usable 'dn=' parameter. Ask the user "
+            "for the release title; do NOT fabricate one."
+        ),
+    )
+
+
+def _resolved_magnet_result(
+    dn_title: str | None,
+    metadata_name: str,
+    files: list[TorrentFile],
+) -> ResolveResult:
+    title = dn_title or metadata_name
+    source = "dn" if dn_title else "metadata"
+    if not files:
+        return ResolveResult(
+            success=True,
+            error_code="file_list_unavailable",
+            message=(
+                "Resolved the magnet title, but collection inspection is "
+                "incomplete because torrent metadata returned no usable file list."
+            ),
+            title=title,
+            source=source,
+        )
+    return ResolveResult(
+        success=True,
+        message=(
+            "Resolved title from magnet 'dn=' and inspected torrent metadata."
+            if dn_title
+            else "Resolved title from torrent metadata."
+        ),
+        title=title,
+        source=source,
+        file_count=len(files),
+        files=files,
+    )
+
+
 class MagnetResolver:
     def __init__(
         self,
@@ -324,97 +431,15 @@ class MagnetResolver:
             )
         except LibtorrentUnavailableError as error:
             logger.error(f"Magnet metadata resolver unavailable: {error}")
-            if dn_title:
-                return ResolveResult(
-                    success=True,
-                    error_code="libtorrent_unavailable",
-                    message=(
-                        "Resolved title from magnet 'dn=', but collection inspection "
-                        "is incomplete because the libtorrent runtime could not be "
-                        "loaded. No tracker, DHT, or peer lookup was attempted."
-                    ),
-                    title=dn_title,
-                    source="dn",
-                )
-            return ResolveResult(
-                success=False,
-                error_code="libtorrent_unavailable",
-                message=(
-                    "Magnet metadata resolution is unavailable because the "
-                    "libtorrent runtime could not be loaded. No tracker, DHT, "
-                    "or peer lookup was attempted. Reinstall the locked project "
-                    "dependencies, or use a .torrent URL / magnet with dn=."
-                ),
-            )
+            return _libtorrent_unavailable_result(dn_title)
         except Exception as e:
             logger.warning(f"libtorrent metadata fetch failed: {e}")
-            if dn_title:
-                return ResolveResult(
-                    success=True,
-                    error_code="metadata_fetch_failed",
-                    message=(
-                        "Resolved title from magnet 'dn=', but collection inspection "
-                        f"is incomplete because metadata fetching failed: {e}."
-                    ),
-                    title=dn_title,
-                    source="dn",
-                )
-            return ResolveResult(
-                success=False,
-                error_code="metadata_fetch_failed",
-                message=(
-                    f"Failed to fetch torrent metadata: {e}. "
-                    "Provide a .torrent file or supply the title manually."
-                ),
-            )
+            return _metadata_fetch_failed_result(dn_title, e)
 
         if not name:
-            if dn_title:
-                return ResolveResult(
-                    success=True,
-                    error_code="metadata_timeout",
-                    message=(
-                        "Resolved title from magnet 'dn=', but collection inspection "
-                        f"is incomplete because metadata fetching timed out after "
-                        f"{metadata_timeout:.0f}s."
-                    ),
-                    title=dn_title,
-                    source="dn",
-                )
-            return ResolveResult(
-                success=False,
-                error_code="metadata_timeout",
-                message=(
-                    f"Metadata fetch timed out after {metadata_timeout:.0f}s "
-                    "and magnet has no usable 'dn=' parameter. Ask the user "
-                    "for the release title; do NOT fabricate one."
-                ),
-            )
+            return _metadata_timeout_result(dn_title, metadata_timeout)
 
-        if not files:
-            return ResolveResult(
-                success=True,
-                error_code="file_list_unavailable",
-                message=(
-                    "Resolved the magnet title, but collection inspection is "
-                    "incomplete because torrent metadata returned no usable file list."
-                ),
-                title=dn_title or name,
-                source="dn" if dn_title else "metadata",
-            )
-
-        return ResolveResult(
-            success=True,
-            message=(
-                "Resolved title from magnet 'dn=' and inspected torrent metadata."
-                if dn_title
-                else "Resolved title from torrent metadata."
-            ),
-            title=dn_title or name,
-            source="dn" if dn_title else "metadata",
-            file_count=len(files),
-            files=files,
-        )
+        return _resolved_magnet_result(dn_title, name, files)
 
 
 async def resolve_magnet(magnet: str, metadata_timeout: float = 30.0) -> ResolveResult:

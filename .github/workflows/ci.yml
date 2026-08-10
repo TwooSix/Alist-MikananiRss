@@ -35,11 +35,14 @@ jobs:
       - name: Check lockfile
         run: uv lock --check
 
+      - name: Install locked dependencies
+        run: uv sync --frozen
+
       - name: Run Ruff
-        run: uv run --frozen ruff check .
+        run: uv run --frozen --no-sync --no-build ruff check .
 
       - name: Check formatting
-        run: uv run --frozen black --check .
+        run: uv run --frozen --no-sync --no-build black --check .
 
   test:
     name: CI / Test
@@ -57,8 +60,11 @@ jobs:
       - name: Install Python
         run: uv python install 3.11
 
+      - name: Install locked dependencies
+        run: uv sync --frozen
+
       - name: Run tests
-        run: uv run --frozen pytest -q
+        run: uv run --frozen --no-sync --no-build pytest -q
 
   windows-compatibility:
     name: CI / Windows / Python ${{ matrix.python-version }}
@@ -92,12 +98,12 @@ jobs:
 
       - name: Verify native torrent runtime and resolver
         run: >-
-          uv run --frozen --python ${{ matrix.python-version }} pytest -q
+          uv run --frozen --no-sync --no-build --python ${{ matrix.python-version }} pytest -q
           tests/adapters/torrent/test_torrent_resolver.py
 
       - name: Run full Windows test suite
         if: matrix.python-version == '3.13'
-        run: uv run --frozen --python ${{ matrix.python-version }} pytest -q
+        run: uv run --frozen --no-sync --no-build --python ${{ matrix.python-version }} pytest -q
 
   build:
     name: CI / Build

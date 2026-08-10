@@ -54,6 +54,61 @@ async def run(
         download_url: Magnet link or torrent URL (required).
         title: Resource title for identification (required).
     """
+    if error := _request_error(
+        confirmed,
+        download_url,
+        title,
+        override_policy=override_policy,
+        acknowledged_conflicts=acknowledged_conflicts,
+        policy_review_token=policy_review_token,
+    ):
+        return error
+    if error := _confirmation_ticket_error(
+        confirmation_ticket,
+        download_url=download_url,
+        title=title,
+        collection_hint=collection_hint,
+        override_policy=override_policy,
+        acknowledged_conflicts=acknowledged_conflicts,
+        policy_review_token=policy_review_token,
+    ):
+        return error
+
+    existing = await _url_already_in_library(download_url)
+    if existing is not None:
+        return _existing_download_message(existing)
+
+    data, backend_error = await _submit_download(
+        download_url,
+        title,
+        collection_hint=collection_hint,
+        override_policy=override_policy,
+        acknowledged_conflicts=acknowledged_conflicts,
+        policy_review_token=policy_review_token,
+    )
+    if backend_error:
+        return backend_error
+    assert data is not None
+
+    if data.get("confirmation_required"):
+        return _policy_confirmation_response(
+            data,
+            download_url=download_url,
+            title=title,
+            collection_hint=collection_hint,
+        )
+    return _creation_result(data, title)
+
+
+def _request_error(
+    confirmed: bool,
+    download_url: str,
+    title: str,
+    *,
+    override_policy: bool,
+    acknowledged_conflicts: list[str] | None,
+    policy_review_token: str | None,
+) -> str | None:
     if error := confirmation_error(confirmed):
         return error
     if not download_url:
@@ -68,7 +123,19 @@ async def run(
             "acknowledged_conflicts and the policy_review_token returned by "
             "preflight. Run preflight_download.py again."
         )
+    return None
 
+
+def _confirmation_ticket_error(
+    confirmation_ticket: str | None,
+    *,
+    download_url: str,
+    title: str,
+    collection_hint: bool,
+    override_policy: bool,
+    acknowledged_conflicts: list[str] | None,
+    policy_review_token: str | None,
+) -> str | None:
     ticket_check = consume_download_confirmation_ticket(
         confirmation_ticket,
         download_url=download_url,
@@ -78,27 +145,38 @@ async def run(
         acknowledged_conflicts=acknowledged_conflicts or (),
         policy_review_token=policy_review_token,
     )
-    if not ticket_check.accepted:
-        return (
-            f"Confirmation required: {ticket_check.message}\n"
-            "Do not retry in this turn. Show the exact operation and end the "
-            "response with [[CONFIRMATION_REQUIRED]]."
-        )
+    if ticket_check.accepted:
+        return None
+    return (
+        f"Confirmation required: {ticket_check.message}\n"
+        "Do not retry in this turn. Show the exact operation and end the "
+        "response with [[CONFIRMATION_REQUIRED]]."
+    )
 
-    existing = await _url_already_in_library(download_url)
-    if existing is not None:
-        return (
-            "Refusing to create download: this download_url is already "
-            "in the library.\n"
-            f"Existing row: title={existing.get('title')!r}, "
-            f"anime_name={existing.get('anime_name')!r}, "
-            f"season={existing.get('season')}, "
-            f"episode={existing.get('episode')}, "
-            f"downloaded_at={existing.get('downloaded_at')}.\n"
-            "If the user really wants to re-download this release, "
-            "delete the existing row first or pick a different source URL."
-        )
 
+def _existing_download_message(existing: dict) -> str:
+    return (
+        "Refusing to create download: this download_url is already "
+        "in the library.\n"
+        f"Existing row: title={existing.get('title')!r}, "
+        f"anime_name={existing.get('anime_name')!r}, "
+        f"season={existing.get('season')}, "
+        f"episode={existing.get('episode')}, "
+        f"downloaded_at={existing.get('downloaded_at')}.\n"
+        "If the user really wants to re-download this release, "
+        "delete the existing row first or pick a different source URL."
+    )
+
+
+async def _submit_download(
+    download_url: str,
+    title: str,
+    *,
+    collection_hint: bool,
+    override_policy: bool,
+    acknowledged_conflicts: list[str] | None,
+    policy_review_token: str | None,
+) -> tuple[dict | None, str | None]:
     client = BackendClient(config.backend_url)
     try:
         data = await client.create_download(
@@ -109,87 +187,92 @@ async def run(
             acknowledged_conflicts=acknowledged_conflicts,
             policy_review_token=policy_review_token,
         )
-    except Exception as e:
-        return f"Error creating download: {e}"
+    except Exception as error:
+        return None, f"Error creating download: {error}"
     finally:
         await client.close()
+    return data, None
 
-    success = data.get("success", False)
-    msg = data.get("message", "")
-    task = data.get("task", {})
 
-    if data.get("confirmation_required"):
-        conflicts = data.get("policy_conflicts") or []
-        refreshed_token = str(data.get("policy_review_token") or "")
-        if conflicts and not refreshed_token:
-            return (
-                "Download was not created: the Backend requested policy "
-                "confirmation without a policy review token. Run "
-                "preflight_download.py again."
-            )
-        conflict_keys = [
-            str(item.get("key") or item.get("code") or "unknown") for item in conflicts
-        ]
-        try:
-            refreshed_confirmation_ticket = issue_download_confirmation_ticket(
-                download_url=download_url,
-                title=title,
-                collection_hint=collection_hint,
-                override_policy=True,
-                acknowledged_conflicts=conflict_keys,
-                policy_review_token=refreshed_token,
-            )
-        except RuntimeError as error:
-            return (
-                "Download was not created and a fresh confirmation could not be "
-                f"armed: {error}"
-            )
-        lines = [
-            "Download was not created because policy confirmation is required.",
-            f"Title: {title}",
-            f"Download URL: {download_url}",
-            f"Collection hint: {collection_hint}",
-            f"Policy review token: {refreshed_token}",
-            f"Assistant confirmation ticket: {refreshed_confirmation_ticket}",
-            "Policy conflicts:",
-        ]
-        lines.extend(_format_conflict(item) for item in conflicts)
-        lines.extend(
-            [
-                "",
-                "Do not retry in this turn. Show every current conflict to the "
-                "user and ask again. After a later explicit confirmation, rerun "
-                "create_download.py with the same collection_hint, confirmed=true, "
-                "override_policy=true, "
-                "and acknowledged_conflicts set to the exact conflict keys above. "
-                "Pass policy_review_token exactly as shown above and preserve the "
-                "same download URL, title, and Assistant confirmation ticket. "
-                "End the confirmation request with [[CONFIRMATION_REQUIRED]].",
-            ]
+def _policy_confirmation_response(
+    data: dict,
+    *,
+    download_url: str,
+    title: str,
+    collection_hint: bool,
+) -> str:
+    conflicts = data.get("policy_conflicts") or []
+    refreshed_token = str(data.get("policy_review_token") or "")
+    if conflicts and not refreshed_token:
+        return (
+            "Download was not created: the Backend requested policy "
+            "confirmation without a policy review token. Run "
+            "preflight_download.py again."
         )
-        return "\n".join(lines)
-
-    if success:
-        task_id = task.get("id", "unknown")
-        lines = [
-            "Download created successfully.",
-            f"Task ID: {task_id}",
-            f"Title: {title}",
-            msg,
+    conflict_keys = [
+        str(item.get("key") or item.get("code") or "unknown") for item in conflicts
+    ]
+    try:
+        refreshed_confirmation_ticket = issue_download_confirmation_ticket(
+            download_url=download_url,
+            title=title,
+            collection_hint=collection_hint,
+            override_policy=True,
+            acknowledged_conflicts=conflict_keys,
+            policy_review_token=refreshed_token,
+        )
+    except RuntimeError as error:
+        return (
+            "Download was not created and a fresh confirmation could not be "
+            f"armed: {error}"
+        )
+    lines = [
+        "Download was not created because policy confirmation is required.",
+        f"Title: {title}",
+        f"Download URL: {download_url}",
+        f"Collection hint: {collection_hint}",
+        f"Policy review token: {refreshed_token}",
+        f"Assistant confirmation ticket: {refreshed_confirmation_ticket}",
+        "Policy conflicts:",
+    ]
+    lines.extend(_format_conflict(item) for item in conflicts)
+    lines.extend(
+        [
+            "",
+            "Do not retry in this turn. Show every current conflict to the "
+            "user and ask again. After a later explicit confirmation, rerun "
+            "create_download.py with the same collection_hint, confirmed=true, "
+            "override_policy=true, "
+            "and acknowledged_conflicts set to the exact conflict keys above. "
+            "Pass policy_review_token exactly as shown above and preserve the "
+            "same download URL, title, and Assistant confirmation ticket. "
+            "End the confirmation request with [[CONFIRMATION_REQUIRED]].",
         ]
-        conflicts = data.get("policy_conflicts") or []
-        if conflicts:
-            lines.append("Confirmed policy overrides:")
-            lines.extend(_format_conflict(item) for item in conflicts)
-        warnings = data.get("policy_warnings") or []
-        if warnings:
-            lines.append(
-                "Policy inspection warnings: "
-                + "; ".join(str(item) for item in warnings)
-            )
-        return "\n".join(lines)
-    else:
-        return f"Failed to create download: {msg}"
+    )
+    return "\n".join(lines)
+
+
+def _creation_result(data: dict, title: str) -> str:
+    message = data.get("message", "")
+    if not data.get("success", False):
+        return f"Failed to create download: {message}"
+    task = data.get("task", {})
+    lines = [
+        "Download created successfully.",
+        f"Task ID: {task.get('id', 'unknown')}",
+        f"Title: {title}",
+        message,
+    ]
+    conflicts = data.get("policy_conflicts") or []
+    if conflicts:
+        lines.append("Confirmed policy overrides:")
+        lines.extend(_format_conflict(item) for item in conflicts)
+    warnings = data.get("policy_warnings") or []
+    if warnings:
+        lines.append(
+            "Policy inspection warnings: " + "; ".join(str(item) for item in warnings)
+        )
+    return "\n".join(lines)
 
 
 def _format_conflict(item: dict) -> str:

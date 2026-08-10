@@ -33,7 +33,6 @@ _EXTRA_DIRECTORY = re.compile(
     r"trailers?|samples?|specials?|extras?|bonuses?)"
     r"(?:[\s._-]+(?:collection|disc|bonus|extras?))?$"
 )
-_TRAILING_DIRECTORY_TAG = re.compile(r"\s++(?:\[[^\]]++\]|【[^】]++】|\([^()]++\))$")
 _CJK_EXTRA_TOKEN = re.compile(
     r"特典|映像特典|花絮|预告|預告|宣传片|宣傳片|片头|片尾|片頭"
 )
@@ -382,7 +381,7 @@ def _directory_anime_hint(path: PurePosixPath) -> str | None:
 def _is_extra_directory(value: str) -> bool:
     normalized = value.strip()
     while True:
-        without_tag = _TRAILING_DIRECTORY_TAG.sub("", normalized).strip()
+        without_tag = _without_trailing_directory_tag(normalized)
         if without_tag == normalized:
             break
         normalized = without_tag
@@ -393,6 +392,24 @@ def _is_extra_directory(value: str) -> bool:
     }:
         normalized = normalized[1:-1].strip()
     return bool(_EXTRA_DIRECTORY.fullmatch(normalized))
+
+
+def _without_trailing_directory_tag(value: str) -> str:
+    closing = value[-1:]
+    opening = {"]": "[", "】": "【", ")": "("}.get(closing)
+    if opening is None:
+        return value
+
+    for index in range(1, len(value) - 1):
+        if value[index] != opening or not value[index - 1].isspace():
+            continue
+        content = value[index + 1 : -1]
+        if not content or closing in content:
+            continue
+        if closing == ")" and "(" in content:
+            continue
+        return value[:index].rstrip()
+    return value
 
 
 def _chinese_integer(value: str) -> int | None:

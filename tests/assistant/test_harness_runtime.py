@@ -25,7 +25,9 @@ def test_harness_environment_exposes_only_its_session_confirmation_state(
 ):
     config_path = (tmp_path / "config.toml").resolve()
     monkeypatch.delenv(CONFIRMATION_STATE_ENV, raising=False)
-    confirmation = ConfirmationTurnState(tmp_path / "confirmation-state.json")
+    confirmation = ConfirmationTurnState(
+        tmp_path / "oani-test-session" / "confirmation-state.json"
+    )
 
     environment = _harness_environment(config_path, confirmation)
 

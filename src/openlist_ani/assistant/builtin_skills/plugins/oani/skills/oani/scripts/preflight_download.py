@@ -43,55 +43,84 @@ async def run(
     warnings = data.get("policy_warnings") or []
     policy_review_token = str(data.get("policy_review_token") or "")
     if not conflicts:
-        try:
-            confirmation_ticket = issue_download_confirmation_ticket(
-                download_url=download_url,
-                title=title,
-                collection_hint=collection_hint,
-                override_policy=False,
-            )
-        except RuntimeError as error:
-            return f"Manual download preflight could not arm confirmation: {error}"
-        lines = [
-            "Manual download preflight passed with no policy conflicts.",
-            f"Title: {title}",
-            f"Download URL: {download_url}",
-            f"Collection hint: {collection_hint}",
-            f"Assistant confirmation ticket: {confirmation_ticket}",
-            "No download was created.",
-        ]
-        if warnings:
-            lines.append(
-                "Inspection warnings: " + "; ".join(str(item) for item in warnings)
-            )
-        lines.append(
-            "Ask for the normal explicit confirmation. After a later confirmation, "
-            "run create_download.py with confirmed=true, override_policy=false, "
-            "and the exact Assistant confirmation ticket above."
+        return _preflight_passed_response(
+            download_url,
+            title,
+            collection_hint=collection_hint,
+            warnings=warnings,
         )
-        return "\n".join(lines)
+    return _preflight_conflicts_response(
+        download_url,
+        title,
+        collection_hint=collection_hint,
+        conflicts=conflicts,
+        warnings=warnings,
+        policy_review_token=policy_review_token,
+    )
 
+
+def _preflight_passed_response(
+    download_url: str,
+    title: str,
+    *,
+    collection_hint: bool,
+    warnings: list,
+) -> str:
+    confirmation_ticket, error = _issue_confirmation_ticket(
+        download_url,
+        title,
+        collection_hint=collection_hint,
+        override_policy=False,
+    )
+    if error:
+        return error
+    lines = [
+        "Manual download preflight passed with no policy conflicts.",
+        f"Title: {title}",
+        f"Download URL: {download_url}",
+        f"Collection hint: {collection_hint}",
+        f"Assistant confirmation ticket: {confirmation_ticket}",
+        "No download was created.",
+    ]
+    if warnings:
+        lines.append(
+            "Inspection warnings: " + "; ".join(str(item) for item in warnings)
+        )
+    lines.append(
+        "Ask for the normal explicit confirmation. After a later confirmation, "
+        "run create_download.py with confirmed=true, override_policy=false, "
+        "and the exact Assistant confirmation ticket above."
+    )
+    return "\n".join(lines)
+
+
+def _preflight_conflicts_response(
+    download_url: str,
+    title: str,
+    *,
+    collection_hint: bool,
+    conflicts: list[dict],
+    warnings: list,
+    policy_review_token: str,
+) -> str:
     if not policy_review_token:
         return (
             "Manual download preflight was unsafe: the Backend returned policy "
             "conflicts without a policy review token. Do not create the download."
         )
-
     conflict_keys = [
         str(item.get("key") or item.get("code") or "unknown") for item in conflicts
     ]
-    try:
-        confirmation_ticket = issue_download_confirmation_ticket(
-            download_url=download_url,
-            title=title,
-            collection_hint=collection_hint,
-            override_policy=True,
-            acknowledged_conflicts=conflict_keys,
-            policy_review_token=policy_review_token,
-        )
-    except RuntimeError as error:
-        return f"Manual download preflight could not arm confirmation: {error}"
-
+    confirmation_ticket, error = _issue_confirmation_ticket(
+        download_url,
+        title,
+        collection_hint=collection_hint,
+        override_policy=True,
+        acknowledged_conflicts=conflict_keys,
+        policy_review_token=policy_review_token,
+    )
+    if error:
+        return error
     lines = [
         "Manual download preflight found overridable policy conflicts.",
         f"Title: {title}",
@@ -122,6 +151,29 @@ async def run(
         ]
     )
     return "\n".join(lines)
+
+
+def _issue_confirmation_ticket(
+    download_url: str,
+    title: str,
+    *,
+    collection_hint: bool,
+    override_policy: bool,
+    acknowledged_conflicts: list[str] | tuple[str, ...] = (),
+    policy_review_token: str | None = None,
+) -> tuple[str | None, str | None]:
+    try:
+        ticket = issue_download_confirmation_ticket(
+            download_url=download_url,
+            title=title,
+            collection_hint=collection_hint,
+            override_policy=override_policy,
+            acknowledged_conflicts=acknowledged_conflicts,
+            policy_review_token=policy_review_token,
+        )
+    except RuntimeError as error:
+        return None, f"Manual download preflight could not arm confirmation: {error}"
+    return ticket, None
 
 
 def _format_conflict(item: dict) -> str:
