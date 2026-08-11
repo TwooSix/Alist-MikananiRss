@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from openlist_ani.assistant.contracts import EventType, LoopEvent
+from openlist_ani.assistant.harness import loop as loop_module
 from openlist_ani.assistant.harness.loop import HarnessLoop
 from openlist_ani.assistant.harness.runtime import HarnessSession
 
@@ -42,6 +45,29 @@ async def test_missing_agent_is_reported_with_actionable_error():
 
     assert events[0].type == EventType.ERROR
     assert "Agent 未安装或无法启动" in events[0].text
+
+
+@pytest.mark.asyncio
+async def test_harness_failure_is_written_to_the_error_log(monkeypatch):
+    class FailedSession(FakeSession):
+        async def stream(self, prompt: str):
+            raise RuntimeError("Pi rejected the prompt: already processing")
+            yield  # pragma: no cover
+
+    logged: list[str] = []
+    monkeypatch.setattr(
+        loop_module,
+        "logger",
+        SimpleNamespace(error=lambda message: logged.append(message)),
+    )
+
+    events = [event async for event in HarnessLoop(FailedSession).process("hello")]
+
+    assert events[0].type == EventType.ERROR
+    assert logged == [
+        "Assistant harness turn failed (RuntimeError): "
+        "Pi rejected the prompt: already processing"
+    ]
 
 
 @pytest.mark.asyncio

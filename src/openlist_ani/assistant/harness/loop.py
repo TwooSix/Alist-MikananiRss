@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import AsyncGenerator, Callable
 
 from openlist_ani.assistant.contracts import EventType, LoopEvent, MessageQueue
+from openlist_ani.logger import logger
 
 from .runtime import HarnessSession
 
@@ -36,6 +37,10 @@ class HarnessLoop:
                     if event.type == EventType.DONE:
                         self._turn_count += 1
             except Exception as error:
+                logger.error(
+                    "Assistant harness turn failed "
+                    f"({type(error).__name__}): {error}"
+                )
                 yield LoopEvent(type=EventType.ERROR, text=_friendly_error(error))
             finally:
                 self._active = False

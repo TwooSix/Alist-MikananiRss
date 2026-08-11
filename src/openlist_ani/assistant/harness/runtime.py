@@ -658,9 +658,24 @@ def _pi_turn_events(
         mapped = _map_pi_message_event(payload, tool_runs)
         return ([mapped] if mapped is not None else []), accepted, False
     if event_type == "agent_end":
+        # ``agent_end`` only closes one low-level run. Pi may still retry,
+        # compact and retry, or process a queued continuation before emitting
+        # ``agent_settled``. Returning DONE here can therefore make the next
+        # frontend prompt collide with an agent that is still processing.
         response = _last_assistant_text(payload.get("messages", []))
         response = response or "".join(latest_parts).strip()
-        return _final_response_events(response, empty_error=""), accepted, True
+        latest_parts[:] = [response] if response else []
+        return [], accepted, False
+    if event_type == "agent_settled":
+        response = "".join(latest_parts).strip()
+        return (
+            _final_response_events(
+                response,
+                empty_error="Pi returned an empty response after the agent settled.",
+            ),
+            accepted,
+            True,
+        )
     if event_type == "extension_error":
         raise RuntimeError(
             f"Pi extension error: {payload.get('error', 'unknown error')}"
