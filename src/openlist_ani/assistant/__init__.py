@@ -1,15 +1,10 @@
 """
-Assistant module - agentic AI assistant framework.
+Assistant module - frontend-to-agent-harness bridge.
 
 Architecture:
-- Frontend layer (Telegram / CLI)
-- AgenticLoop (core while-loop)
-- ToolOrchestrator (parallel/serial dispatch)
-- Provider abstraction (OpenAI / Anthropic)
-- Tool + Skill system
-- SubAgent mechanism
-- Directory-based memory (SOUL.md + memory/ + sessions/)
-- Auto-dream background memory consolidation
+- Thin frontend layer (Telegram / Feishu / WeChat / CLI)
+- External agent harness session (Pi / Claude Code / Codex)
+- Standard Agent Skills executed through each harness's native tools
 
 Entry point: `main()` is registered as `openlist-ani-assistant` console script.
 """
@@ -33,11 +28,17 @@ from openlist_ani.logger import (
 )
 
 
-def _configure_assistant_logger(*, is_cli: bool, level: str = "INFO") -> None:
+def _configure_assistant_logger(
+    *,
+    is_cli: bool,
+    level: str = "INFO",
+    rotation: str = "00:00",
+    retention: str = "1 week",
+) -> None:
     """Configure assistant logs to match project logging format.
 
-    For compatibility with the TUI/CLI flow, logs are written to file by
-    default and console logging is only enabled for non-CLI mode.
+    Logs are written to file by default and console logging is enabled for
+    remote messaging frontends.
     """
     logger.remove()
 
@@ -45,8 +46,8 @@ def _configure_assistant_logger(*, is_cli: bool, level: str = "INFO") -> None:
         LOG_DIR.mkdir(exist_ok=True)
         logger.add(
             LOG_DIR / "assistant_{time:YYYY-MM-DD}.log",
-            rotation="00:00",
-            retention="1 week",
+            rotation=rotation,
+            retention=retention,
             level=level,
             encoding="utf-8",
             mode="a",
@@ -87,11 +88,22 @@ def _telegram_frontend_enabled(assistant_cfg: Any) -> bool:
 
 
 def _validate_frontend_config(assistant_cfg: Any) -> list[str]:
+    if not assistant_cfg.enabled:
+        return [
+            "Assistant is disabled. Set [assistant] enabled = true before "
+            "starting remote frontends."
+        ]
+
     frontends_enabled = _platform_frontends_enabled(assistant_cfg)
 
     errors: list[str] = []
     if frontends_enabled["telegram"] and not assistant_cfg.telegram.bot_token:
         errors.append("Telegram assistant is enabled but bot_token is missing.")
+    if frontends_enabled["telegram"] and not assistant_cfg.telegram.allowed_users:
+        errors.append(
+            "Telegram assistant requires at least one allowed user. Set "
+            "[assistant.telegram] allowed_users = [123456789]."
+        )
 
     if frontends_enabled["wechat"]:
         errors.extend(_validate_wechat_frontend_config(assistant_cfg.wechat))
@@ -119,6 +131,11 @@ def _validate_wechat_frontend_config(wechat_cfg: Any) -> list[str]:
         errors.append(
             f"WeChat assistant is enabled but home_channel is missing. {hint}"
         )
+    if not wechat_cfg.allowed_users:
+        errors.append(
+            "WeChat assistant requires at least one allowed user. Set "
+            '[assistant.wechat] allowed_users = ["user@im.wechat"].'
+        )
     return errors
 
 
@@ -128,59 +145,12 @@ def _validate_feishu_frontend_config(feishu_cfg: Any) -> list[str]:
         errors.append("Feishu assistant is enabled but app_id is missing.")
     if not feishu_cfg.app_secret:
         errors.append("Feishu assistant is enabled but app_secret is missing.")
+    if not feishu_cfg.allowed_users:
+        errors.append(
+            "Feishu assistant requires at least one allowed user. Set "
+            '[assistant.feishu] allowed_users = ["ou_xxx"].'
+        )
     return errors
-
-
-async def _pick_session(storage) -> str | None:
-    """Interactive session picker shown before the TUI launches.
-
-    Runs a lightweight Textual app with an OptionList so the user can
-    navigate sessions with arrow keys and press Enter to select.
-    Press Esc to start a fresh session instead.
-
-    Returns the selected session_id or None.
-    """
-    from openlist_ani.assistant.frontend.textual_app.app import SessionPickerApp
-
-    sessions = await storage.list_sessions()
-    if not sessions:
-        return None
-
-    picker = SessionPickerApp(sessions)
-    await picker.run_async()
-    return picker.selected_session_id
-
-
-async def _create_cli_frontend(
-    *,
-    loop: Any,
-    llm_cfg: Any,
-    catalog: Any,
-    is_resume: bool,
-) -> Any:
-    from .frontend.textual_app import TextualFrontend
-
-    session_meta = {"model": llm_cfg.openai_model, "frontend": "cli"}
-    await _start_cli_session(loop, session_meta, is_resume)
-    return TextualFrontend(
-        loop,
-        model_name=llm_cfg.openai_model,
-        provider_type=llm_cfg.provider_type,
-        catalog=catalog,
-        session_metadata=session_meta,
-    )
-
-
-async def _start_cli_session(
-    loop: Any, session_meta: dict[str, str], is_resume: bool
-) -> None:
-    if is_resume:
-        selected = await _pick_session(loop.session_storage)
-        if selected is not None:
-            await loop.resume(selected)
-            logger.info(f"CLI resumed session {selected}")
-            return
-    await loop.session_storage.start_new_session(metadata=session_meta)
 
 
 def _create_telegram_frontend(
@@ -188,7 +158,6 @@ def _create_telegram_frontend(
     loop: Any,
     loop_factory: Callable[[], Any],
     assistant_cfg: Any,
-    catalog: Any,
 ) -> Any:
     from .frontend.telegram import TelegramFrontend
 
@@ -198,16 +167,20 @@ def _create_telegram_frontend(
     return TelegramFrontend(
         loop,
         bot_token=bot_token,
-        allowed_users=assistant_cfg.telegram.allowed_users or None,
+        allowed_users=assistant_cfg.telegram.allowed_users,
         loop_factory=loop_factory,
-        catalog=catalog,
     )
 
 
 def _create_wechat_frontend(
-    *, loop: Any, loop_factory: Callable[[], Any], assistant_cfg: Any, catalog: Any
+    *, loop: Any, loop_factory: Callable[[], Any], assistant_cfg: Any
 ) -> Any:
-    from .frontend.messaging import AllowedChatAuthorizer, MessagingFrontend
+    from .frontend.messaging import (
+        AllOfAuthorizer,
+        AllowedChatAuthorizer,
+        AllowedUserAuthorizer,
+        MessagingFrontend,
+    )
     from openlist_ani.integrations.messaging.wechat_ilink import WechatIlinkMessenger
 
     wechat_cfg = assistant_cfg.wechat
@@ -222,14 +195,16 @@ def _create_wechat_frontend(
         messenger=messenger,
         loop=loop,
         loop_factory=loop_factory,
-        authorizer=AllowedChatAuthorizer([wechat_cfg.home_channel]),
+        authorizer=AllOfAuthorizer(
+            AllowedChatAuthorizer([wechat_cfg.home_channel]),
+            AllowedUserAuthorizer(wechat_cfg.allowed_users),
+        ),
         enable_notify_home_command=False,
-        catalog=catalog,
     )
 
 
 def _create_feishu_frontend(
-    *, loop: Any, loop_factory: Callable[[], Any], assistant_cfg: Any, catalog: Any
+    *, loop: Any, loop_factory: Callable[[], Any], assistant_cfg: Any
 ) -> Any:
     from .frontend.messaging import MessagingFrontend
     from openlist_ani.integrations.messaging.feishu import FeishuMessenger
@@ -256,7 +231,6 @@ def _create_feishu_frontend(
         loop_factory=loop_factory,
         state_store=state_store,
         allowed_users=feishu_cfg.allowed_users,
-        catalog=catalog,
     )
 
 
@@ -265,7 +239,6 @@ def _create_messaging_frontends(
     loop: Any,
     loop_factory: Callable[[], Any],
     assistant_cfg: Any,
-    catalog: Any,
 ) -> list[Any]:
     frontends = []
     if _telegram_frontend_enabled(assistant_cfg):
@@ -274,7 +247,6 @@ def _create_messaging_frontends(
                 loop=loop,
                 loop_factory=loop_factory,
                 assistant_cfg=assistant_cfg,
-                catalog=catalog,
             )
         )
     if assistant_cfg.wechat.enabled:
@@ -283,7 +255,6 @@ def _create_messaging_frontends(
                 loop=loop,
                 loop_factory=loop_factory,
                 assistant_cfg=assistant_cfg,
-                catalog=catalog,
             )
         )
     if assistant_cfg.feishu.enabled:
@@ -292,151 +263,109 @@ def _create_messaging_frontends(
                 loop=loop,
                 loop_factory=loop_factory,
                 assistant_cfg=assistant_cfg,
-                catalog=catalog,
             )
         )
     return frontends
 
 
-async def run() -> None:
-    """Build the component chain and start the assistant."""
-    from openlist_ani.adapters.outbound.configuration import config
-
-    from .core.context import ContextBuilder
-    from .core.loop import AgenticLoop
-    from .dream.config import AutoDreamConfig as _AutoDreamConfig
-    from .dream.runner import AutoDreamRunner
-    from .memory.manager import MemoryManager
-    from .provider.factory import create_provider
-    from .session.storage import SessionStorage
-    from .skill.catalog import SkillCatalog
-    from .skill.installer import (
-        migrate_legacy_copied_builtin_skills,
-        prepare_builtin_skills_cache,
-    )
-    from .tool.builtin.agent_tool import AgentTool
-    from .tool.builtin.send_message_tool import SendMessageTool
-    from .tool.builtin.skill_tool import SkillTool
-    from .tool.builtin.grep_tool import GrepTool
-    from .tool.builtin.memory_tool import MemoryTool
-    from .tool.builtin.read_file_tool import ReadFileTool
-    from .tool.builtin.web_fetch_tool import WebFetchTool
-    from .tool.registry import ToolRegistry
-
-    # Configuration
-    assistant_cfg = config.assistant
-    llm_cfg = config.llm
-    frontend_errors = _validate_frontend_config(assistant_cfg)
-    if frontend_errors:
-        for error in frontend_errors:
-            logger.log(FATAL_LEVEL, error)
-        sys.exit(1)
-
-    skills_dir = Path(assistant_cfg.skills_dir)
-    data_dir = Path(assistant_cfg.data_dir)
-
-    builtin_skills_dir = prepare_builtin_skills_cache(data_dir)
-    migrate_legacy_copied_builtin_skills(skills_dir, builtin_skills_dir)
-
-    # Create provider (shared across all loops)
-    provider = create_provider(
-        provider_type=llm_cfg.provider_type,
-        api_key=llm_cfg.openai_api_key,
-        base_url=llm_cfg.openai_base_url,
-        model=llm_cfg.openai_model,
-    )
-
-    # Create memory manager (directory-based memory + CLAUDE.md)
-    memory = MemoryManager(
-        data_dir=data_dir,
-        project_root=Path.cwd(),
-    )
-
-    # Run data migration if needed (old flat-file -> directory-based)
-    await memory.migrate_if_needed()
-
-    # Create auto-dream runner
-    dream_cfg = assistant_cfg.auto_dream
-    auto_dream_runner = AutoDreamRunner(
-        config=_AutoDreamConfig(
-            enabled=dream_cfg.enabled,
-            min_hours=dream_cfg.min_hours,
-            min_sessions=dream_cfg.min_sessions,
-        ),
-        provider=provider,
-        memory_dir=data_dir / "memory",
-        sessions_dir=data_dir / "sessions",
-        data_dir=data_dir,
-    )
-
-    # Discover skills
-    catalog = SkillCatalog(
-        builtin_skills_dir=builtin_skills_dir,
-        user_skills_dir=skills_dir,
-    )
-    catalog.discover()
-
-    sessions_dir = data_dir / "sessions"
-
-    def _build_loop() -> AgenticLoop:
-        """Factory function to create an AgenticLoop with fresh state.
-
-        Each loop gets its own tool registry, context builder, and
-        session storage instance (so per-chat file handles don't
-        collide).  Provider, memory, skill catalog, and auto-dream
-        runner are shared.
-        """
-        registry = ToolRegistry()
-        registry.register(SkillTool(catalog))
-
-        registry.register(SendMessageTool())
-        registry.register(AgentTool(provider, registry))
-        registry.register(WebFetchTool(provider, registry))
-        registry.register(MemoryTool(memory.memory_dir))
-        registry.register(ReadFileTool())
-        registry.register(GrepTool())
-
-        context = ContextBuilder(
-            memory,
-            catalog,
-            model_name=llm_cfg.openai_model,
-            provider_type=llm_cfg.provider_type,
-            tools=registry.all_tools(),
-        )
-        # Each loop gets its own SessionStorage instance pointing at the
-        # shared sessions/ directory.  This avoids file-handle conflicts
-        # when multiple Telegram chats are active concurrently.
-        loop_session_storage = SessionStorage(sessions_dir)
-        return AgenticLoop(
-            provider,
-            registry,
-            context,
-            memory,
-            session_storage=loop_session_storage,
-            auto_dream_runner=auto_dream_runner,
-        )
-
-    # Create the primary loop
-    loop = _build_loop()
-
-    # Select frontend
-    is_cli = "--cli" in sys.argv
-    is_resume = "--resume" in sys.argv
-    frontends: list[Any] = []
-
+def _ensure_valid_frontend_config(assistant_cfg: Any, *, is_cli: bool) -> None:
     if is_cli:
-        frontend = await _create_cli_frontend(
-            loop=loop,
-            llm_cfg=llm_cfg,
-            catalog=catalog,
-            is_resume=is_resume,
+        return
+    frontend_errors = _validate_frontend_config(assistant_cfg)
+    if not frontend_errors:
+        return
+    for error in frontend_errors:
+        logger.log(FATAL_LEVEL, error)
+    raise SystemExit(1)
+
+
+async def _prepare_agent_runtime(source: Any, config_path: Path) -> None:
+    agent_name = "pi" if source is None or source.type == "api" else source.agent
+    if agent_name != "pi":
+        return
+    from .harness.adapters import get_agent_adapter
+    from .harness.pi_runtime import ensure_pi_shell
+
+    configured_executable = (
+        source.executable if source is not None and source.type == "agent" else ""
+    )
+    logger.info("Preparing the Pi agent runtime...")
+    executable = await get_agent_adapter("pi").resolve_executable(
+        configured_executable,
+        config_path=config_path,
+    )
+    logger.info(f"Pi agent runtime is ready: {executable}")
+    if sys.platform == "win32":
+        logger.info("Preparing Pi's managed Git Bash runtime...")
+        shell = await asyncio.to_thread(ensure_pi_shell, config_path=config_path)
+        logger.info(f"Pi shell runtime is ready: {shell}")
+
+
+async def _serve_frontends(*, cli_frontend: Any | None, frontends: list[Any]) -> None:
+    if cli_frontend is not None:
+        await cli_frontend.run()
+        return
+    await asyncio.gather(*(frontend.run() for frontend in frontends))
+
+
+async def _shutdown_frontends(frontends: list[Any], loop: Any) -> None:
+    logger.info("Shutting down assistant - cleaning up resources")
+    for running_frontend in frontends:
+        shutdown = getattr(running_frontend, "shutdown", None)
+        if shutdown is not None:
+            await shutdown()
+    await loop.shutdown()
+
+
+async def run() -> None:
+    """Start the thin frontend-to-agent-harness bridge."""
+    from .harness.cli import HarnessCLIFrontend
+    from .harness.loop import HarnessLoop
+    from .harness.runtime import create_harness_session
+    from .builtin_skills import PLUGIN_ROOT, SKILLS_ROOT
+    from .builtin_skills._migration import (
+        migrate_legacy_copied_builtin_skills,
+    )
+    from openlist_ani.adapters.configuration import config
+
+    if config.load_failed:
+        logger.log(FATAL_LEVEL, "Configuration could not be parsed; exiting")
+        raise SystemExit(1)
+
+    assistant_cfg = config.assistant
+    is_cli = "--cli" in sys.argv
+    _ensure_valid_frontend_config(assistant_cfg, is_cli=is_cli)
+
+    selected = config.data.resolve_assistant_source()
+    source_name = selected[0] if selected else "builtin-pi"
+    source = selected[1] if selected else None
+    config_path = config.config_path
+
+    await _prepare_agent_runtime(source, config_path)
+
+    skills_dir = Path(assistant_cfg.skills_dir).expanduser()
+    migrate_legacy_copied_builtin_skills(skills_dir, SKILLS_ROOT)
+
+    def _build_loop() -> HarnessLoop:
+        return HarnessLoop(
+            lambda: create_harness_session(
+                source,
+                builtin_plugin_root=PLUGIN_ROOT,
+                user_skills_root=skills_dir,
+                config_path=config_path,
+            )
         )
+
+    loop = _build_loop()
+    frontends: list[Any] = []
+    cli_frontend: Any | None = None
+    if is_cli:
+        cli_frontend = HarnessCLIFrontend(loop)
     else:
         frontends = _create_messaging_frontends(
             loop=loop,
             loop_factory=_build_loop,
             assistant_cfg=assistant_cfg,
-            catalog=catalog,
         )
         if not frontends:
             logger.log(
@@ -447,33 +376,32 @@ async def run() -> None:
             sys.exit(1)
 
     logger.info(
-        f"Starting assistant ({llm_cfg.provider_type} / {llm_cfg.openai_model}); "
+        f"Starting harness-backed assistant (source={source_name}); "
         f"frontends={_enabled_frontend_names(assistant_cfg)}"
     )
     try:
-        if is_cli:
-            await frontend.run()
-        else:
-            await asyncio.gather(*(frontend.run() for frontend in frontends))
+        await _serve_frontends(cli_frontend=cli_frontend, frontends=frontends)
     finally:
-        logger.info("Shutting down assistant - cleaning up resources")
-        for running_frontend in frontends:
-            shutdown = getattr(running_frontend, "shutdown", None)
-            if shutdown is not None:
-                await shutdown()
-        await loop.shutdown()
-        await provider.close()
+        await _shutdown_frontends(frontends, loop)
 
 
 def main() -> None:
     """Console script entry point."""
+    from openlist_ani.adapters.configuration import get_config
+
     is_cli = "--cli" in sys.argv
 
     # Suppress noisy third-party loggers (stdlib logging side)
     for noisy_logger in ("httpx", "httpcore", "urllib3", "asyncio"):
         logging.getLogger(noisy_logger).setLevel(logging.WARNING)
 
-    _configure_assistant_logger(is_cli=is_cli)
+    runtime_config = get_config()
+    _configure_assistant_logger(
+        is_cli=is_cli,
+        level=runtime_config.log.level,
+        rotation=runtime_config.log.rotation,
+        retention=runtime_config.log.retention,
+    )
 
     try:
         asyncio.run(run())

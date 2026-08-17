@@ -1,0 +1,209 @@
+"""HTTP service facade for API schema conversion."""
+
+from __future__ import annotations
+
+from typing import Any
+from openlist_ani.application.service import DownloadView, ReleaseView
+
+from .schemas import (
+    CreateDownloadResponse,
+    DownloadItemResponse,
+    DownloadPreflightResponse,
+    DownloadTaskResponse,
+    ParseRSSEntry,
+    ParseRSSResponse,
+    PolicyConflictResponse,
+    ResolveMagnetFile,
+    ResolveMagnetResponse,
+    ResolveTorrentResponse,
+)
+
+
+def _build_policy_conflicts(conflicts) -> list[PolicyConflictResponse]:
+    return [
+        PolicyConflictResponse(
+            key=item.key,
+            code=item.code,
+            reason=item.reason,
+            matched=item.matched,
+            details=dict(item.details),
+        )
+        for item in conflicts
+    ]
+
+
+def _build_task_response(task: DownloadView) -> DownloadTaskResponse:
+    return DownloadTaskResponse(
+        id=task.id,
+        title=task.title,
+        download_url=task.download_url,
+        state=task.state,
+        anime_name=task.anime_name,
+        season=task.season,
+        episode=task.episode,
+        fansub=task.fansub,
+        quality=task.quality.value if task.quality else None,
+        error_message=task.error_message,
+        retry_count=task.retry_count,
+        created_at=task.created_at,
+        updated_at=task.updated_at,
+        started_at=task.started_at,
+        completed_at=task.completed_at,
+        save_path=task.save_path,
+        final_path=task.final_path,
+        final_paths=list(task.final_paths),
+        warning_count=task.warning_count,
+        items=[
+            DownloadItemResponse(
+                item_key=item.item_key,
+                state=item.state,
+                source_path=item.source_path,
+                final_path=item.final_path,
+                error=item.error,
+                anime_name=item.anime_name,
+                season=item.season,
+                episode=item.episode,
+            )
+            for item in task.items
+        ],
+    )
+
+
+def _build_parse_entry(index: int, release: ReleaseView) -> ParseRSSEntry:
+    return ParseRSSEntry(
+        index=index,
+        title=release.title,
+        download_url=release.download_url,
+        anime_name=release.anime_name,
+        episode=release.episode,
+        fansub=release.fansub,
+        quality=release.quality.value if release.quality else None,
+        languages=[lang.value for lang in release.languages],
+    )
+
+
+def _build_magnet_response(result) -> ResolveMagnetResponse:
+    return ResolveMagnetResponse(
+        success=result.success,
+        message=result.message,
+        title=result.title,
+        source=result.source,
+        error_code=result.error_code,
+        file_count=result.file_count,
+        files=[ResolveMagnetFile(name=f.name, size=f.size) for f in result.files],
+    )
+
+
+class BackendApiService:
+    """Singleton bridge between FastAPI routes and application use cases."""
+
+    _instance: BackendApiService | None = None
+
+    def __init__(self, application_service: Any) -> None:
+        self._application_service = application_service
+
+    @classmethod
+    def init(cls, application_service: Any) -> BackendApiService:
+        cls._instance = cls(application_service)
+        return cls._instance
+
+    @classmethod
+    def get(cls) -> BackendApiService:
+        if cls._instance is None:
+            raise RuntimeError("BackendApiService not initialized")
+        return cls._instance
+
+    def add_rss_url(self, url: str) -> tuple[bool, str, list[str]]:
+        return self._application_service.add_rss_url(url)
+
+    async def create_download(
+        self,
+        download_url: str,
+        title: str,
+        *,
+        collection_hint: bool = False,
+        override_policy: bool = False,
+        acknowledged_conflicts: tuple[str, ...] = (),
+        policy_review_token: str | None = None,
+    ) -> CreateDownloadResponse:
+        outcome = await self._application_service.create_download(
+            download_url,
+            title,
+            collection_hint=collection_hint,
+            override_policy=override_policy,
+            acknowledged_conflicts=acknowledged_conflicts,
+            policy_review_token=policy_review_token,
+        )
+        return CreateDownloadResponse(
+            success=outcome.success,
+            message=outcome.message,
+            task=_build_task_response(outcome.task) if outcome.task else None,
+            confirmation_required=outcome.confirmation_required,
+            policy_conflicts=_build_policy_conflicts(outcome.policy_conflicts),
+            policy_warnings=list(outcome.policy_warnings),
+            policy_review_token=outcome.policy_review_token,
+        )
+
+    async def preflight_download(
+        self,
+        download_url: str,
+        title: str,
+        *,
+        collection_hint: bool = False,
+    ) -> DownloadPreflightResponse:
+        outcome = await self._application_service.preflight_download(
+            download_url, title, collection_hint=collection_hint
+        )
+        return DownloadPreflightResponse(
+            success=outcome.success,
+            message=outcome.message,
+            confirmation_required=outcome.confirmation_required,
+            policy_conflicts=_build_policy_conflicts(outcome.policy_conflicts),
+            policy_warnings=list(outcome.policy_warnings),
+            policy_review_token=outcome.policy_review_token,
+        )
+
+    async def list_downloads(self) -> list[DownloadTaskResponse]:
+        return [
+            _build_task_response(task)
+            for task in await self._application_service.list_downloads()
+        ]
+
+    async def get_download(self, task_id: str) -> DownloadTaskResponse | None:
+        task = await self._application_service.get_download(task_id)
+        return _build_task_response(task) if task else None
+
+    def health(self) -> dict:
+        return self._application_service.health()
+
+    async def parse_rss(
+        self,
+        url: str,
+        limit: int | None = None,
+    ) -> ParseRSSResponse:
+        outcome = await self._application_service.parse_rss(url, limit)
+        entries = outcome.entries or []
+        return ParseRSSResponse(
+            success=outcome.success,
+            message=outcome.message,
+            total=outcome.total,
+            entries=[
+                _build_parse_entry(index, release)
+                for index, release in enumerate(entries)
+            ],
+        )
+
+    async def resolve_magnet(
+        self,
+        magnet: str,
+        metadata_timeout: int = 30,
+    ) -> ResolveMagnetResponse:
+        result = await self._application_service.resolve_magnet(
+            magnet, metadata_timeout=metadata_timeout
+        )
+        return _build_magnet_response(result)
+
+    async def resolve_torrent(self, url: str) -> ResolveTorrentResponse:
+        result = await self._application_service.resolve_torrent(url)
+        magnet_response = _build_magnet_response(result)
+        return ResolveTorrentResponse(**magnet_response.model_dump())

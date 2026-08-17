@@ -1,0 +1,379 @@
+# 源码编译指南
+
+从源码编译适合开发者或需要自定义修改的用户。
+
+## 环境要求
+
+- **Python** 3.11、3.12 或 3.13
+- **libtorrent** ≥ 2.0.13 且 < 2.1（当前锁定版本为 2.0.13）
+- **Git**
+- **uv**（Python 包管理器，推荐）
+
+## 第一步：安装 uv
+
+[uv](https://github.com/astral-sh/uv) 是本项目使用的包管理器。
+
+### Linux / macOS
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+### Windows
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+### 验证安装
+
+```bash
+uv --version
+```
+
+## 第二步：克隆仓库
+
+```bash
+git clone https://github.com/TwooSix/Openlist-Ani.git
+cd Openlist-Ani
+```
+
+### 切换到稳定版本
+
+`master` 分支是开发分支，不保证稳定。Release 版本以 tag 为准。建议切换到最新 Release tag：
+
+```bash
+# 获取并查看所有版本号
+git fetch --tags
+git tag --sort=-v:refname
+
+# 切换到指定版本（将版本号替换为 Release 页面中的版本号）
+git checkout tags/v1.0.0.dev260517
+```
+
+## 第三步：安装依赖
+
+```bash
+# 安装运行时依赖
+uv sync --no-dev --frozen
+
+# 如果需要开发环境（包含测试、lint 等工具）
+uv sync --frozen
+```
+
+Assistant 的默认 Pi harness 无需 Node.js/npm。首次启动时会自动下载并校验
+项目锁定的官方独立包；已有 Pi 或 source 中显式配置的 `executable` 会优先复用。
+Windows 缺少 Bash 时会同时准备固定版本和校验值的官方 PortableGit，仅放在项目
+runtime 目录中，不修改系统安装或全局 PATH。
+
+Windows x64 会在 Python 3.11、3.12 和 3.13 上验证锁定依赖及 `libtorrent` 原生导入。
+源码环境出现导入错误时，请先更新到最新 Release，并用受支持的 Python 重新同步依赖：
+
+```powershell
+uv sync --no-dev --frozen
+uv run python -c "import libtorrent as lt; print(lt.__version__)"
+```
+
+如果仍然失败，请用受支持的 Python 新建干净的虚拟环境后再同步；不要从其他软件目录
+复制 DLL。当前 CI 只验证 Windows x64，不对其他架构作兼容性承诺。
+
+## 第四步：创建配置文件
+
+复制示例配置文件：
+
+```bash
+cp config.toml.example config.toml
+```
+
+然后编辑 `config.toml`，以下是**完整配置说明**：
+
+```toml
+# ============================================================
+# Openlist-Ani 完整配置文件
+# ============================================================
+config_version = 2
+
+# ---------- 后端 API ----------
+[backend]
+host = "127.0.0.1"   # 绑定地址
+port = 26666          # 监听端口
+
+# ---------- RSS 订阅 ----------
+[rss]
+urls = [
+    # 在此添加你的 RSS 链接
+    # "https://mikanani.me/RSS/MyBangumi?token=xxx"
+]
+interval_time = 300   # 抓取间隔（秒）
+
+# ---------- 下载优先级（可选） ----------
+# 同一番剧同集存在多个资源时，按优先级自动过滤
+# [rss.priority]
+# field_order = ["fansub", "quality", "languages"]  # 比较顺序
+# fansub = []                # 字幕组优先级（靠前优先）
+# quality = ["2160p", "1080p", "720p", "480p", "360p"]  # 清晰度优先级
+# languages = []             # 语言优先级，可选: "简", "繁", "日", "英"
+
+# ---------- 代理（可选） ----------
+[proxy]
+http = ""     # HTTP 代理
+https = ""    # HTTPS 代理
+
+# ---------- 下载与 OpenList ----------
+[downloader]
+download_path = "/PikPak/Anime"
+rename_format = "{anime_name} S{season:02d}E{episode:02d} {fansub} {quality} {languages}"
+
+[downloader.openlist]
+url = "http://localhost:5244"
+token = ""
+offline_download_tool = "qBittorrent"
+
+[metadata]
+pipeline = ["regex", "tmdb"]
+# ai_source = "primary"
+
+[metadata.tmdb]
+language = "zh-CN"
+
+# [ai.sources.primary]
+# type = "api"
+# provider = "openai-compatible"
+# api_key = "sk-xxx"
+# base_url = "https://api.deepseek.com/v1"
+# model = "deepseek-chat"
+
+# ---------- 通知（可选） ----------
+[notification]
+enabled = false
+batch_interval = 300.0
+
+# Telegram 通知
+# [[notification.bots]]
+# type = "telegram"
+# enabled = true
+# config = { bot_token = "你的Bot Token", user_id = "你的用户ID" }
+
+# PushPlus 微信通知
+# [[notification.bots]]
+# type = "pushplus"
+# enabled = true
+# config = { user_token = "你的Token", channel = "wechat" }
+
+# ---------- AI 智能助理（可选） ----------
+[assistant]
+enabled = false
+
+[assistant.telegram]
+bot_token = ""
+allowed_users = [123456789]  # 必填；只有这些用户可以使用 Assistant
+
+# ---------- Bangumi（可选） ----------
+[bangumi]
+access_token = ""
+
+# ---------- Mikan（可选） ----------
+[mikan]
+username = ""
+password = ""
+
+# ---------- 日志 ----------
+[log]
+level = "INFO"
+rotation = "00:00"
+retention = "1 week"
+```
+
+## 第五步：配置必填项与推荐项
+
+### 1. RSS 订阅链接
+
+```toml
+[rss]
+urls = ["https://mikanani.me/RSS/MyBangumi?token=你的token"]
+```
+
+### 2. Openlist 配置
+
+```toml
+[downloader]
+download_path = "/PikPak/Anime"
+
+[downloader.openlist]
+url = "http://localhost:5244"
+token = "你的令牌"
+offline_download_tool = "qBittorrent"
+```
+
+### 3. 推荐：AI + TMDB
+
+推荐配置 AI source 做标题解析，并继续使用 TMDB 做校验；如果不配置 source，主程序使用默认的 `regex` + `tmdb`。
+
+```toml
+[metadata]
+pipeline = ["ai", "tmdb"]
+ai_source = "primary"
+
+[ai.sources.primary]
+type = "api"
+provider = "openai-compatible"
+api_key = "sk-xxx"
+base_url = "https://api.deepseek.com/v1"
+model = "deepseek-chat"
+```
+
+## 第六步：启动
+
+### 启动主程序
+
+```bash
+uv run openlist-ani
+```
+
+### 启动 AI 助理（可选）
+
+先在 `config.toml` 中配置助理：
+
+```toml
+[assistant]
+enabled = true
+
+[assistant.telegram]
+bot_token = "你的Bot Token"
+allowed_users = [123456789]
+```
+
+然后在另一个终端中运行：
+
+```bash
+uv run openlist-ani-assistant
+```
+
+> 助理支持两种运行模式：
+> - **Telegram 模式**（默认）：通过 Telegram Bot 交互
+> - **CLI 模式**：本地终端交互界面，添加 `--cli` 参数启动
+>
+> ```bash
+> uv run openlist-ani-assistant --cli          # 本地 CLI 模式
+> ```
+
+## 启用通知
+
+### Telegram 通知
+
+1. 向 [@BotFather](https://t.me/BotFather) 发送 `/newbot` 创建 Bot，获取 `bot_token`
+2. 向 [@userinfobot](https://t.me/userinfobot) 发送消息获取你的 `user_id`
+3. 配置：
+
+```toml
+[notification]
+enabled = true
+
+[[notification.bots]]
+type = "telegram"
+enabled = true
+config = { bot_token = "123456:ABC-DEF...", user_id = "你的UserID" }
+```
+
+### PushPlus 微信通知
+
+```toml
+[notification]
+enabled = true
+
+[[notification.bots]]
+type = "pushplus"
+enabled = true
+config = { user_token = "你的Token", channel = "wechat" }
+```
+
+## 启用 Bangumi 和 Mikan
+
+```toml
+[bangumi]
+access_token = "你的Bangumi Token"
+
+[mikan]
+username = "你的Mikan用户名"
+password = "你的Mikan密码"
+```
+
+## 开发相关
+
+### 运行测试
+
+```bash
+uv run pytest
+```
+
+### 代码格式化
+
+```bash
+uv run black src/
+uv run ruff check src/ --fix
+```
+
+### 项目结构
+
+```
+Openlist-Ani/
+├── config.toml              # 配置文件
+├── pyproject.toml            # 项目元数据 & 依赖
+├── src/openlist_ani/
+│   ├── bootstrap/            # 进程启动、关闭、依赖装配
+│   ├── adapters/             # HTTP、OpenList、RSS、元数据、通知与持久化
+│   ├── application/          # Scheduler、worker、ports 与应用服务
+│   ├── domain/               # release、metadata、job、naming、policies
+│   └── assistant/            # AI 智能助理
+│       └── builtin_skills/   # 随包发布的内置助理技能
+├── tests/                    # 测试用例
+├── data/                     # 运行时数据
+├── docker/                   # Docker 相关文件
+└── docs/                     # 文档（同步至 Wiki）
+```
+
+## 后台运行
+
+### 使用 tmux
+
+```bash
+# 启动主程序
+tmux new-session -d -s oani 'cd /path/to/Openlist-Ani && uv run openlist-ani'
+
+# 启动助理
+tmux new-session -d -s oani-assistant 'cd /path/to/Openlist-Ani && uv run openlist-ani-assistant'
+```
+
+### 使用 systemd
+
+创建 `/etc/systemd/system/openlist-ani.service`：
+
+```ini
+[Unit]
+Description=Openlist-Ani
+After=network.target
+
+[Service]
+Type=simple
+User=你的用户名
+WorkingDirectory=/path/to/Openlist-Ani
+ExecStart=/path/to/.local/bin/uv run openlist-ani
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl enable --now openlist-ani
+```
+
+## 更新到最新版本
+
+```bash
+cd /path/to/Openlist-Ani
+git fetch --tags
+git checkout tags/v最新版本号
+uv sync --no-dev --frozen
+```

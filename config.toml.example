@@ -1,3 +1,5 @@
+config_version = 2
+
 [backend]
 host = "127.0.0.1"  # Backend API bind address (127.0.0.1 = localhost only)
 port = 26666  # Backend API listening port
@@ -6,6 +8,7 @@ port = 26666  # Backend API listening port
 urls = []
 interval_time = 300 # RSS fetch interval in seconds (default: 5 minutes)
 strict = false  # Strict mode: only download entries that can be successfully renamed (requires rename_format)
+torrent_to_magnet = false  # Convert eligible HTTP(S) torrent URLs to magnet links before they enter the download queue
 
 [rss.filter]
 exclude_patterns = []  # Regex patterns to exclude RSS entries by title (e.g. ["SP\\d+", "HEVC"])
@@ -24,38 +27,43 @@ http = ""  # HTTP proxy URL (e.g., "http://127.0.0.1:7890")
 https = ""  # HTTPS proxy URL (e.g., "http://127.0.0.1:7890")
 
 [downloader]
-provider = "openlist"  # Download adapter implementation
+download_path = "/"
+rename_format = "{anime_name} S{season:02d}E{episode:02d} {fansub} {quality} {languages}"
+# `year` is the TMDB series premiere year, e.g. "{anime_name} ({year}) S{season:02d}E{episode:02d}"
 
-[file_renamer]
-provider = "openlist"  # File rename adapter implementation
-
-[metadata_parser]
-# Recommended: "llm" + [metadata_validator].provider = "tmdb".
-# Runtime default without an LLM key is "regex" + "tmdb".
-# If openai_api_key is configured and this provider is omitted, "llm" is selected automatically.
-provider = "llm"  # Title parser: "llm" or "regex"
-
-[metadata_validator]
-provider = "tmdb"  # Metadata validator: "tmdb" or "none"
-
-[openlist]
+[downloader.openlist]
 url = "http://localhost:5244"
 token = ""
-download_path = "/"
 offline_download_tool = "qBittorrent"  # Supported: aria2, qBittorrent, PikPak, 115 Cloud, 115 Open, 123Pan, 123 Open, SimpleHttp, Thunder, ThunderBrowser, ThunderX, Transmission
-rename_format = "{anime_name} S{season:02d}E{episode:02d} {fansub} {quality} {languages}"
 
-[llm]
-openai_api_key = ""  # Required for metadata_parser.provider = "llm" and for assistant.enabled = true
-openai_base_url = "https://api.openai.com/v1"
-openai_model = "gpt-4o"
-tmdb_api_key = ""  # Built-in default key provided; only set this to override with your own TMDB key
-tmdb_language = "zh-CN"  # TMDB metadata language: zh-CN (Chinese), en-US (English), ja-JP (Japanese), etc.
-# provider_type = "openai"  # LLM provider: "openai" or "anthropic"
+[metadata]
+# Default when AI is not enabled. The recommended pipeline is ["ai", "tmdb"];
+# title extraction must come before TMDB, which cannot run by itself.
+pipeline = ["regex", "tmdb"]
+# ai_source = "primary"  # Optional; defaults to the first [ai.sources.*] table
+
+[metadata.tmdb]
+# api_key = ""  # A built-in default is used when omitted
+language = "zh-CN"
+
+# API source example. Assistant sessions still run through the built-in Pi harness.
+# [ai.sources.primary]
+# type = "api"
+# provider = "openai-compatible"  # or "anthropic-messages"
+# api_key = "sk-xxx"
+# model = "gpt-5-mini"
+# base_url = "https://api.openai.com/v1"  # optional; official URL is the default
+
+# Native agent source example.
+# [ai.sources.chat]
+# type = "agent"
+# agent = "pi"  # pi, claude-code, or codex
+# executable = "pi"  # optional
+# model = ""  # optional; empty uses the agent's native configuration
 
 [notification]
 enabled = false  # Enable/disable notification system
-batch_interval = 300.0  # Batch notifications interval in seconds (default: 300 = 5 minutes, set to 0 to send immediately)
+batch_interval = 300.0  # Durable bounded batch window in seconds; 0 sends each item immediately
 
 # Telegram bot configuration (optional)
 # [[notification.bots]]
@@ -85,16 +93,14 @@ batch_interval = 300.0  # Batch notifications interval in seconds (default: 300 
 
 [assistant]
 enabled = false  # Enable/disable assistant module
-# max_context_tokens = 128000  # Max context window size
-# session_compact_threshold = 100000  # When to compact session history
-# skills_dir = "skills"  # User skill directory; same-name skills override built-ins
-# data_dir = "data/assistant"  # Assistant data/memory directory
+# backend = "primary"  # Optional; defaults to the first [ai.sources.*] table
+# skills_dir = "skills"  # Pi/Claude load directly; Codex gets a temporary link projection
 
 # Telegram assistant configuration (optional)
 [assistant.telegram]
 enabled = false
 bot_token = ""  # Telegram bot token from @BotFather
-allowed_users = []  # List of allowed Telegram user IDs (empty = allow all)
+allowed_users = [123456789]  # Required: Telegram user IDs allowed to use Assistant
 
 # WeChat iLink assistant configuration (optional)
 # Run `openlist-ani-wechat-login` first, then copy account_id/token here.
@@ -104,7 +110,7 @@ account_id = ""
 token = ""
 base_url = "https://ilinkai.weixin.qq.com"
 home_channel = ""  # WeChat chat_id captured by setup; assistant only accepts this conversation
-dm_policy = "open"
+allowed_users = ["user@im.wechat"]  # Required: allowed WeChat sender IDs
 
 # Feishu/Lark assistant configuration (optional)
 [assistant.feishu]
@@ -119,13 +125,7 @@ webhook_path = "/feishu/webhook"  # used only when connection_mode = "webhook"
 bot_open_id = ""   # Optional; improves group @mention detection
 require_mention = true
 state_dir = "data/messaging"  # Directory for /set-notify-home target
-allowed_users = [] # Feishu open_id/user_id allowlist; empty = allow all admitted users
-
-# Auto memory consolidation (optional)
-# [assistant.auto_dream]
-# enabled = true  # Enable auto memory consolidation
-# min_hours = 24.0  # Min hours between consolidations
-# min_sessions = 5  # Min sessions before consolidation
+allowed_users = ["ou_xxx"] # Required: Feishu open_id/user_id allowlist
 
 [bangumi]
 access_token = ""  # Bangumi API Access Token (also supports env var BANGUMI_TOKEN)

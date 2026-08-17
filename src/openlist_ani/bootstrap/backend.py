@@ -1,288 +1,479 @@
-"""
-Backend process entry point.
+"""Backend entry point for the durable modular-monolith runtime."""
 
-Orchestrates the full application lifecycle:
-- Database initialization
-- Downloader, event manager, memento store
-- Pipeline runtime
-- FastAPI API server (uvicorn)
-"""
+from __future__ import annotations
 
 import asyncio
 import sys
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 
+import aiohttp
 import uvicorn
 
-from openlist_ani.adapters.inbound.http.app import create_app
-from openlist_ani.adapters.inbound.http.service import BackendApiService
-from openlist_ani.adapters.outbound.configuration import ConfigValidator, config
-from openlist_ani.adapters.outbound.downloaders import (
-    DownloaderRegistry,
-    OpenListDownloader,
+from openlist_ani.adapters.configuration import (
+    ConfigValidator,
+    compile_core_settings,
+    get_config,
+    validate_core_settings,
 )
-from openlist_ani.adapters.outbound.events import OAniEventManager
-from openlist_ani.adapters.outbound.feed_sources import (
-    FeedSourceFactory,
-    ReleaseFeedReader,
+from openlist_ani.adapters.download_backends import (
+    OpenListDownloadAdapter,
+    OpenListOrganizerAdapter,
 )
-from openlist_ani.adapters.outbound.file_renamers import (
-    FileRenamerRegistry,
-    OpenListFileRenamer,
+from openlist_ani.adapters.download_backends.openlist import (
+    OpenListClient,
+    OpenListHealthCheck,
 )
-from openlist_ani.adapters.outbound.metadata_parser import (
-    MetadataParserAdapter,
-    MetadataParserRegistry,
-    MetadataParserSettings,
+from openlist_ani.adapters.feed_sources import (
+    AniApiFeedAdapter,
+    CommonFeedAdapter,
+    MikanFeedAdapter,
 )
-from openlist_ani.adapters.outbound.metadata_validator import (
-    MetadataValidatorRegistry,
+from openlist_ani.adapters.http.app import create_app
+from openlist_ani.adapters.http.service import BackendApiService
+from openlist_ani.adapters.metadata_sources import (
+    LlmMetadataProvider,
+    RegexMetadataProvider,
+)
+from openlist_ani.adapters.configuration.models import AISourceConfig
+from openlist_ani.adapters.metadata_sources.llm.source import create_source_client
+from openlist_ani.adapters.metadata_sources.llm import (
+    LLMClientSettings,
+    create_llm_client,
+)
+from openlist_ani.adapters.metadata_sources.tmdb import (
+    create_tmdb_metadata_provider,
+)
+from openlist_ani.adapters.metadata_sources.tmdb.settings import (
     MetadataValidatorSettings,
-    NullMetadataValidator,
 )
-from openlist_ani.adapters.outbound.metadata_validator.tmdb import (
-    create_tmdb_metadata_validator,
-)
-from openlist_ani.adapters.outbound.notifications import (
-    NotificationManager,
-    NotificationManagerFactory,
+from openlist_ani.adapters.notifications import (
     NotificationBotSettings,
+    NotificationManagerFactory,
     NotificationSettings,
 )
-from openlist_ani.adapters.outbound.persistence import (
-    SqliteAnimeLibraryRepository,
-    SqliteTaskMementoStore,
+from openlist_ani.adapters.persistence import (
+    Database,
+    LegacyMigrationRunner,
+    SqliteFeedStateRepository,
+    SqliteJobRepository,
+    SqliteLibraryRepository,
+    SqliteMetadataCacheRepository,
+    SqliteOutboxRepository,
 )
-from openlist_ani.adapters.outbound.torrent_metadata import (
+from openlist_ani.adapters.registry import AdapterRegistry
+from openlist_ani.application.download_worker import DownloadWorkerPool
+from openlist_ani.application.feed_scheduler import FeedScheduler
+from openlist_ani.application.metadata_worker import MetadataWorker
+from openlist_ani.application.metadata_pipeline import MetadataPipelineResolver
+from openlist_ani.application.manual_policy import ManualDownloadPolicyInspector
+from openlist_ani.application.notification_worker import NotificationWorker
+from openlist_ani.application.ports import DownloadBackendBundle
+from openlist_ani.application.service import CoreApplicationService
+from openlist_ani.application.settings import CoreSettings
+from openlist_ani.bootstrap.runtime import AppRuntime
+from openlist_ani.adapters.torrent import (
+    LibtorrentUnavailableError,
+    TorrentToMagnetCandidateTransformer,
+    libtorrent_runtime_version,
     resolve_magnet,
     resolve_torrent,
 )
-from openlist_ani.application.anime_library_ingestion import (
-    AnimeLibraryIngestionPipeline,
-)
-from openlist_ani.application.anime_library_ingestion.settings import (
-    AnimeLibraryIngestionSettings,
-    MetadataFilterSettings,
-    PrioritySettings,
-)
-from openlist_ani.application.anime_library_ingestion.application_service import (
-    AnimeLibraryApplicationService,
-)
-from openlist_ani.integrations.openlist import OpenListClient, OpenListHealthCheck
-from openlist_ani.integrations.llm import LLMClientSettings, create_llm_client
 from openlist_ani.logger import FATAL_LEVEL, configure_logger, logger
 
-startup_logger = logger
-api_logger = logger
+# Kept as a lazy compatibility hook for integrations that patched the former
+# module-level configuration object.  Startup itself always loads explicitly.
+config = None
+
+
+@dataclass(frozen=True)
+class _RuntimeAssembly:
+    runtime: AppRuntime
+    application: CoreApplicationService
+    download_backend: DownloadBackendBundle
+    download_backends: tuple[DownloadBackendBundle, ...] = ()
+
+    @property
+    def openlist_client(self):
+        """Compatibility hook for the manual crash-recovery harness."""
+
+        return getattr(self.download_backend.downloader, "_client", None)
 
 
 async def run() -> None:
-    """Start the backend process: API server + background workers."""
+    config, core_settings = _load_runtime_config()
+    _log_libtorrent_runtime()
+    _log_startup_summary(config, core_settings)
+    await asyncio.to_thread(LegacyMigrationRunner().run)
+    assembly = await _compose_runtime(config, core_settings)
+
+    try:
+        await _check_download_backend_health(assembly)
+        await assembly.runtime.start()
+        BackendApiService.init(assembly.application)
+        server = _create_api_server(config)
+        logger.info(
+            f"Backend API server listening on {config.backend.host}:"
+            f"{config.backend.port}"
+        )
+        try:
+            await server.serve()
+        except asyncio.CancelledError:
+            server.should_exit = True
+            raise
+    finally:
+        logger.info("Shutting down...")
+        await assembly.runtime.stop()
+
+
+def _log_libtorrent_runtime() -> None:
+    """Expose native dependency failures at startup instead of first use."""
+    try:
+        version = libtorrent_runtime_version()
+    except LibtorrentUnavailableError as error:
+        logger.warning(
+            "Magnet metadata resolution is unavailable; other backend features "
+            f"will continue to run. {error}"
+        )
+    else:
+        logger.info(f"libtorrent runtime available: version={version}")
+
+
+def _log_startup_summary(config, core_settings: CoreSettings) -> None:
+    """Print the user-facing runtime summary retained from the legacy pipeline."""
+
+    providers = " -> ".join(core_settings.metadata_providers) or "none"
+    enabled_bots = sum(1 for bot in config.notification.bots if bot.enabled)
+    notification_status = (
+        f"enabled ({enabled_bots} target(s))"
+        if config.notification.enabled and enabled_bots
+        else "disabled"
+    )
+    logger.info("=" * 56)
+    logger.info("OpenList-Ani starting")
+    logger.info(f"RSS sources   : {len(config.rss.urls)} configured")
+    logger.info(f"Download path : {core_settings.download_path}")
+    logger.info(f"Metadata      : {providers}")
+    logger.info(f"Downloader    : {core_settings.download_backend}")
+    logger.info(f"OpenList URL  : {config.downloader.openlist.url}")
+    logger.info(f"Notifications : {notification_status}")
+    logger.info(f"Backend API   : {config.backend.host}:{config.backend.port}")
+    logger.info("=" * 56)
+
+
+def _load_runtime_config() -> tuple[object, CoreSettings]:
+    config = get_config()
     configure_logger(
         level=config.log.level,
         rotation=config.log.rotation,
         retention=config.log.retention,
         log_name="openlist_ani",
     )
+    if config.load_failed:
+        logger.log(FATAL_LEVEL, "Configuration could not be parsed; exiting")
+        raise SystemExit(1)
+    if not ConfigValidator(config.data).validate():
+        raise SystemExit(1)
+    core_settings = compile_core_settings(config.data)
+    validate_core_settings(core_settings)
+    return config, core_settings
 
-    if not ConfigValidator(config.data, config.load_failed).validate():
-        startup_logger.log(FATAL_LEVEL, "Configuration validation failed; exiting")
-        sys.exit(1)
 
-    openlist_client = _create_openlist_client()
-    if not await _validate_openlist(openlist_client):
-        startup_logger.log(FATAL_LEVEL, "OpenList validation failed; exiting")
-        await openlist_client.close()
-        sys.exit(1)
+async def _compose_runtime(config, core_settings: CoreSettings) -> _RuntimeAssembly:
+    close_callbacks: list[Callable[[], Awaitable[None]]] = []
+    database = Database("data/data.db")
+    await database.start()
+    close_callbacks.append(database.close)
 
-    _log_startup_summary()
-
-    anime_library_repository = SqliteAnimeLibraryRepository()
-    await anime_library_repository.init()
-
-    event_manager = OAniEventManager()
-    await event_manager.start()
-
-    notification_manager = await _setup_notifications()
-    task_memento_store = SqliteTaskMementoStore(
-        "data/task_mementos.db",
-        legacy_json_path="data/task_mementos.json",
+    feed_session = aiohttp.ClientSession(
+        timeout=aiohttp.ClientTimeout(total=30),
+        trust_env=True,
     )
-    settings = _create_pipeline_settings()
-    metadata_parser = _create_metadata_parser()
-    metadata_validator = _create_metadata_validator()
-    downloader = _create_downloader(openlist_client)
-    file_renamer = _create_file_renamer(openlist_client)
-    pipeline = AnimeLibraryIngestionPipeline(
-        downloader=downloader,
-        file_renamer=file_renamer,
-        task_store=task_memento_store,
-        event_publisher=event_manager,
-        anime_library_repository=anime_library_repository,
-        metadata_parser=metadata_parser,
-        metadata_validator=metadata_validator,
-        settings=settings,
-        feed_reader=ReleaseFeedReader(list(config.rss.urls)),
-        notifier=notification_manager,
-    )
-    await pipeline.start()
-    BackendApiService.init(
-        AnimeLibraryApplicationService(
-            pipeline=pipeline,
-            metadata_parser=metadata_parser,
-            metadata_validator=metadata_validator,
-            anime_library_repository=anime_library_repository,
-            settings=settings,
-            feed_factory=FeedSourceFactory(),
-            resolve_magnet_func=resolve_magnet,
-            resolve_torrent_func=resolve_torrent,
-            get_rss_urls=lambda: list(config.rss.urls),
-            add_rss_url_func=config.add_rss_url,
-        )
-    )
-
-    server = _create_api_server()
-    api_task = asyncio.create_task(server.serve())
-    api_logger.info(
-        f"Backend API server listening on {config.backend.host}:{config.backend.port}"
-    )
-
+    close_callbacks.append(feed_session.close)
     try:
-        await api_task
-    except asyncio.CancelledError:
-        startup_logger.info("Shutting down...")
-        server.should_exit = True
-        await asyncio.gather(api_task, return_exceptions=True)
+        metadata_cache = SqliteMetadataCacheRepository(database)
+        registry = _build_registry(
+            config,
+            core_settings,
+            None,
+            feed_session,
+            metadata_cache,
+        )
+        for bundle in registry.download_backends.values():
+            if bundle.close is not None:
+                close_callbacks.append(bundle.close)
+        close_callbacks.extend(
+            provider.close for provider in registry.metadata.values()
+        )
+        return await _create_runtime_assembly(
+            config,
+            core_settings,
+            database,
+            registry,
+            close_callbacks,
+        )
+    except BaseException:
+        await _close_callbacks(close_callbacks)
         raise
-    except KeyboardInterrupt:
-        startup_logger.info("Interrupted by user.")
-    finally:
-        await pipeline.stop()
-        task_memento_store.atomic_flush()
-        await event_manager.stop()
-        await openlist_client.close()
-        try:
-            await metadata_parser.close()
-        except Exception as e:
-            startup_logger.warning(f"Failed to close metadata parser cleanly: {e}")
-        try:
-            close_validator = getattr(metadata_validator, "close", None)
-            if close_validator is not None:
-                await close_validator()
-        except Exception as e:
-            startup_logger.warning(f"Failed to close metadata validator cleanly: {e}")
-        if notification_manager:
-            await notification_manager.stop()
 
 
-def _log_startup_summary() -> None:
-    parser_provider = config.metadata_parser.provider.strip().lower()
-    validator_provider = config.metadata_validator.provider.strip().lower()
-    startup_logger.info("=" * 56)
-    startup_logger.info("OpenList-Ani starting")
-    startup_logger.info(f"RSS sources   : {len(config.rss.urls)} configured")
-    startup_logger.info(f"Download path : {config.openlist.download_path}")
-    startup_logger.info(
-        f"Metadata     : parser={parser_provider}, validator={validator_provider}"
+async def _create_runtime_assembly(
+    config,
+    core_settings: CoreSettings,
+    database: Database,
+    registry: AdapterRegistry,
+    close_callbacks: list[Callable[[], Awaitable[None]]],
+) -> _RuntimeAssembly:
+    download_backend = registry.download_backend(core_settings.download_backend)
+    jobs = SqliteJobRepository(
+        database,
+        downloader_name=download_backend.name,
+        lease_seconds=core_settings.job_lease_seconds,
     )
-    if parser_provider == "llm" or config.assistant.enabled:
-        startup_logger.info(f"LLM model     : {config.llm.openai_model}")
-    startup_logger.info(f"OpenList URL  : {config.openlist.url}")
-    startup_logger.info(f"Backend API   : {config.backend.host}:{config.backend.port}")
-    startup_logger.info("=" * 56)
+    feeds = SqliteFeedStateRepository(database)
+    library = SqliteLibraryRepository(database)
+    outbox = SqliteOutboxRepository(
+        database,
+        lease_seconds=core_settings.job_lease_seconds,
+    )
+    recovered_jobs = await jobs.recover_interrupted()
+    recovered_notifications = await outbox.recover_interrupted()
+    if recovered_jobs or recovered_notifications:
+        logger.info(
+            "Recovered interrupted durable work: "
+            f"jobs={recovered_jobs}, notifications={recovered_notifications}"
+        )
+    metadata_available = asyncio.Event()
+    download_available = asyncio.Event()
+    notification_available = asyncio.Event()
+
+    scheduler = FeedScheduler(
+        registry=registry,
+        jobs=jobs,
+        feed_state=feeds,
+        get_urls=lambda: list(config.rss.urls),
+        interval_seconds=core_settings.rss_interval_seconds,
+        concurrency=core_settings.feed_concurrency,
+        jobs_available=metadata_available,
+    )
+    metadata_providers = registry.metadata_pipeline(core_settings.metadata_providers)
+    metadata_resolver = MetadataPipelineResolver(metadata_providers)
+    manual_policy_inspector = ManualDownloadPolicyInspector(
+        jobs=jobs,
+        library=library,
+        metadata_resolver=metadata_resolver,
+        settings=core_settings,
+    )
+    metadata_worker = MetadataWorker(
+        jobs=jobs,
+        library=library,
+        providers=metadata_providers,
+        settings=core_settings,
+        jobs_available=metadata_available,
+        download_available=download_available,
+        candidate_transformers=registry.candidate_transformers,
+    )
+    download_workers = DownloadWorkerPool(
+        jobs=jobs,
+        backends=registry,
+        metadata_resolver=metadata_resolver,
+        library=library,
+        settings=core_settings,
+        work_available=download_available,
+        notification_available=notification_available,
+    )
+    notification_manager = await _create_notification_manager(config)
+    if notification_manager is not None:
+        close_callbacks.append(notification_manager.stop)
+    notification_worker = NotificationWorker(
+        outbox=outbox,
+        sink=notification_manager,
+        available=notification_available,
+        batch_interval=config.notification.batch_interval,
+    )
+    runtime = AppRuntime(
+        scheduler=scheduler,
+        metadata_worker=metadata_worker,
+        download_workers=download_workers,
+        notification_worker=notification_worker,
+        download_concurrency=core_settings.download_concurrency,
+        notification_concurrency=1,
+        shutdown_timeout=core_settings.shutdown_timeout_seconds,
+        close_callbacks=close_callbacks,
+    )
+    application = CoreApplicationService(
+        jobs=jobs,
+        library=library,
+        registry=registry,
+        settings=core_settings,
+        config_manager=config,
+        feed_scheduler=scheduler,
+        metadata_available=metadata_available,
+        resolve_magnet_func=resolve_magnet,
+        resolve_torrent_func=resolve_torrent,
+        health_provider=runtime.health,
+        manual_policy_inspector=manual_policy_inspector,
+    )
+    return _RuntimeAssembly(
+        runtime=runtime,
+        application=application,
+        download_backend=download_backend,
+        download_backends=tuple(registry.download_backends.values()),
+    )
 
 
-def _create_openlist_client() -> OpenListClient:
-    return OpenListClient(base_url=config.openlist.url, token=config.openlist.token)
+async def _check_download_backend_health(assembly: _RuntimeAssembly) -> None:
+    bundles = assembly.download_backends or (assembly.download_backend,)
+    for bundle in bundles:
+        check = bundle.health_check
+        if check is None:
+            continue
+        try:
+            healthy = await check()
+            if not healthy:
+                assembly.runtime.set_degraded(
+                    bundle.name,
+                    "health check failed; jobs will retry",
+                )
+                logger.warning(
+                    f"Download backend is degraded: {bundle.name}; "
+                    "health check failed; jobs will retry"
+                )
+            else:
+                logger.info(f"Download backend ready: {bundle.name}")
+        except Exception as error:
+            assembly.runtime.set_degraded(bundle.name, str(error))
+            logger.warning(
+                f"Download backend is degraded: {bundle.name}; error={error}"
+            )
 
 
-async def _validate_openlist(client: OpenListClient) -> bool:
-    return await OpenListHealthCheck(
+async def _close_callbacks(
+    callbacks: list[Callable[[], Awaitable[None]]],
+) -> None:
+    for callback in reversed(callbacks):
+        try:
+            await callback()
+        except Exception as error:
+            logger.warning(f"Startup resource close failed: {error}")
+
+
+def _build_registry(
+    config,
+    core_settings,
+    openlist_client: OpenListClient | None,
+    feed_session: aiohttp.ClientSession,
+    metadata_cache=None,
+) -> AdapterRegistry:
+    registry = AdapterRegistry()
+    registry.register_feed(MikanFeedAdapter(feed_session))
+    registry.register_feed(AniApiFeedAdapter(feed_session))
+    registry.register_feed(CommonFeedAdapter(feed_session))
+    if config.rss.torrent_to_magnet:
+        registry.register_candidate_transformer(TorrentToMagnetCandidateTransformer())
+
+    requested_metadata = set(core_settings.metadata_providers)
+    if "regex" in requested_metadata:
+        registry.register_metadata(RegexMetadataProvider())
+    if "ai" in requested_metadata:
+        client = _metadata_ai_client(config)
+        registry.register_metadata(
+            LlmMetadataProvider(
+                client,
+                disabled_reason=(None if client else "AI source is not configured"),
+            )
+        )
+    if "tmdb" in requested_metadata:
+        registry.register_metadata(
+            create_tmdb_metadata_provider(
+                MetadataValidatorSettings(
+                    tmdb_api_key=config.metadata.tmdb.api_key,
+                    tmdb_language=config.metadata.tmdb.language,
+                ),
+                llm_client=_validator_llm_client(
+                    config, use_llm="ai" in requested_metadata
+                ),
+                cache=metadata_cache,
+                cache_version=f"4:{config.metadata.tmdb.language}",
+                max_concurrency=core_settings.metadata_concurrency,
+            )
+        )
+
+    registry.register_download_backend(
+        _create_openlist_backend_bundle(config, client=openlist_client)
+    )
+    return registry
+
+
+def _create_openlist_backend_bundle(
+    config,
+    *,
+    client: OpenListClient | None = None,
+) -> DownloadBackendBundle:
+    """Own the OpenList client and all lifecycle hooks inside one bundle."""
+
+    client = client or OpenListClient(
+        base_url=config.downloader.openlist.url,
+        token=config.downloader.openlist.token,
+    )
+    health = OpenListHealthCheck(
         client=client,
-        base_url=config.openlist.url,
-        offline_download_tool=config.openlist.offline_download_tool,
-    ).validate()
-
-
-def _create_downloader(openlist_client: OpenListClient):
-    registry = DownloaderRegistry()
-    registry.register(
-        "openlist",
-        lambda: OpenListDownloader(
-            client=openlist_client,
-            offline_download_tool=config.openlist.offline_download_tool,
-        ),
+        base_url=config.downloader.openlist.url,
+        offline_download_tool=config.downloader.openlist.offline_download_tool,
     )
-    return registry.create(config.downloader.provider)
+    close = getattr(client, "close", None)
+    return DownloadBackendBundle(
+        name="openlist",
+        downloader=OpenListDownloadAdapter(
+            client=client,
+            offline_download_tool=config.downloader.openlist.offline_download_tool,
+        ),
+        organizer=OpenListOrganizerAdapter(client),
+        health_check=health.validate,
+        close=close if callable(close) else None,
+    )
 
 
-def _create_file_renamer(openlist_client: OpenListClient):
-    registry = FileRenamerRegistry()
-    registry.register("openlist", lambda: OpenListFileRenamer(openlist_client))
-    return registry.create(config.file_renamer.provider)
-
-
-def _create_metadata_parser():
-    registry = MetadataParserRegistry()
-    registry.register(
-        "llm",
-        lambda: MetadataParserAdapter.from_settings(
-            MetadataParserSettings(
+def _validator_llm_client(config, *, use_llm: bool | None = None):
+    if not hasattr(config, "data"):
+        if use_llm is None:
+            use_llm = config.metadata_parser.provider.strip().lower() == "llm"
+        if not use_llm or not config.llm.openai_api_key:
+            return None
+        return create_llm_client(
+            LLMClientSettings(
                 provider_type=config.llm.provider_type,
                 api_key=config.llm.openai_api_key,
                 base_url=config.llm.openai_base_url,
                 model=config.llm.openai_model,
             )
-        ),
-    )
-    registry.register(
-        "regex",
-        lambda: MetadataParserAdapter.from_regex_settings(
-            MetadataParserSettings(
-                provider_type=config.llm.provider_type,
-                api_key=config.llm.openai_api_key,
-                base_url=config.llm.openai_base_url,
-                model=config.llm.openai_model,
-            )
-        ),
-    )
-    return registry.create(config.metadata_parser.provider)
+        )
+    if use_llm is None:
+        use_llm = "ai" in config.data.metadata_provider_names()
+    if not use_llm:
+        return None
+    return _metadata_ai_client(config)
 
 
-def _create_metadata_validator():
-    registry = MetadataValidatorRegistry()
-    registry.register(
-        "tmdb",
-        lambda: create_tmdb_metadata_validator(
-            MetadataValidatorSettings(
-                tmdb_api_key=config.llm.tmdb_api_key,
-                tmdb_language=config.llm.tmdb_language,
-            ),
-            llm_client=_create_validator_llm_client(),
-        ),
+def _metadata_ai_client(config):
+    selected = config.data.resolve_metadata_ai_source()
+    source = (
+        selected[1]
+        if selected is not None
+        else AISourceConfig(type="agent", agent="pi")
     )
-    registry.register("none", NullMetadataValidator)
-    return registry.create(config.metadata_validator.provider)
+    return create_source_client(source)
 
 
 def _create_validator_llm_client():
-    if (
-        config.metadata_parser.provider.strip().lower() != "llm"
-        or not config.llm.openai_api_key
-    ):
+    """Compatibility name retained without restoring import-time config loading."""
+    if config is None:
         return None
-    return create_llm_client(
-        LLMClientSettings(
-            provider_type=config.llm.provider_type,
-            api_key=config.llm.openai_api_key,
-            base_url=config.llm.openai_base_url,
-            model=config.llm.openai_model,
-        )
-    )
+    return _validator_llm_client(config)
 
 
-async def _setup_notifications() -> NotificationManager | None:
-    """Start notification manager if configured."""
-    notification_manager = NotificationManagerFactory().create(
+async def _create_notification_manager(config):
+    manager = NotificationManagerFactory().create(
         NotificationSettings(
             enabled=config.notification.enabled,
             batch_interval=config.notification.batch_interval,
@@ -290,55 +481,39 @@ async def _setup_notifications() -> NotificationManager | None:
                 NotificationBotSettings(
                     type=bot.type,
                     enabled=bot.enabled,
-                    config=dict(bot.config),
+                    config=bot.config_dict(),
                 )
                 for bot in config.notification.bots
             ],
         )
     )
-    if not notification_manager:
-        return None
+    if manager is not None:
+        try:
+            await manager.start()
+        except BaseException:
+            await manager.stop()
+            raise
+    return manager
 
-    await notification_manager.start()
-    return notification_manager
 
-
-def _create_pipeline_settings() -> AnimeLibraryIngestionSettings:
-    return AnimeLibraryIngestionSettings(
-        download_path=config.openlist.download_path,
-        rename_format=config.openlist.rename_format,
-        rss_interval_seconds=config.rss.interval_time,
-        strict_filtering=config.rss.strict,
-        metadata_filter=MetadataFilterSettings(
-            exclude_fansub=list(config.rss.filter.exclude_fansub),
-            exclude_quality=list(config.rss.filter.exclude_quality),
-            exclude_languages=list(config.rss.filter.exclude_languages),
-            exclude_patterns=list(config.rss.filter.exclude_patterns),
-        ),
-        priority=PrioritySettings(
-            field_order=list(config.rss.priority.field_order),
-            fansub=list(config.rss.priority.fansub),
-            languages=list(config.rss.priority.languages),
-            quality=list(config.rss.priority.quality),
-        ),
+def _create_api_server(config) -> uvicorn.Server:
+    return uvicorn.Server(
+        uvicorn.Config(
+            create_app(),
+            host=config.backend.host,
+            port=config.backend.port,
+            log_level="warning",
+        )
     )
-
-
-def _create_api_server() -> uvicorn.Server:
-    """Create the uvicorn server instance for the FastAPI app."""
-    fastapi_app = create_app()
-    uvicorn_config = uvicorn.Config(
-        fastapi_app,
-        host=config.backend.host,
-        port=config.backend.port,
-        log_level="warning",
-    )
-    return uvicorn.Server(uvicorn_config)
 
 
 def main() -> None:
-    """Synchronous CLI entry point for the backend process."""
     try:
         asyncio.run(run())
     except (KeyboardInterrupt, asyncio.CancelledError):
-        pass
+        logger.info("Interrupted by user.")
+    except SystemExit:
+        raise
+    except Exception as error:
+        logger.log(FATAL_LEVEL, f"Backend terminated unexpectedly: {error}")
+        sys.exit(1)

@@ -19,6 +19,7 @@
 
 - 📡 **自动追番** — 自动获取 RSS 番剧更新并下载
 - 📦 **多网盘支持** — 基于OpenList实现，支持 PikPak、115 等离线下载
+- 🗂️ **合集整理** — 一次下载多集文件，逐集解析元数据、匹配字幕并归类到媒体库
 - 🤖 **AI 重命名** — AI 分析资源名 + TMDB 搜索，精准获取番剧名、季度、集数
 - 💬 **智能助理** — 挂载至 Telegram / 微信ClawBot / 飞书机器人，通过自然语言让 AI 帮你搜索并下载资源
 - 🔔 **更新通知** — 通过 PushPlus、Telegram、微信ClawBot、飞书等渠道推送更新
@@ -27,7 +28,26 @@
 
 1. 参照 [Openlist 官方文档](https://doc.oplist.org/guide) 部署 Openlist，并搭建好离线下载
 2. 准备好 RSS 订阅链接（如 [Mikan Project](https://mikanani.me)）
-3. 推荐准备好 LLM API Key（未配置时会使用本地正则解析 + TMDB 校验）
+3. 可选：准备 AI API Key，或安装并登录 Pi / Claude Code / Codex Agent（均未配置时元数据使用本地正则 + TMDB）
+
+非 Docker 安装支持 Python 3.11、3.12 和 3.13，使用 `libtorrent>=2.0.13,<2.1`
+（当前锁定版本为 2.0.13）。Windows x64 会在这三个 Python 版本上执行兼容性测试；
+如果本机原生模块导入失败，请先升级到受支持的 Python 和最新项目版本，再按
+[PIP 安装指南](docs/pip-installation.md)中的 Windows 检查步骤验证。
+
+源码或 PIP 安装无需 Node.js/npm。首次使用默认 Pi Assistant 时，程序会下载
+官方锁定版本的独立二进制，校验 SHA-256 后原子安装到配置文件旁的
+`data/assistant/runtime/pi/`。显式配置的 `executable` 和 PATH 中已有的 Pi
+仍然优先，不会被覆盖。Windows 如果没有可用的 Bash，程序还会下载官方
+PortableGit、校验固定 SHA-256，并将 Git Bash 安装到
+`data/assistant/runtime/git-bash/`；不会修改系统安装或全局 PATH。
+
+API source（包括旧 `[llm]` 自动迁移得到的 source）会自动注入 Pi，无需重新
+配置模型；完全没有 AI source 时才使用 Pi 自己的登录和模型配置。Docker 镜像
+已预装 Pi。如果使用 Claude Code 或 Codex source，则安装并登录对应的原生 CLI。
+内置 Skills 不再复制到临时会话目录：Pi 直接使用 `--skill`，Claude Code 使用
+`--plugin-dir`，Codex 则在每个隔离会话的 `.agents/skills` 中建立指向
+随包 Skill 目录的临时符号链接，不复制内容或修改 Codex 的持久配置。
 
 ## 🚀 快速开始
 
@@ -73,28 +93,34 @@ uv sync --no-dev --frozen
 在运行目录下新建 `config.toml`，填入以下内容：
 
 ```toml
+config_version = 2
+
 [rss]
 urls = ["RSS订阅链接"]
 
-[openlist]
-url = "http://localhost:5244"       # Openlist 访问地址
+[downloader]
+download_path = "/PikPak/Anime"
+rename_format = "{anime_name} S{season:02d}E{episode:02d} {fansub} {quality} {languages}"
+# 可选年份："{anime_name} ({year}) S{season:02d}E{episode:02d}"
+
+[downloader.openlist]
+url = "http://localhost:5244"
 token = ""                          # 令牌，见「设置 → 其他 → 令牌」
-download_path = "/PikPak/Anime"     # 下载保存路径
-offline_download_tool = "QBITTORRENT"  # 离线下载工具
+offline_download_tool = "qBittorrent"
 
-[metadata_parser]
-provider = "llm"                    # 推荐 llm + tmdb；未配置 LLM 时默认 regex + tmdb
+[metadata]
+pipeline = ["regex", "tmdb"]       # 默认配置；推荐配置 AI source 后改为 ["ai", "tmdb"]
 
-[metadata_validator]
-provider = "tmdb"
-
-[llm]
-openai_api_key = ""                 # LLM API Key；启用 AI 助理时也必填
-openai_base_url = "https://api.deepseek.com/v1"
-openai_model = "deepseek-chat"
+# 可选：API source。Metadata 直接调用 API，Assistant 由内置 Pi 承载。
+# [ai.sources.primary]
+# type = "api"
+# provider = "openai-compatible"
+# api_key = "sk-xxx"
+# base_url = "https://api.deepseek.com/v1"
+# model = "deepseek-chat"
 ```
 
-> 完整配置项请参考 [`config.toml.example`](config.toml.example) 及 [配置说明](https://github.com/TwooSix/Openlist-Ani/wiki/配置说明)
+> 完整配置项请参考 [`config.toml.example`](config.toml.example) 及 [配置说明](https://github.com/TwooSix/Openlist-Ani/wiki/configuration)
 
 **3. 启动**
 
@@ -113,14 +139,16 @@ enabled = true
 [assistant.telegram]
 enabled = true
 bot_token = ""        # 从 @BotFather 获取
-allowed_users = []    # 允许的用户 ID 列表（留空则允许所有人，建议设置具体 ID）
+allowed_users = [123456789]  # 必填；只有这些用户可以使用 Assistant
 ```
 
 ```bash
 uv run openlist-ani-assistant
 ```
 
-内置 skills 会随程序包加载并自动更新；`./skills` 只用于新增自定义 skill，或放置同名 skill 来覆盖内置版本。
+内置 Skills 会随程序包加载并由 Agent 原生发现。`./skills` 可向 Pi/Claude Code
+直接提供自定义 Skills；Codex 会将其与内置 Skills 一起投影到隔离会话的
+`.agents/skills` 目录，同名 Skill 目录以用户版本为准。
 
 </details>
 
@@ -147,7 +175,7 @@ docker run -d \
 
 > 将 `/path/to/` 替换为你的实际路径。  
 > 如需启用 AI 助理，填写好配置后将 `ENABLE_ASSISTANT` 设为 `true`。  
-> 详细说明见 [Docker 部署指南](https://github.com/TwooSix/Openlist-Ani/wiki/Docker部署指南)。
+> 详细说明见 [Docker 部署指南](https://github.com/TwooSix/Openlist-Ani/wiki/docker-deployment)。
 
 </details>
 
@@ -166,11 +194,11 @@ openlist-ani-assistant
 
 ## 📖 文档
 
-- [快速开始](https://github.com/TwooSix/Openlist-Ani/wiki/快速开始)
-- [PIP 安装指南](https://github.com/TwooSix/Openlist-Ani/wiki/PIP安装指南)
-- [Docker 部署指南](https://github.com/TwooSix/Openlist-Ani/wiki/Docker部署指南)
-- [源码编译指南](https://github.com/TwooSix/Openlist-Ani/wiki/源码编译指南)
-- [配置说明](https://github.com/TwooSix/Openlist-Ani/wiki/配置说明)
+- [快速开始](https://github.com/TwooSix/Openlist-Ani/wiki/quick-start)
+- [PIP 安装指南](https://github.com/TwooSix/Openlist-Ani/wiki/pip-installation)
+- [Docker 部署指南](https://github.com/TwooSix/Openlist-Ani/wiki/docker-deployment)
+- [源码编译指南](https://github.com/TwooSix/Openlist-Ani/wiki/build-from-source)
+- [配置说明](https://github.com/TwooSix/Openlist-Ani/wiki/configuration)
 
 ## 🖼️ 效果展示
 

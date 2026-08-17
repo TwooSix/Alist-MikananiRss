@@ -4,6 +4,7 @@ set -m
 
 if [ "$ENABLE_ASSISTANT" = "true" ]; then
     echo "Starting openlist-ani and openlist-ani-assistant..."
+    openlist-ani-migrate
     
     openlist-ani &
     PID_MAIN=$!

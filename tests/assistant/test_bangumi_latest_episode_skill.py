@@ -4,31 +4,17 @@ from __future__ import annotations
 
 import importlib
 from datetime import date
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-
-from openlist_ani.assistant.skill.catalog import SkillCatalog
-
-
-def test_bangumi_catalog_exposes_latest_episode_action() -> None:
-    """The builtin Bangumi skill advertises latest_episode to the assistant."""
-    skills_dir = Path(__file__).parents[2] / "src/openlist_ani/builtin_skills/skills"
-    catalog = SkillCatalog(skills_dir)
-    catalog.discover()
-
-    bangumi = catalog.get_skill("bangumi")
-    assert bangumi is not None
-    assert "latest_episode" in {action.name for action in bangumi.actions}
 
 
 @pytest.mark.asyncio
 async def test_latest_episode_reports_latest_aired_main_episode(monkeypatch) -> None:
     """latest_episode selects the newest episode whose airdate is not future."""
     module = importlib.import_module(
-        "openlist_ani.builtin_skills.skills.bangumi.script.latest_episode",
+        "openlist_ani.assistant.builtin_skills.plugins.oani.skills.bangumi.scripts.latest_episode",
     )
 
     fake_client = SimpleNamespace(
@@ -89,7 +75,7 @@ async def test_latest_episode_reports_latest_aired_main_episode(monkeypatch) -> 
 async def test_latest_episode_reports_no_aired_episode(monkeypatch) -> None:
     """latest_episode explains when all known main episodes are in the future."""
     module = importlib.import_module(
-        "openlist_ani.builtin_skills.skills.bangumi.script.latest_episode",
+        "openlist_ani.assistant.builtin_skills.plugins.oani.skills.bangumi.scripts.latest_episode",
     )
 
     fake_client = SimpleNamespace(

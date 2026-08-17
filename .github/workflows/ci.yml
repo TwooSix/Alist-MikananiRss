@@ -35,11 +35,16 @@ jobs:
       - name: Check lockfile
         run: uv lock --check
 
+      - name: Install locked dependencies
+        # sgmllib3k has no wheel; allow its pinned source build only in this
+        # explicit frozen-sync step. All subsequent tool execution is no-build.
+        run: uv sync --frozen  # NOSONAR
+
       - name: Run Ruff
-        run: uv run --frozen ruff check .
+        run: uv run --frozen --no-sync --no-build ruff check .
 
       - name: Check formatting
-        run: uv run --frozen black --check .
+        run: uv run --frozen --no-sync --no-build black --check .
 
   test:
     name: CI / Test
@@ -57,8 +62,52 @@ jobs:
       - name: Install Python
         run: uv python install 3.11
 
+      - name: Install locked dependencies
+        # sgmllib3k has no wheel; allow its pinned source build only in this
+        # explicit frozen-sync step. All subsequent tool execution is no-build.
+        run: uv sync --frozen  # NOSONAR
+
       - name: Run tests
-        run: uv run --frozen pytest -q
+        run: uv run --frozen --no-sync --no-build pytest -q
+
+  windows-compatibility:
+    name: CI / Windows / Python ${{ matrix.python-version }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install Python
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install locked dependencies
+        run: uv sync --frozen --python ${{ matrix.python-version }}
+
+      - name: Verify libtorrent without third-party DLL directories
+        shell: pwsh
+        run: |
+          $python = (Resolve-Path ".venv\Scripts\python.exe").Path
+          $env:Path = "$env:SystemRoot\System32;$env:SystemRoot"
+          & $python -c "import libtorrent as lt; assert lt.torrent_info(b'd4:infod6:lengthi123e4:name13:Show - 01.mkv12:piece lengthi16384e6:pieces20:aaaaaaaaaaaaaaaaaaaaee').name() == 'Show - 01.mkv'; print(lt.__version__)"
+
+      - name: Verify native torrent runtime and resolver
+        run: >-
+          uv run --frozen --no-sync --no-build --python ${{ matrix.python-version }} pytest -q
+          tests/adapters/torrent/test_torrent_resolver.py
+
+      - name: Run full Windows test suite
+        if: matrix.python-version == '3.13'
+        run: uv run --frozen --no-sync --no-build --python ${{ matrix.python-version }} pytest -q
 
   build:
     name: CI / Build

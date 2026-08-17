@@ -173,6 +173,47 @@ class FeishuMessenger:
         *,
         receive_id_type: str | None = None,
     ) -> bool:
+        return await self._send_message(
+            receive_id,
+            msg_type="text",
+            content={"text": text},
+            receive_id_type=receive_id_type,
+        )
+
+    async def send_card(
+        self,
+        receive_id: str | None,
+        *,
+        title: str,
+        text: str,
+        template: str = "blue",
+        receive_id_type: str | None = None,
+    ) -> bool:
+        """Send a compact progress/result card with text fallback at the caller."""
+        card = {
+            "schema": "2.0",
+            "config": {"wide_screen_mode": True},
+            "header": {
+                "title": {"tag": "plain_text", "content": title},
+                "template": template,
+            },
+            "body": {"elements": [{"tag": "markdown", "content": text}]},
+        }
+        return await self._send_message(
+            receive_id,
+            msg_type="interactive",
+            content=card,
+            receive_id_type=receive_id_type,
+        )
+
+    async def _send_message(
+        self,
+        receive_id: str | None,
+        *,
+        msg_type: str,
+        content: dict[str, Any],
+        receive_id_type: str | None = None,
+    ) -> bool:
         target_receive_id = receive_id
         target_type = receive_id_type
         if not target_receive_id:
@@ -204,8 +245,8 @@ class FeishuMessenger:
             .request_body(
                 CreateMessageRequestBody.builder()
                 .receive_id(target_receive_id)
-                .msg_type("text")
-                .content(json.dumps({"text": text}, ensure_ascii=False))
+                .msg_type(msg_type)
+                .content(json.dumps(content, ensure_ascii=False))
                 .build()
             )
             .build()

@@ -1,42 +1,41 @@
 [project]
 name = "openlist-ani"
-version = "1.0.0.dev260525"
+version = "1.0.0.dev260809"
 description = "Automatically fetch anime updates from RSS feeds and download them offline to the corresponding cloud storage via OpenList."
 readme = "README.md"
 authors = [{ name = "TwoSix", email = "nitiaob@qq.com" }]
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 dependencies = [
-    "aiohttp>=3.14.1",
+    "aiohttp>=3.14.3",
     "aiosqlite>=0.22.1",
     "anthropic>=0.87.0",
     "beautifulsoup4>=4.14.3",
     "cachetools>=5.3.0",
     "fastapi>=0.115.0",
     "feedparser>=6.0.12",
-    "libtorrent>=2.0.10",
+    # 2.0.11's Windows wheels require OpenSSL 1.1 DLLs that are not bundled.
+    # 2.0.13 is project-verified on Windows x64 with Python 3.11-3.13.
+    "libtorrent>=2.0.13,<2.1",
     "loguru>=0.7.3",
     "lxml>=6.1.0",
     "openai>=2.15.0",
     "pydantic>=2.12.5",
     "python-telegram-bot>=22.6",
     "pyyaml>=6.0.2",
-    "prompt-toolkit>=3.0.50",
     "qrcode>=8.2",
-    "rich>=14.0.0",
-    "ripgrep>=14.1.0",
-    "textual>=3.0.0",
     "tomlkit>=0.13.3",
     "uvicorn>=0.34.0",
-    "lark-oapi>=1.6.2",
+    "lark-oapi>=1.6.4",
 ]
 
 [project.scripts]
 openlist-ani = "openlist_ani.bootstrap.backend:main"
+openlist-ani-migrate = "openlist_ani.bootstrap.migrate:main"
 openlist-ani-assistant = "openlist_ani.assistant:main"
 openlist-ani-wechat-login = "openlist_ani.integrations.messaging.wechat_setup:main"
 
 [build-system]
-requires = ["uv_build>=0.9.5,<0.10.0"]
+requires = ["uv_build>=0.9.5,<0.12.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
@@ -51,4 +50,13 @@ dev = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 norecursedirs = ["tests/manual_test_script"]
+
+[tool.black]
+target-version = ["py311"]
+
+[tool.uv.build-backend]
+# Local skill execution writes logs below the package source tree. Never let
+# ignored runtime artifacts leak into wheels or source distributions.
+source-exclude = ["logs", "*.log", "*.db", "*.sqlite", "*.tmp"]
